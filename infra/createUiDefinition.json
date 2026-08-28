@@ -1,0 +1,113 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/0.1.2-preview/CreateUIDefinition.MultiVm.json#",
+  "handler": "Microsoft.Azure.CreateUIDef",
+  "version": "0.1.2-preview",
+  "parameters": {
+    "basics": [
+      {
+        "name": "functionAppName",
+        "type": "Microsoft.Common.TextBox",
+        "label": "Function App name",
+        "toolTip": "Globally-unique name for the Function App that will host the bot.",
+        "defaultValue": "gti-team-bot",
+        "constraints": {
+          "required": true,
+          "regex": "^[a-zA-Z0-9-]{2,60}$",
+          "validationMessage": "Use 2-60 letters, numbers, or hyphens."
+        }
+      },
+      {
+        "name": "instanceMemoryMB",
+        "type": "Microsoft.Common.DropDown",
+        "label": "Instance memory (MB)",
+        "toolTip": "Per-instance memory for the Flex Consumption plan.",
+        "defaultValue": "2048",
+        "constraints": {
+          "allowedValues": [
+            { "label": "512 MB", "value": "512" },
+            { "label": "2048 MB", "value": "2048" },
+            { "label": "4096 MB", "value": "4096" }
+          ],
+          "required": true
+        }
+      },
+      {
+        "name": "maximumInstanceCount",
+        "type": "Microsoft.Common.Slider",
+        "label": "Maximum instance count",
+        "toolTip": "Maximum scale-out instance count for the Flex Consumption plan.",
+        "defaultValue": 100,
+        "min": 40,
+        "max": 1000,
+        "step": 10,
+        "showStepper": true
+      }
+    ],
+    "steps": [
+      {
+        "name": "credentials",
+        "label": "Bot & GTI credentials",
+        "elements": [
+          {
+            "name": "clientId",
+            "type": "Microsoft.Common.TextBox",
+            "label": "Bot Client ID",
+            "toolTip": "Microsoft Entra app (Bot Framework registration) client ID.",
+            "constraints": {
+              "required": true,
+              "regex": "^[0-9a-fA-F-]{36}$",
+              "validationMessage": "Enter a valid GUID."
+            }
+          },
+          {
+            "name": "clientSecret",
+            "type": "Microsoft.Common.PasswordBox",
+            "label": {
+              "password": "Bot Client Secret",
+              "confirmPassword": "Confirm Bot Client Secret"
+            },
+            "toolTip": "Client secret value for the Bot Framework registration.",
+            "constraints": {
+              "required": true
+            },
+            "options": {
+              "hideConfirmation": false
+            }
+          },
+          {
+            "name": "tenantId",
+            "type": "Microsoft.Common.TextBox",
+            "label": "Tenant ID",
+            "toolTip": "Microsoft Entra tenant ID for the Bot Framework registration.",
+            "constraints": {
+              "required": true,
+              "regex": "^[0-9a-fA-F-]{36}$",
+              "validationMessage": "Enter a valid GUID."
+            }
+          },
+          {
+            "name": "gtiApiKey",
+            "type": "Microsoft.Common.PasswordBox",
+            "label": {
+              "password": "GTI API Key",
+              "confirmPassword": "Confirm GTI API Key"
+            },
+            "toolTip": "Google Threat Intelligence Agentic API key.",
+            "constraints": {
+              "required": true
+            },
+            "options": {
+              "hideConfirmation": false
+            }
+          }
+        ]
+      }
+    ],
+    "outputs": {
+      "functionAppName": "[basics('functionAppName')]",
+      "instanceMemoryMB": "[int(basics('instanceMemoryMB'))]",
+      "maximumInstanceCount": "[int(basics('maximumInstanceCount'))]",
+      "secureAppSettings": "[createObject('CLIENT_ID', steps('credentials').clientId, 'CLIENT_SECRET', steps('credentials').clientSecret, 'TENANT_ID', steps('credentials').tenantId, 'GTI_API_KEY', steps('credentials').gtiApiKey)]"
+    }
+  }
+}

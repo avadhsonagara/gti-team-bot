@@ -1,13 +1,14 @@
 # GTI Teams Bot (Agentic) — Azure Functions
 
-[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Favadhsonagara%2Fgti-team-bot%2Fmain%2Finfra%2Fazuredeploy.json)
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Favadhsonagara%2Fgti-team-bot%2Fmain%2Finfra%2Fazuredeploy.json/createUiDefinitionUri/https%3A%2F%2Fraw.githubusercontent.com%2Favadhsonagara%2Fgti-team-bot%2Fmain%2Finfra%2FcreateUiDefinition.json)
 
 Click the button above to provision the Flex Consumption Function App, Storage Account, and
 Application Insights instance in your own Azure subscription, and upload the Teams app manifest
-package to blob storage — no local tools required. You'll need your Bot Framework `CLIENT_ID` /
-`CLIENT_SECRET` / `TENANT_ID` and your `GTI_API_KEY` on hand for the deployment form (pasted as a
-single JSON object into the **secureAppSettings** field, e.g.
-`{"CLIENT_ID":"...","CLIENT_SECRET":"...","TENANT_ID":"...","GTI_API_KEY":"..."}`).
+package to blob storage — no local tools required. The form only asks for what it needs: a
+Function App name, instance memory/scale settings, and your Bot Framework `CLIENT_ID` /
+`CLIENT_SECRET` / `TENANT_ID` plus your `GTI_API_KEY` as individual fields. Everything else
+(storage account naming, App Insights, Python version, the manifest package location, etc.) is
+pre-wired with sensible defaults.
 
 The button provisions infrastructure only — after it completes, publish the app code with
 `func azure functionapp publish <functionAppName> --python` (see
