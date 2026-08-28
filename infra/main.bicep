@@ -61,9 +61,24 @@ param createAppServicePlan bool = true
 @description('Non-secret application settings merged onto the Function App (e.g. GTI_API_BASE_URL, LOG_FORMAT).')
 param appSettings object = {}
 
-@description('Secret application settings merged onto the Function App (e.g. CLIENT_ID, CLIENT_SECRET, TENANT_ID, GTI_API_KEY).')
+@description('Microsoft Entra app (Bot Framework registration) client ID.')
+param clientId string
+
+@description('Microsoft Entra tenant ID for the Bot Framework registration.')
+param tenantId string
+
+@description('Client secret value for the Bot Framework registration. Stored as a Key Vault secret, never as a plaintext app setting.')
 @secure()
-param secureAppSettings object = {}
+param clientSecret string
+
+@description('Google Threat Intelligence Agentic API key. Stored as a Key Vault secret, never as a plaintext app setting.')
+@secure()
+param gtiApiKey string
+
+@description('Globally-unique Key Vault name (3-24 characters) used to store clientSecret and gtiApiKey.')
+@minLength(3)
+@maxLength(24)
+param keyVaultName string = toLower('kv-${take(replace(functionAppName, '-', ''), 9)}-${take(uniqueString(resourceGroup().id, functionAppName), 9)}')
 
 @description('Blob container that receives the Teams app manifest package.')
 param manifestContainerName string = 'teams-manifest'
@@ -83,11 +98,9 @@ param forceUpdateTag string = utcNow()
 var deploymentContainerName = 'app-package-${toLower(functionAppName)}'
 var storageConnectionString = 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};AccountKey=${storageAccount.listKeys().keys[0].value};EndpointSuffix=${environment().suffixes.storage}'
 
-// Merge order: caller-supplied non-secret settings, then secrets — secrets win on key collision.
 // Kept separate from the built-in (storage/App Insights) settings below because those are derived
 // from listKeys(), which cannot be referenced from inside a for-expression.
-var customAppSettings = union(appSettings, secureAppSettings)
-var customAppSettingsArray = [for key in items(customAppSettings): {
+var customAppSettingsArray = [for key in items(appSettings): {
   name: key.key
   value: key.value
 }]
@@ -128,6 +141,38 @@ resource manifestContainer 'Microsoft.Storage/storageAccounts/blobServices/conta
   }
 }
 
+resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
+  name: keyVaultName
+  location: location
+  tags: tags
+  properties: {
+    sku: {
+      family: 'A'
+      name: 'standard'
+    }
+    tenantId: subscription().tenantId
+    enableRbacAuthorization: true
+    enableSoftDelete: true
+    softDeleteRetentionInDays: 7
+  }
+}
+
+resource kvSecretClientSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+  parent: keyVault
+  name: 'ClientSecret'
+  properties: {
+    value: clientSecret
+  }
+}
+
+resource kvSecretGtiApiKey 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+  parent: keyVault
+  name: 'GtiApiKey'
+  properties: {
+    value: gtiApiKey
+  }
+}
+
 resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
   name: appInsightsName
   location: location
@@ -163,6 +208,9 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
   location: location
   tags: tags
   kind: 'functionapp,linux'
+  identity: {
+    type: 'SystemAssigned'
+  }
   properties: {
     serverFarmId: createAppServicePlan ? appServicePlan.id : existingAppServicePlan.id
     httpsOnly: true
@@ -179,6 +227,22 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         {
           name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
           value: appInsights.properties.ConnectionString
+        }
+        {
+          name: 'CLIENT_ID'
+          value: clientId
+        }
+        {
+          name: 'TENANT_ID'
+          value: tenantId
+        }
+        {
+          name: 'CLIENT_SECRET'
+          value: '@Microsoft.KeyVault(SecretUri=${kvSecretClientSecret.properties.secretUri})'
+        }
+        {
+          name: 'GTI_API_KEY'
+          value: '@Microsoft.KeyVault(SecretUri=${kvSecretGtiApiKey.properties.secretUri})'
         }
       ], customAppSettingsArray)
     }
@@ -206,6 +270,17 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
   dependsOn: [
     deploymentContainer
   ]
+}
+
+resource kvSecretsUserRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(keyVault.id, functionApp.id, 'KeyVaultSecretsUser')
+  scope: keyVault
+  properties: {
+    // Built-in "Key Vault Secrets User" role — read-only access to secret values.
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')
+    principalId: functionApp.identity.principalId
+    principalType: 'ServicePrincipal'
+  }
 }
 
 resource manifestUpload 'Microsoft.Resources/deploymentScripts@2023-08-01' = if (!empty(manifestZipUrl)) {
@@ -264,5 +339,6 @@ output functionAppDefaultHostName string = functionApp.properties.defaultHostNam
 output functionAppMessagingEndpoint string = 'https://${functionApp.properties.defaultHostName}/api/messages'
 output storageAccountName string = storageAccount.name
 output appInsightsName string = appInsights.name
+output keyVaultName string = keyVault.name
 output manifestContainerUrl string = '${storageAccount.properties.primaryEndpoints.blob}${manifestContainerName}'
 output manifestBlobUrl string = '${storageAccount.properties.primaryEndpoints.blob}${manifestContainerName}/${manifestBlobName}'

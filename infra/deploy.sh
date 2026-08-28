@@ -53,5 +53,8 @@ az deployment group create \
   --template-file "$SCRIPT_DIR/main.bicep" \
   --parameters "$SCRIPT_DIR/main.parameters.json" \
   --parameters functionAppName="$FUNCTION_APP_NAME" \
-  --parameters secureAppSettings="{\"CLIENT_ID\":\"$CLIENT_ID\",\"CLIENT_SECRET\":\"$CLIENT_SECRET\",\"TENANT_ID\":\"$TENANT_ID\",\"GTI_API_KEY\":\"$GTI_API_KEY\"}" \
+  --parameters clientId="$CLIENT_ID" \
+  --parameters clientSecret="$CLIENT_SECRET" \
+  --parameters tenantId="$TENANT_ID" \
+  --parameters gtiApiKey="$GTI_API_KEY" \
   "${EXTRA_PARAMS[@]}"

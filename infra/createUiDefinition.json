@@ -107,7 +107,10 @@
       "functionAppName": "[basics('functionAppName')]",
       "instanceMemoryMB": "[int(basics('instanceMemoryMB'))]",
       "maximumInstanceCount": "[int(basics('maximumInstanceCount'))]",
-      "secureAppSettings": "[createObject('CLIENT_ID', steps('credentials').clientId, 'CLIENT_SECRET', steps('credentials').clientSecret, 'TENANT_ID', steps('credentials').tenantId, 'GTI_API_KEY', steps('credentials').gtiApiKey)]"
+      "clientId": "[steps('credentials').clientId]",
+      "clientSecret": "[steps('credentials').clientSecret]",
+      "tenantId": "[steps('credentials').tenantId]",
+      "gtiApiKey": "[steps('credentials').gtiApiKey]"
     }
   }
 }

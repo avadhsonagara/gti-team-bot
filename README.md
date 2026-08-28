@@ -2,18 +2,25 @@
 
 [![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Favadhsonagara%2Fgti-team-bot%2Fmain%2Finfra%2Fazuredeploy.json/createUIDefinitionUri/https%3A%2F%2Fraw.githubusercontent.com%2Favadhsonagara%2Fgti-team-bot%2Fmain%2Finfra%2FcreateUiDefinition.json)
 
-Click the button above to provision the Flex Consumption Function App, Storage Account, and
-Application Insights instance in your own Azure subscription, and upload the Teams app manifest
-package to blob storage — no local tools required. The form only asks for what it needs: a
-Function App name, instance memory/scale settings, and your Bot Framework `CLIENT_ID` /
+Click the button above to provision the Flex Consumption Function App, Storage Account, Key Vault,
+and Application Insights instance in your own Azure subscription, and upload the Teams app
+manifest package to blob storage — no local tools required. The form only asks for what it needs:
+a Function App name, instance memory/scale settings, and your Bot Framework `CLIENT_ID` /
 `CLIENT_SECRET` / `TENANT_ID` plus your `GTI_API_KEY` as individual fields. Everything else
 (storage account naming, App Insights, Python version, the manifest package location, etc.) is
 pre-wired with sensible defaults.
 
+`CLIENT_SECRET` and `GTI_API_KEY` are written into a Key Vault created by the template, not stored
+as plaintext app settings — the Function App reads them via a system-assigned managed identity
+(granted the built-in **Key Vault Secrets User** role) and
+[Key Vault references](https://learn.microsoft.com/azure/app-service/app-service-key-vault-references)
+in its app settings. `CLIENT_ID` and `TENANT_ID` are identifiers rather than credentials, so they're
+set as plain app settings.
+
 The button provisions infrastructure only — after it completes, publish the app code with
 `func azure functionapp publish <functionAppName> --python` (see
 [infra/main.bicep](infra/main.bicep) and [infra/deploy.sh](infra/deploy.sh) for the CLI-driven
-equivalent, which also fills in `secureAppSettings` from environment variables).
+equivalent, which also fills in the credential parameters from environment variables).
 
 ---
 
