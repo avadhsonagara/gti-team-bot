@@ -316,14 +316,31 @@ resource manifestUpload 'Microsoft.Resources/deploymentScripts@2023-08-01' = if 
     ]
     scriptContent: '''
       set -e
-      curl -fsSL "$ZIP_URL" -o /tmp/manifest.zip
-      az storage blob upload \
+      az storage blob copy start \
+        --source-uri "$ZIP_URL" \
         --account-name "$STORAGE_ACCOUNT_NAME" \
         --account-key "$STORAGE_ACCOUNT_KEY" \
-        --container-name "$CONTAINER_NAME" \
-        --name "$BLOB_NAME" \
-        --file /tmp/manifest.zip \
-        --overwrite true
+        --destination-container "$CONTAINER_NAME" \
+        --destination-blob "$BLOB_NAME"
+
+      STATUS=""
+      for i in $(seq 1 30); do
+        STATUS=$(az storage blob show \
+          --account-name "$STORAGE_ACCOUNT_NAME" \
+          --account-key "$STORAGE_ACCOUNT_KEY" \
+          --container-name "$CONTAINER_NAME" \
+          --name "$BLOB_NAME" \
+          --query "properties.copy.status" -o tsv)
+        if [ "$STATUS" = "success" ]; then
+          break
+        fi
+        sleep 2
+      done
+
+      if [ "$STATUS" != "success" ]; then
+        echo "Blob copy did not complete: status=$STATUS" >&2
+        exit 1
+      fi
       echo "{\"blobUploaded\": true}" > $AZ_SCRIPTS_OUTPUT_PATH
     '''
   }

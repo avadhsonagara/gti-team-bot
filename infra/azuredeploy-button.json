@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.46.1.21595",
-      "templateHash": "1417468221550590070"
+      "templateHash": "3378350922005888853"
     }
   },
   "parameters": {
@@ -85,7 +85,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.46.1.21595",
-              "templateHash": "12835525462453907490"
+              "templateHash": "6740293572128487563"
             }
           },
           "parameters": {
@@ -463,7 +463,7 @@
                     "value": "[parameters('manifestZipUrl')]"
                   }
                 ],
-                "scriptContent": "      set -e\n      curl -fsSL \"$ZIP_URL\" -o /tmp/manifest.zip\n      az storage blob upload \\\n        --account-name \"$STORAGE_ACCOUNT_NAME\" \\\n        --account-key \"$STORAGE_ACCOUNT_KEY\" \\\n        --container-name \"$CONTAINER_NAME\" \\\n        --name \"$BLOB_NAME\" \\\n        --file /tmp/manifest.zip \\\n        --overwrite true\n      echo \"{\\\"blobUploaded\\\": true}\" > $AZ_SCRIPTS_OUTPUT_PATH\n    "
+                "scriptContent": "      set -e\n      az storage blob copy start \\\n        --source-uri \"$ZIP_URL\" \\\n        --account-name \"$STORAGE_ACCOUNT_NAME\" \\\n        --account-key \"$STORAGE_ACCOUNT_KEY\" \\\n        --destination-container \"$CONTAINER_NAME\" \\\n        --destination-blob \"$BLOB_NAME\"\n\n      STATUS=\"\"\n      for i in $(seq 1 30); do\n        STATUS=$(az storage blob show \\\n          --account-name \"$STORAGE_ACCOUNT_NAME\" \\\n          --account-key \"$STORAGE_ACCOUNT_KEY\" \\\n          --container-name \"$CONTAINER_NAME\" \\\n          --name \"$BLOB_NAME\" \\\n          --query \"properties.copy.status\" -o tsv)\n        if [ \"$STATUS\" = \"success\" ]; then\n          break\n        fi\n        sleep 2\n      done\n\n      if [ \"$STATUS\" != \"success\" ]; then\n        echo \"Blob copy did not complete: status=$STATUS\" >&2\n        exit 1\n      fi\n      echo \"{\\\"blobUploaded\\\": true}\" > $AZ_SCRIPTS_OUTPUT_PATH\n    "
               },
               "dependsOn": [
                 "[resourceId('Microsoft.Storage/storageAccounts/blobServices/containers', parameters('storageAccountName'), 'default', parameters('manifestContainerName'))]",
