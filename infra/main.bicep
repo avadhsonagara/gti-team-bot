@@ -6,14 +6,16 @@
 // Provisions a Flex Consumption Python Function App (matching the existing
 // "gti-team-bot" app: kind functionapp,linux, Flex Consumption plan), wires
 // up Application Insights + deployment storage, applies the app's runtime
-// configuration as app settings, and uploads the Teams app manifest package
-// (manifest.json + icons, prebuilt as teams-app-manifest/teams-app-manifest.zip
-// in this repo) to a blob container in the same storage account.
+// configuration as app settings, and builds + uploads the Teams app manifest
+// package to a blob container in the same storage account.
 //
-// The manifest zip is fetched at deploy time from manifestZipUrl (defaults to
-// this repo's raw GitHub URL) rather than passed as inline content — this is
-// what makes the template usable from the "Deploy to Azure" button, where the
-// caller is filling out a portal form rather than running a local script.
+// The manifest is assembled at deploy time (not shipped as a static zip):
+// manifest.json + icons are fetched from manifestSourceBaseUrl (defaults to
+// this repo's teams-app-manifest/ folder), manifest.json's id/botId fields
+// are rewritten to this deployment's own bot App ID (only known at deploy
+// time, since it's the Managed Identity created below), then zipped and
+// uploaded — so the sideloadable package always matches the bot this
+// deployment actually created, not a stale ID baked in ahead of time.
 // =============================================================================
 
 @description('Name of the Function App to create.')
@@ -82,8 +84,8 @@ param manifestContainerName string = 'teams-manifest'
 @description('Blob name for the uploaded Teams app manifest zip.')
 param manifestBlobName string = 'teams-app-manifest.zip'
 
-@description('URL the Teams app manifest zip is fetched from at deploy time. Defaults to this repo\'s prebuilt package. Skip the upload by leaving this empty.')
-param manifestZipUrl string = 'https://raw.githubusercontent.com/avadhsonagara/gti-team-bot/main/teams-app-manifest/teams-app-manifest.zip'
+@description('Base URL the Teams app manifest source files (manifest.json, color.png, outline.png) are fetched from at deploy time. Defaults to this repo\'s teams-app-manifest folder. Skip the upload by leaving this empty.')
+param manifestSourceBaseUrl string = 'https://raw.githubusercontent.com/avadhsonagara/gti-team-bot/main/teams-app-manifest'
 
 @description('Tags applied to all resources.')
 param tags object = {}
@@ -281,7 +283,7 @@ resource kvSecretsUserRoleAssignment 'Microsoft.Authorization/roleAssignments@20
   }
 }
 
-resource manifestUpload 'Microsoft.Resources/deploymentScripts@2023-08-01' = if (!empty(manifestZipUrl)) {
+resource manifestUpload 'Microsoft.Resources/deploymentScripts@2023-08-01' = if (!empty(manifestSourceBaseUrl)) {
   name: '${functionAppName}-manifest-upload'
   location: location
   tags: tags
@@ -310,37 +312,63 @@ resource manifestUpload 'Microsoft.Resources/deploymentScripts@2023-08-01' = if 
         value: manifestBlobName
       }
       {
-        name: 'ZIP_URL'
-        value: manifestZipUrl
+        name: 'MANIFEST_JSON_URL'
+        value: '${manifestSourceBaseUrl}/manifest.json'
+      }
+      {
+        name: 'COLOR_ICON_URL'
+        value: '${manifestSourceBaseUrl}/color.png'
+      }
+      {
+        name: 'OUTLINE_ICON_URL'
+        value: '${manifestSourceBaseUrl}/outline.png'
+      }
+      {
+        name: 'BOT_APP_ID'
+        value: botIdentity.properties.clientId
       }
     ]
+    // The container has no guaranteed HTTP client (curl isn't present in this
+    // image), so fetching + zipping runs through python3's stdlib instead —
+    // it ships with the Azure CLI image, since az itself is a Python app.
+    // Rewriting manifest.json's id/botId here (rather than shipping a static
+    // pre-built zip) is what makes the package match the bot actually
+    // created by *this* deployment, since its App ID is only known now.
     scriptContent: '''
       set -e
-      az storage blob copy start \
-        --source-uri "$ZIP_URL" \
+      python3 - "$MANIFEST_JSON_URL" "$COLOR_ICON_URL" "$OUTLINE_ICON_URL" "$BOT_APP_ID" /tmp/manifest.zip <<'PY'
+import json
+import sys
+import urllib.request
+import zipfile
+
+manifest_url, color_url, outline_url, bot_app_id, out_zip = sys.argv[1:6]
+
+with urllib.request.urlopen(manifest_url) as r:
+    manifest = json.load(r)
+
+manifest["id"] = bot_app_id
+for bot in manifest.get("bots", []):
+    bot["botId"] = bot_app_id
+
+with urllib.request.urlopen(color_url) as r:
+    color_bytes = r.read()
+with urllib.request.urlopen(outline_url) as r:
+    outline_bytes = r.read()
+
+with zipfile.ZipFile(out_zip, "w", zipfile.ZIP_DEFLATED) as zf:
+    zf.writestr("manifest.json", json.dumps(manifest, indent=2))
+    zf.writestr("color.png", color_bytes)
+    zf.writestr("outline.png", outline_bytes)
+PY
+
+      az storage blob upload \
         --account-name "$STORAGE_ACCOUNT_NAME" \
         --account-key "$STORAGE_ACCOUNT_KEY" \
-        --destination-container "$CONTAINER_NAME" \
-        --destination-blob "$BLOB_NAME"
-
-      STATUS=""
-      for i in $(seq 1 30); do
-        STATUS=$(az storage blob show \
-          --account-name "$STORAGE_ACCOUNT_NAME" \
-          --account-key "$STORAGE_ACCOUNT_KEY" \
-          --container-name "$CONTAINER_NAME" \
-          --name "$BLOB_NAME" \
-          --query "properties.copy.status" -o tsv)
-        if [ "$STATUS" = "success" ]; then
-          break
-        fi
-        sleep 2
-      done
-
-      if [ "$STATUS" != "success" ]; then
-        echo "Blob copy did not complete: status=$STATUS" >&2
-        exit 1
-      fi
+        --container-name "$CONTAINER_NAME" \
+        --name "$BLOB_NAME" \
+        --file /tmp/manifest.zip \
+        --overwrite true
       echo "{\"blobUploaded\": true}" > $AZ_SCRIPTS_OUTPUT_PATH
     '''
   }

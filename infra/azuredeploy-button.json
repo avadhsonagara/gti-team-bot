@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.46.1.21595",
-      "templateHash": "3378350922005888853"
+      "templateHash": "3884108933636510113"
     }
   },
   "parameters": {
@@ -85,7 +85,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.46.1.21595",
-              "templateHash": "6740293572128487563"
+              "templateHash": "7604294491830346654"
             }
           },
           "parameters": {
@@ -216,11 +216,11 @@
                 "description": "Blob name for the uploaded Teams app manifest zip."
               }
             },
-            "manifestZipUrl": {
+            "manifestSourceBaseUrl": {
               "type": "string",
-              "defaultValue": "https://raw.githubusercontent.com/avadhsonagara/gti-team-bot/main/teams-app-manifest/teams-app-manifest.zip",
+              "defaultValue": "https://raw.githubusercontent.com/avadhsonagara/gti-team-bot/main/teams-app-manifest",
               "metadata": {
-                "description": "URL the Teams app manifest zip is fetched from at deploy time. Defaults to this repo's prebuilt package. Skip the upload by leaving this empty."
+                "description": "Base URL the Teams app manifest source files (manifest.json, color.png, outline.png) are fetched from at deploy time. Defaults to this repo's teams-app-manifest folder. Skip the upload by leaving this empty."
               }
             },
             "tags": {
@@ -428,7 +428,7 @@
               ]
             },
             {
-              "condition": "[not(empty(parameters('manifestZipUrl')))]",
+              "condition": "[not(empty(parameters('manifestSourceBaseUrl')))]",
               "type": "Microsoft.Resources/deploymentScripts",
               "apiVersion": "2023-08-01",
               "name": "[format('{0}-manifest-upload', parameters('functionAppName'))]",
@@ -459,13 +459,26 @@
                     "value": "[parameters('manifestBlobName')]"
                   },
                   {
-                    "name": "ZIP_URL",
-                    "value": "[parameters('manifestZipUrl')]"
+                    "name": "MANIFEST_JSON_URL",
+                    "value": "[format('{0}/manifest.json', parameters('manifestSourceBaseUrl'))]"
+                  },
+                  {
+                    "name": "COLOR_ICON_URL",
+                    "value": "[format('{0}/color.png', parameters('manifestSourceBaseUrl'))]"
+                  },
+                  {
+                    "name": "OUTLINE_ICON_URL",
+                    "value": "[format('{0}/outline.png', parameters('manifestSourceBaseUrl'))]"
+                  },
+                  {
+                    "name": "BOT_APP_ID",
+                    "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('functionAppName'))), '2023-01-31').clientId]"
                   }
                 ],
-                "scriptContent": "      set -e\n      az storage blob copy start \\\n        --source-uri \"$ZIP_URL\" \\\n        --account-name \"$STORAGE_ACCOUNT_NAME\" \\\n        --account-key \"$STORAGE_ACCOUNT_KEY\" \\\n        --destination-container \"$CONTAINER_NAME\" \\\n        --destination-blob \"$BLOB_NAME\"\n\n      STATUS=\"\"\n      for i in $(seq 1 30); do\n        STATUS=$(az storage blob show \\\n          --account-name \"$STORAGE_ACCOUNT_NAME\" \\\n          --account-key \"$STORAGE_ACCOUNT_KEY\" \\\n          --container-name \"$CONTAINER_NAME\" \\\n          --name \"$BLOB_NAME\" \\\n          --query \"properties.copy.status\" -o tsv)\n        if [ \"$STATUS\" = \"success\" ]; then\n          break\n        fi\n        sleep 2\n      done\n\n      if [ \"$STATUS\" != \"success\" ]; then\n        echo \"Blob copy did not complete: status=$STATUS\" >&2\n        exit 1\n      fi\n      echo \"{\\\"blobUploaded\\\": true}\" > $AZ_SCRIPTS_OUTPUT_PATH\n    "
+                "scriptContent": "      set -e\n      python3 - \"$MANIFEST_JSON_URL\" \"$COLOR_ICON_URL\" \"$OUTLINE_ICON_URL\" \"$BOT_APP_ID\" /tmp/manifest.zip <<'PY'\nimport json\nimport sys\nimport urllib.request\nimport zipfile\n\nmanifest_url, color_url, outline_url, bot_app_id, out_zip = sys.argv[1:6]\n\nwith urllib.request.urlopen(manifest_url) as r:\n    manifest = json.load(r)\n\nmanifest[\"id\"] = bot_app_id\nfor bot in manifest.get(\"bots\", []):\n    bot[\"botId\"] = bot_app_id\n\nwith urllib.request.urlopen(color_url) as r:\n    color_bytes = r.read()\nwith urllib.request.urlopen(outline_url) as r:\n    outline_bytes = r.read()\n\nwith zipfile.ZipFile(out_zip, \"w\", zipfile.ZIP_DEFLATED) as zf:\n    zf.writestr(\"manifest.json\", json.dumps(manifest, indent=2))\n    zf.writestr(\"color.png\", color_bytes)\n    zf.writestr(\"outline.png\", outline_bytes)\nPY\n\n      az storage blob upload \\\n        --account-name \"$STORAGE_ACCOUNT_NAME\" \\\n        --account-key \"$STORAGE_ACCOUNT_KEY\" \\\n        --container-name \"$CONTAINER_NAME\" \\\n        --name \"$BLOB_NAME\" \\\n        --file /tmp/manifest.zip \\\n        --overwrite true\n      echo \"{\\\"blobUploaded\\\": true}\" > $AZ_SCRIPTS_OUTPUT_PATH\n    "
               },
               "dependsOn": [
+                "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('functionAppName')))]",
                 "[resourceId('Microsoft.Storage/storageAccounts/blobServices/containers', parameters('storageAccountName'), 'default', parameters('manifestContainerName'))]",
                 "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
               ]

@@ -2,9 +2,10 @@
 # =============================================================================
 # Deploys infra/main.bicep.
 #
-# The Teams app manifest zip is fetched by the template itself at deploy time
-# (manifestZipUrl, default: this repo's raw GitHub URL for
-# teams-app-manifest/teams-app-manifest.zip) — nothing to package locally.
+# The Teams app manifest is built by the template itself at deploy time
+# (manifestSourceBaseUrl, default: this repo's teams-app-manifest/ folder) —
+# it fetches manifest.json + icons, rewrites manifest.json's id/botId to this
+# deployment's own bot App ID, and zips the result. Nothing to package locally.
 #
 # Bot authentication uses a User-Assigned Managed Identity (Azure Bot's
 # "UserAssignedMSI" app type) instead of an app registration + client secret,
