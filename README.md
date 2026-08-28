@@ -1,26 +1,31 @@
 # GTI Teams Bot (Agentic) — Azure Functions
 
-[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Favadhsonagara%2Fgti-team-bot%2Fmain%2Finfra%2Fazuredeploy.json/createUIDefinitionUri/https%3A%2F%2Fraw.githubusercontent.com%2Favadhsonagara%2Fgti-team-bot%2Fmain%2Finfra%2FcreateUiDefinition.json)
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Favadhsonagara%2Fgti-team-bot%2Fmain%2Finfra%2Fazuredeploy-button.json)
 
-Click the button above to provision the Flex Consumption Function App, Storage Account, Key Vault,
-and Application Insights instance in your own Azure subscription, and upload the Teams app
-manifest package to blob storage — no local tools required. The form only asks for what it needs:
-a Function App name, instance memory/scale settings, and your Bot Framework `CLIENT_ID` /
-`CLIENT_SECRET` / `TENANT_ID` plus your `GTI_API_KEY` as individual fields. Everything else
-(storage account naming, App Insights, Python version, the manifest package location, etc.) is
-pre-wired with sensible defaults.
+Click the button above to provision the Azure Bot, Flex Consumption Function App, Storage Account,
+Key Vault, and Application Insights instance in your own Azure subscription, and upload the Teams
+app manifest package to blob storage — no local tools required, and **no app registration to
+create by hand**. The form asks for exactly four things: a Function App name, your `GTI_API_KEY`,
+and instance memory/scale settings. Everything else (storage account naming, App Insights, Python
+version, the manifest package location, etc.) is pre-wired with sensible defaults — this simplified
+form is [infra/deploy-button.bicep](infra/deploy-button.bicep), a thin wrapper around the full
+[infra/main.bicep](infra/main.bicep) template.
 
-`CLIENT_SECRET` and `GTI_API_KEY` are written into a Key Vault created by the template, not stored
-as plaintext app settings — the Function App reads them via a system-assigned managed identity
-(granted the built-in **Key Vault Secrets User** role) and
-[Key Vault references](https://learn.microsoft.com/azure/app-service/app-service-key-vault-references)
-in its app settings. `CLIENT_ID` and `TENANT_ID` are identifiers rather than credentials, so they're
-set as plain app settings.
+There's no `CLIENT_ID` / `CLIENT_SECRET` to supply because the bot authenticates with a
+**User-Assigned Managed Identity** (Azure Bot's `UserAssignedMSI` app type) instead of a classic
+app registration + secret — the identity's client ID *becomes* the bot's App ID directly. Only
+`GTI_API_KEY` is an actual secret; it's written into a Key Vault created by the template (never a
+plaintext app setting), and the Function App reads it via that same managed identity (granted the
+built-in **Key Vault Secrets User** role) using
+[Key Vault references](https://learn.microsoft.com/azure/app-service/app-service-key-vault-references).
 
 The button provisions infrastructure only — after it completes, publish the app code with
-`func azure functionapp publish <functionAppName> --python` (see
-[infra/main.bicep](infra/main.bicep) and [infra/deploy.sh](infra/deploy.sh) for the CLI-driven
-equivalent, which also fills in the credential parameters from environment variables).
+`func azure functionapp publish <functionAppName> --python`. The bot's App ID is newly generated
+per deployment (it's the managed identity's client ID, shown as the `botAppId` output) and won't
+match the one baked into `teams-app-manifest/manifest.json` in this repo — update `id` and
+`bots[].botId` in the manifest to the new `botAppId` and re-zip before sideloading it into Teams.
+See [infra/deploy.sh](infra/deploy.sh) for the full-control CLI equivalent (custom naming, reusing
+an existing storage account or App Service Plan, etc.).
 
 ---
 

@@ -6,14 +6,14 @@
 # (manifestZipUrl, default: this repo's raw GitHub URL for
 # teams-app-manifest/teams-app-manifest.zip) — nothing to package locally.
 #
-# This script's only job Bicep can't do itself: read secrets from environment
-# variables instead of committing them to main.parameters.json.
-#
-# Required environment variables (secrets — not read from any file):
-#   CLIENT_ID, CLIENT_SECRET, TENANT_ID, GTI_API_KEY
+# Bot authentication uses a User-Assigned Managed Identity (Azure Bot's
+# "UserAssignedMSI" app type) instead of an app registration + client secret,
+# so there's no CLIENT_ID / CLIENT_SECRET to supply — the identity's client ID
+# becomes the bot's App ID automatically. The only secret this script needs to
+# pass through (rather than commit to main.parameters.json) is GTI_API_KEY.
 #
 # Usage:
-#   export CLIENT_ID=... CLIENT_SECRET=... TENANT_ID=... GTI_API_KEY=...
+#   export GTI_API_KEY=...
 #   ./deploy.sh <resource-group> [functionAppName] [storageAccountName] [existingAppServicePlanName]
 #
 # Omit storageAccountName to let Bicep generate a new storage account; pass
@@ -33,12 +33,10 @@ EXISTING_PLAN_NAME="${4:-}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-for var in CLIENT_ID CLIENT_SECRET TENANT_ID GTI_API_KEY; do
-  if [ -z "${!var:-}" ]; then
-    echo "Missing required environment variable: $var" >&2
-    exit 1
-  fi
-done
+if [ -z "${GTI_API_KEY:-}" ]; then
+  echo "Missing required environment variable: GTI_API_KEY" >&2
+  exit 1
+fi
 
 EXTRA_PARAMS=()
 if [ -n "$STORAGE_ACCOUNT_NAME" ]; then
@@ -53,8 +51,5 @@ az deployment group create \
   --template-file "$SCRIPT_DIR/main.bicep" \
   --parameters "$SCRIPT_DIR/main.parameters.json" \
   --parameters functionAppName="$FUNCTION_APP_NAME" \
-  --parameters clientId="$CLIENT_ID" \
-  --parameters clientSecret="$CLIENT_SECRET" \
-  --parameters tenantId="$TENANT_ID" \
   --parameters gtiApiKey="$GTI_API_KEY" \
   "${EXTRA_PARAMS[@]}"

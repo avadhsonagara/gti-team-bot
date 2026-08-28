@@ -61,24 +61,20 @@ param createAppServicePlan bool = true
 @description('Non-secret application settings merged onto the Function App (e.g. GTI_API_BASE_URL, LOG_FORMAT).')
 param appSettings object = {}
 
-@description('Microsoft Entra app (Bot Framework registration) client ID.')
-param clientId string
-
-@description('Microsoft Entra tenant ID for the Bot Framework registration. Defaults to the deployment\'s own tenant, which is where this app registration lives for the vast majority of setups; override if yours differs.')
+@description('Microsoft Entra tenant ID for the Azure Bot registration. Defaults to the deployment\'s own tenant.')
 param tenantId string = subscription().tenantId
-
-@description('Client secret value for the Bot Framework registration. Stored as a Key Vault secret, never as a plaintext app setting.')
-@secure()
-param clientSecret string
 
 @description('Google Threat Intelligence Agentic API key. Stored as a Key Vault secret, never as a plaintext app setting.')
 @secure()
 param gtiApiKey string
 
-@description('Globally-unique Key Vault name (3-24 characters) used to store clientSecret and gtiApiKey.')
+@description('Globally-unique Key Vault name (3-24 characters) used to store gtiApiKey.')
 @minLength(3)
 @maxLength(24)
 param keyVaultName string = toLower('kv-${take(replace(functionAppName, '-', ''), 9)}-${take(uniqueString(resourceGroup().id, functionAppName), 9)}')
+
+@description('Name of the Azure Bot resource.')
+param botName string = '${functionAppName}-bot'
 
 @description('Blob container that receives the Teams app manifest package.')
 param manifestContainerName string = 'teams-manifest'
@@ -141,6 +137,12 @@ resource manifestContainer 'Microsoft.Storage/storageAccounts/blobServices/conta
   }
 }
 
+resource botIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+  name: '${functionAppName}-identity'
+  location: location
+  tags: tags
+}
+
 resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   name: keyVaultName
   location: location
@@ -154,14 +156,6 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
     enableRbacAuthorization: true
     enableSoftDelete: true
     softDeleteRetentionInDays: 7
-  }
-}
-
-resource kvSecretClientSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
-  parent: keyVault
-  name: 'ClientSecret'
-  properties: {
-    value: clientSecret
   }
 }
 
@@ -209,11 +203,15 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
   tags: tags
   kind: 'functionapp,linux'
   identity: {
-    type: 'SystemAssigned'
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${botIdentity.id}': {}
+    }
   }
   properties: {
     serverFarmId: createAppServicePlan ? appServicePlan.id : existingAppServicePlan.id
     httpsOnly: true
+    keyVaultReferenceIdentity: botIdentity.id
     siteConfig: {
       appSettings: concat([
         {
@@ -230,15 +228,15 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         }
         {
           name: 'CLIENT_ID'
-          value: clientId
+          value: botIdentity.properties.clientId
         }
         {
           name: 'TENANT_ID'
           value: tenantId
         }
         {
-          name: 'CLIENT_SECRET'
-          value: '@Microsoft.KeyVault(SecretUri=${kvSecretClientSecret.properties.secretUri})'
+          name: 'MANAGED_IDENTITY_CLIENT_ID'
+          value: botIdentity.properties.clientId
         }
         {
           name: 'GTI_API_KEY'
@@ -273,12 +271,12 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
 }
 
 resource kvSecretsUserRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(keyVault.id, functionApp.id, 'KeyVaultSecretsUser')
+  name: guid(keyVault.id, botIdentity.id, 'KeyVaultSecretsUser')
   scope: keyVault
   properties: {
     // Built-in "Key Vault Secrets User" role — read-only access to secret values.
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')
-    principalId: functionApp.identity.principalId
+    principalId: botIdentity.properties.principalId
     principalType: 'ServicePrincipal'
   }
 }
@@ -334,11 +332,40 @@ resource manifestUpload 'Microsoft.Resources/deploymentScripts@2023-08-01' = if 
   ]
 }
 
+resource bot 'Microsoft.BotService/botServices@2022-09-15' = {
+  name: botName
+  location: 'global'
+  tags: tags
+  sku: {
+    name: 'F0'
+  }
+  kind: 'azurebot'
+  properties: {
+    displayName: botName
+    endpoint: 'https://${functionApp.properties.defaultHostName}/api/messages'
+    msaAppId: botIdentity.properties.clientId
+    msaAppType: 'UserAssignedMSI'
+    msaAppTenantId: tenantId
+    msaAppMSIResourceId: botIdentity.id
+  }
+}
+
+resource botTeamsChannel 'Microsoft.BotService/botServices/channels@2022-09-15' = {
+  parent: bot
+  name: 'MsTeamsChannel'
+  location: 'global'
+  properties: {
+    channelName: 'MsTeamsChannel'
+  }
+}
+
 output functionAppName string = functionApp.name
 output functionAppDefaultHostName string = functionApp.properties.defaultHostName
 output functionAppMessagingEndpoint string = 'https://${functionApp.properties.defaultHostName}/api/messages'
 output storageAccountName string = storageAccount.name
 output appInsightsName string = appInsights.name
 output keyVaultName string = keyVault.name
+output botName string = bot.name
+output botAppId string = botIdentity.properties.clientId
 output manifestContainerUrl string = '${storageAccount.properties.primaryEndpoints.blob}${manifestContainerName}'
 output manifestBlobUrl string = '${storageAccount.properties.primaryEndpoints.blob}${manifestContainerName}/${manifestBlobName}'
