@@ -1,0 +1,36 @@
+{
+  "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.25/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.25",
+  "version": "1.0.1",
+  "id": "083c9bb8-cdf8-4f80-b69d-4f5bdc2b666e",
+  "developer": {
+    "name": "Google",
+    "websiteUrl": "https://example.com",
+    "privacyUrl": "https://example.com/privacy",
+    "termsOfUseUrl": "https://example.com/terms"
+  },
+  "icons": {
+    "color": "color.png",
+    "outline": "outline.png"
+  },
+  "name": {
+    "short": "GTI Agent",
+    "full": "Google Threat Intelligence Agent"
+  },
+  "description": {
+    "short": "Google Threat Intelligence Agentic Bot.",
+    "full": "Google Threat Intelligence Agentic Bot for Microsoft Teams. Ask threat intelligence questions directly to perform indicator lookups, malware analysis, reputation checks, and threat actor research."
+  },
+  "accentColor": "#2D1B4D",
+  "bots": [
+    {
+      "botId": "083c9bb8-cdf8-4f80-b69d-4f5bdc2b666e",
+      "scopes": ["personal", "team", "groupChat"],
+      "supportsFiles": false,
+      "isNotificationOnly": false
+    }
+  ],
+  "permissions": ["identity", "messageTeamMembers"],
+  "validDomains": [],
+  "supportsChannelFeatures": "tier1"
+} 

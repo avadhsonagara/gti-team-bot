@@ -1,0 +1,33 @@
+# =============================================================================
+# GTI MS Teams Bot (Agentic) — Azure Functions Dependencies
+# =============================================================================
+
+# Azure Functions Python worker — provides AsgiFunctionApp used in
+# function_app.py to host the FastAPI app as a single HTTP-triggered
+# Azure Function.
+azure-functions>=1.21.0
+
+# Microsoft Teams SDK — Bot Framework activity handling, FastAPI adapter,
+# Adaptive Card send/update.
+# https://microsoft.github.io/teams-sdk/python/
+microsoft-teams-apps>=1.0
+
+# HTTP client for Google Threat Intelligence (GTI) Agentic REST API
+httpx>=0.27,<1.0
+
+# FastAPI — the Teams SDK's FastAPIAdapter mounts POST /api/messages onto
+# this app (app/teams/bot.py); Azure wraps it via azure.functions.AsgiFunctionApp
+# instead of uvicorn, so no ASGI server package is required here.
+fastapi>=0.110
+
+# Type-safe, validated configuration from environment variables
+# (Azure Function App Settings are exposed as env vars at runtime)
+pydantic-settings>=2.0
+
+# Local development only — load .env file into environment when running
+# main.py directly outside of `func start`.
+python-dotenv>=1.0
+
+# Fast JSON parsing — ~2-5x faster than stdlib json for Adaptive Card
+# response parsing (app/utils/helpers.py)
+orjson>=3.9
