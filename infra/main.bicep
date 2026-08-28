@@ -64,8 +64,8 @@ param appSettings object = {}
 @description('Microsoft Entra app (Bot Framework registration) client ID.')
 param clientId string
 
-@description('Microsoft Entra tenant ID for the Bot Framework registration.')
-param tenantId string
+@description('Microsoft Entra tenant ID for the Bot Framework registration. Defaults to the deployment\'s own tenant, which is where this app registration lives for the vast majority of setups; override if yours differs.')
+param tenantId string = subscription().tenantId
 
 @description('Client secret value for the Bot Framework registration. Stored as a Key Vault secret, never as a plaintext app setting.')
 @secure()

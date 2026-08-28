@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.46.1.21595",
-      "templateHash": "4042909676975044796"
+      "templateHash": "14162018186190369043"
     }
   },
   "parameters": {
@@ -101,8 +101,9 @@
     },
     "tenantId": {
       "type": "string",
+      "defaultValue": "[subscription().tenantId]",
       "metadata": {
-        "description": "Microsoft Entra tenant ID for the Bot Framework registration."
+        "description": "Microsoft Entra tenant ID for the Bot Framework registration. Defaults to the deployment's own tenant, which is where this app registration lives for the vast majority of setups; override if yours differs."
       }
     },
     "clientSecret": {

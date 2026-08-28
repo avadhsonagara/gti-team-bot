@@ -78,7 +78,8 @@
             "name": "tenantId",
             "type": "Microsoft.Common.TextBox",
             "label": "Tenant ID",
-            "toolTip": "Microsoft Entra tenant ID for the Bot Framework registration.",
+            "toolTip": "Microsoft Entra tenant ID for the Bot Framework registration. Pre-filled with this deployment's tenant — override only if your bot registration lives in a different tenant.",
+            "defaultValue": "[subscription().tenantId]",
             "constraints": {
               "required": true,
               "regex": "^[0-9a-fA-F-]{36}$",
