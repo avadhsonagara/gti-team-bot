@@ -1,5 +1,21 @@
 # GTI Teams Bot (Agentic) — Azure Functions
 
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Favadhsonagara%2Fgti-team-bot%2Fmain%2Finfra%2Fazuredeploy.json)
+
+Click the button above to provision the Flex Consumption Function App, Storage Account, and
+Application Insights instance in your own Azure subscription, and upload the Teams app manifest
+package to blob storage — no local tools required. You'll need your Bot Framework `CLIENT_ID` /
+`CLIENT_SECRET` / `TENANT_ID` and your `GTI_API_KEY` on hand for the deployment form (pasted as a
+single JSON object into the **secureAppSettings** field, e.g.
+`{"CLIENT_ID":"...","CLIENT_SECRET":"...","TENANT_ID":"...","GTI_API_KEY":"..."}`).
+
+The button provisions infrastructure only — after it completes, publish the app code with
+`func azure functionapp publish <functionAppName> --python` (see
+[infra/main.bicep](infra/main.bicep) and [infra/deploy.sh](infra/deploy.sh) for the CLI-driven
+equivalent, which also fills in `secureAppSettings` from environment variables).
+
+---
+
 This is the [gti-team-bot-agentic](../gti-team-bot-agentic) FastAPI app converted to run natively
 on **Azure Functions** (Python v2 programming model), instead of Uvicorn / Docker.
 

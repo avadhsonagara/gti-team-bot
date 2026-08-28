@@ -1,0 +1,344 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.46.1.21595",
+      "templateHash": "10463045621023222079"
+    }
+  },
+  "parameters": {
+    "functionAppName": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of the Function App to create."
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "Azure region for all resources."
+      }
+    },
+    "storageAccountName": {
+      "type": "string",
+      "defaultValue": "[toLower(format('{0}{1}', take(replace(parameters('functionAppName'), '-', ''), 11), uniqueString(resourceGroup().id, parameters('functionAppName'))))]",
+      "minLength": 3,
+      "maxLength": 24,
+      "metadata": {
+        "description": "Globally-unique Storage Account name (3-24 lowercase alphanumeric characters)."
+      }
+    },
+    "appInsightsName": {
+      "type": "string",
+      "defaultValue": "[format('{0}-insights', parameters('functionAppName'))]",
+      "metadata": {
+        "description": "Name of the Application Insights resource."
+      }
+    },
+    "pythonVersion": {
+      "type": "string",
+      "defaultValue": "3.12",
+      "allowedValues": [
+        "3.9",
+        "3.10",
+        "3.11",
+        "3.12"
+      ],
+      "metadata": {
+        "description": "Python worker runtime version for the Function App."
+      }
+    },
+    "instanceMemoryMB": {
+      "type": "int",
+      "defaultValue": 2048,
+      "allowedValues": [
+        512,
+        2048,
+        4096
+      ],
+      "metadata": {
+        "description": "Per-instance memory (MB) for the Flex Consumption plan."
+      }
+    },
+    "maximumInstanceCount": {
+      "type": "int",
+      "defaultValue": 100,
+      "minValue": 40,
+      "maxValue": 1000,
+      "metadata": {
+        "description": "Maximum scale-out instance count for the Flex Consumption plan."
+      }
+    },
+    "appServicePlanName": {
+      "type": "string",
+      "defaultValue": "[format('{0}-plan', parameters('functionAppName'))]",
+      "metadata": {
+        "description": "Name of the Flex Consumption App Service Plan to use."
+      }
+    },
+    "createAppServicePlan": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Set to false to reuse an existing App Service Plan named appServicePlanName in this resource group, instead of creating a new one. A Function App cannot be moved between Flex Consumption plans in-place, so this must be false when redeploying onto an app that already exists on a different plan."
+      }
+    },
+    "appSettings": {
+      "type": "object",
+      "defaultValue": {},
+      "metadata": {
+        "description": "Non-secret application settings merged onto the Function App (e.g. GTI_API_BASE_URL, LOG_FORMAT)."
+      }
+    },
+    "secureAppSettings": {
+      "type": "secureObject",
+      "defaultValue": {},
+      "metadata": {
+        "description": "Secret application settings merged onto the Function App (e.g. CLIENT_ID, CLIENT_SECRET, TENANT_ID, GTI_API_KEY)."
+      }
+    },
+    "manifestContainerName": {
+      "type": "string",
+      "defaultValue": "teams-manifest",
+      "metadata": {
+        "description": "Blob container that receives the Teams app manifest package."
+      }
+    },
+    "manifestBlobName": {
+      "type": "string",
+      "defaultValue": "teams-app-manifest.zip",
+      "metadata": {
+        "description": "Blob name for the uploaded Teams app manifest zip."
+      }
+    },
+    "manifestZipUrl": {
+      "type": "string",
+      "defaultValue": "https://raw.githubusercontent.com/avadhsonagara/gti-team-bot/main/teams-app-manifest/teams-app-manifest.zip",
+      "metadata": {
+        "description": "URL the Teams app manifest zip is fetched from at deploy time. Defaults to this repo's prebuilt package. Skip the upload by leaving this empty."
+      }
+    },
+    "tags": {
+      "type": "object",
+      "defaultValue": {},
+      "metadata": {
+        "description": "Tags applied to all resources."
+      }
+    },
+    "forceUpdateTag": {
+      "type": "string",
+      "defaultValue": "[utcNow()]",
+      "metadata": {
+        "description": "Forces the manifest-upload deployment script to re-run on every deployment. Microsoft.Resources/deploymentScripts otherwise skips re-execution — and keeps its old environment variables (e.g. a stale storage account name) — when redeployed without this changing."
+      }
+    }
+  },
+  "variables": {
+    "copy": [
+      {
+        "name": "customAppSettingsArray",
+        "count": "[length(items(variables('customAppSettings')))]",
+        "input": {
+          "name": "[items(variables('customAppSettings'))[copyIndex('customAppSettingsArray')].key]",
+          "value": "[items(variables('customAppSettings'))[copyIndex('customAppSettingsArray')].value]"
+        }
+      }
+    ],
+    "deploymentContainerName": "[format('app-package-{0}', toLower(parameters('functionAppName')))]",
+    "customAppSettings": "[union(parameters('appSettings'), parameters('secureAppSettings'))]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Storage/storageAccounts",
+      "apiVersion": "2023-01-01",
+      "name": "[parameters('storageAccountName')]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "kind": "StorageV2",
+      "sku": {
+        "name": "Standard_LRS"
+      },
+      "properties": {
+        "minimumTlsVersion": "TLS1_2",
+        "allowBlobPublicAccess": false,
+        "supportsHttpsTrafficOnly": true
+      }
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/blobServices",
+      "apiVersion": "2023-01-01",
+      "name": "[format('{0}/{1}', parameters('storageAccountName'), 'default')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+      "apiVersion": "2023-01-01",
+      "name": "[format('{0}/{1}/{2}', parameters('storageAccountName'), 'default', variables('deploymentContainerName'))]",
+      "properties": {
+        "publicAccess": "None"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/blobServices', parameters('storageAccountName'), 'default')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+      "apiVersion": "2023-01-01",
+      "name": "[format('{0}/{1}/{2}', parameters('storageAccountName'), 'default', parameters('manifestContainerName'))]",
+      "properties": {
+        "publicAccess": "None"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/blobServices', parameters('storageAccountName'), 'default')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Insights/components",
+      "apiVersion": "2020-02-02",
+      "name": "[parameters('appInsightsName')]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "kind": "web",
+      "properties": {
+        "Application_Type": "web",
+        "Flow_Type": "Bluefield",
+        "Request_Source": "rest"
+      }
+    },
+    {
+      "condition": "[parameters('createAppServicePlan')]",
+      "type": "Microsoft.Web/serverfarms",
+      "apiVersion": "2023-12-01",
+      "name": "[parameters('appServicePlanName')]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "kind": "functionapp",
+      "sku": {
+        "name": "FC1",
+        "tier": "FlexConsumption"
+      },
+      "properties": {
+        "reserved": true
+      }
+    },
+    {
+      "type": "Microsoft.Web/sites",
+      "apiVersion": "2023-12-01",
+      "name": "[parameters('functionAppName')]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "kind": "functionapp,linux",
+      "properties": {
+        "serverFarmId": "[if(parameters('createAppServicePlan'), resourceId('Microsoft.Web/serverfarms', parameters('appServicePlanName')), resourceId('Microsoft.Web/serverfarms', parameters('appServicePlanName')))]",
+        "httpsOnly": true,
+        "siteConfig": {
+          "appSettings": "[concat(createArray(createObject('name', 'AzureWebJobsStorage', 'value', format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix={2}', parameters('storageAccountName'), listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').keys[0].value, environment().suffixes.storage)), createObject('name', 'DEPLOYMENT_STORAGE_CONNECTION_STRING', 'value', format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix={2}', parameters('storageAccountName'), listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').keys[0].value, environment().suffixes.storage)), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference(resourceId('Microsoft.Insights/components', parameters('appInsightsName')), '2020-02-02').ConnectionString)), variables('customAppSettingsArray'))]"
+        },
+        "functionAppConfig": {
+          "deployment": {
+            "storage": {
+              "type": "blobContainer",
+              "value": "[format('{0}{1}', reference(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').primaryEndpoints.blob, variables('deploymentContainerName'))]",
+              "authentication": {
+                "type": "StorageAccountConnectionString",
+                "storageAccountConnectionStringName": "DEPLOYMENT_STORAGE_CONNECTION_STRING"
+              }
+            }
+          },
+          "scaleAndConcurrency": {
+            "maximumInstanceCount": "[parameters('maximumInstanceCount')]",
+            "instanceMemoryMB": "[parameters('instanceMemoryMB')]"
+          },
+          "runtime": {
+            "name": "python",
+            "version": "[parameters('pythonVersion')]"
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/components', parameters('appInsightsName'))]",
+        "[resourceId('Microsoft.Web/serverfarms', parameters('appServicePlanName'))]",
+        "[resourceId('Microsoft.Storage/storageAccounts/blobServices/containers', parameters('storageAccountName'), 'default', variables('deploymentContainerName'))]",
+        "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
+      ]
+    },
+    {
+      "condition": "[not(empty(parameters('manifestZipUrl')))]",
+      "type": "Microsoft.Resources/deploymentScripts",
+      "apiVersion": "2023-08-01",
+      "name": "[format('{0}-manifest-upload', parameters('functionAppName'))]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "kind": "AzureCLI",
+      "properties": {
+        "azCliVersion": "2.60.0",
+        "forceUpdateTag": "[parameters('forceUpdateTag')]",
+        "retentionInterval": "PT1H",
+        "timeout": "PT10M",
+        "cleanupPreference": "OnSuccess",
+        "environmentVariables": [
+          {
+            "name": "STORAGE_ACCOUNT_NAME",
+            "value": "[parameters('storageAccountName')]"
+          },
+          {
+            "name": "STORAGE_ACCOUNT_KEY",
+            "secureValue": "[listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').keys[0].value]"
+          },
+          {
+            "name": "CONTAINER_NAME",
+            "value": "[parameters('manifestContainerName')]"
+          },
+          {
+            "name": "BLOB_NAME",
+            "value": "[parameters('manifestBlobName')]"
+          },
+          {
+            "name": "ZIP_URL",
+            "value": "[parameters('manifestZipUrl')]"
+          }
+        ],
+        "scriptContent": "      set -e\n      curl -fsSL \"$ZIP_URL\" -o /tmp/manifest.zip\n      az storage blob upload \\\n        --account-name \"$STORAGE_ACCOUNT_NAME\" \\\n        --account-key \"$STORAGE_ACCOUNT_KEY\" \\\n        --container-name \"$CONTAINER_NAME\" \\\n        --name \"$BLOB_NAME\" \\\n        --file /tmp/manifest.zip \\\n        --overwrite true\n      echo \"{\\\"blobUploaded\\\": true}\" > $AZ_SCRIPTS_OUTPUT_PATH\n    "
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/blobServices/containers', parameters('storageAccountName'), 'default', parameters('manifestContainerName'))]",
+        "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "functionAppName": {
+      "type": "string",
+      "value": "[parameters('functionAppName')]"
+    },
+    "functionAppDefaultHostName": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Web/sites', parameters('functionAppName')), '2023-12-01').defaultHostName]"
+    },
+    "functionAppMessagingEndpoint": {
+      "type": "string",
+      "value": "[format('https://{0}/api/messages', reference(resourceId('Microsoft.Web/sites', parameters('functionAppName')), '2023-12-01').defaultHostName)]"
+    },
+    "storageAccountName": {
+      "type": "string",
+      "value": "[parameters('storageAccountName')]"
+    },
+    "appInsightsName": {
+      "type": "string",
+      "value": "[parameters('appInsightsName')]"
+    },
+    "manifestContainerUrl": {
+      "type": "string",
+      "value": "[format('{0}{1}', reference(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').primaryEndpoints.blob, parameters('manifestContainerName'))]"
+    },
+    "manifestBlobUrl": {
+      "type": "string",
+      "value": "[format('{0}{1}/{2}', reference(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').primaryEndpoints.blob, parameters('manifestContainerName'), parameters('manifestBlobName'))]"
+    }
+  }
+}

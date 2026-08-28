@@ -1,16 +1,19 @@
 // =============================================================================
 // GTI Teams Bot (Agentic) — Azure Functions infrastructure
 // =============================================================================
+// Source: https://github.com/avadhsonagara/gti-team-bot
+//
 // Provisions a Flex Consumption Python Function App (matching the existing
 // "gti-team-bot" app: kind functionapp,linux, Flex Consumption plan), wires
 // up Application Insights + deployment storage, applies the app's runtime
 // configuration as app settings, and uploads the Teams app manifest package
-// (manifest.json + icons, zipped by the caller) to a blob container in the
-// same storage account.
+// (manifest.json + icons, prebuilt as teams-app-manifest/teams-app-manifest.zip
+// in this repo) to a blob container in the same storage account.
 //
-// The manifest zip itself cannot be built by Bicep (no local file access at
-// deploy time) — pass its contents as base64 via -manifestZipBase64, e.g.
-// using the companion deploy.sh script in this folder.
+// The manifest zip is fetched at deploy time from manifestZipUrl (defaults to
+// this repo's raw GitHub URL) rather than passed as inline content — this is
+// what makes the template usable from the "Deploy to Azure" button, where the
+// caller is filling out a portal form rather than running a local script.
 // =============================================================================
 
 @description('Name of the Function App to create.')
@@ -68,9 +71,8 @@ param manifestContainerName string = 'teams-manifest'
 @description('Blob name for the uploaded Teams app manifest zip.')
 param manifestBlobName string = 'teams-app-manifest.zip'
 
-@description('Base64-encoded contents of the Teams app manifest zip (manifest.json + icons). Skip the upload by leaving this empty.')
-@secure()
-param manifestZipBase64 string = ''
+@description('URL the Teams app manifest zip is fetched from at deploy time. Defaults to this repo\'s prebuilt package. Skip the upload by leaving this empty.')
+param manifestZipUrl string = 'https://raw.githubusercontent.com/avadhsonagara/gti-team-bot/main/teams-app-manifest/teams-app-manifest.zip'
 
 @description('Tags applied to all resources.')
 param tags object = {}
@@ -206,7 +208,7 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
   ]
 }
 
-resource manifestUpload 'Microsoft.Resources/deploymentScripts@2023-08-01' = if (!empty(manifestZipBase64)) {
+resource manifestUpload 'Microsoft.Resources/deploymentScripts@2023-08-01' = if (!empty(manifestZipUrl)) {
   name: '${functionAppName}-manifest-upload'
   location: location
   tags: tags
@@ -235,13 +237,13 @@ resource manifestUpload 'Microsoft.Resources/deploymentScripts@2023-08-01' = if 
         value: manifestBlobName
       }
       {
-        name: 'ZIP_BASE64'
-        secureValue: manifestZipBase64
+        name: 'ZIP_URL'
+        value: manifestZipUrl
       }
     ]
     scriptContent: '''
       set -e
-      echo "$ZIP_BASE64" | base64 -d > /tmp/manifest.zip
+      curl -fsSL "$ZIP_URL" -o /tmp/manifest.zip
       az storage blob upload \
         --account-name "$STORAGE_ACCOUNT_NAME" \
         --account-key "$STORAGE_ACCOUNT_KEY" \
