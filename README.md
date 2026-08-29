@@ -5,16 +5,17 @@
 Click the button above to provision the Azure Bot, Flex Consumption Function App, Storage Account,
 Key Vault, and Application Insights instance in your own Azure subscription, and upload the Teams
 app manifest package to blob storage — no local tools required, and **no app registration to
-create by hand**. The form asks for a Function App name, region, your `GTI_API_KEY`, and instance
-memory/scale settings. Everything else (storage account naming, App Insights, Python version, the
-manifest package location, etc.) is pre-wired with sensible defaults — this simplified form is
-[infra/deploy-button.bicep](infra/deploy-button.bicep), a thin wrapper around the full
-[infra/main.bicep](infra/main.bicep) template.
+create by hand**. The form asks for exactly four things: a Function App name, your `GTI_API_KEY`,
+and instance memory/scale settings. Everything else (region, storage account naming, App Insights,
+Python version, the manifest package location, etc.) is pre-wired with sensible defaults — this
+simplified form is [infra/deploy-button.bicep](infra/deploy-button.bicep), a thin wrapper around
+the full [infra/main.bicep](infra/main.bicep) template.
 
-Region defaults to the target resource group's own recorded location — override it if you're
-redeploying into a resource group whose existing resources (from a prior deployment) live in a
-different region than the group's own location metadata reports, or you'll hit a
-`InvalidResourceLocation` conflict on same-named resources like the App Service Plan.
+Region always defaults to the target resource group's own recorded location and isn't exposed on
+this form. Deploying into a resource group whose existing resources (from a prior deployment) live
+in a *different* region than the group's own location metadata reports will hit an
+`InvalidResourceLocation` conflict on same-named resources like the App Service Plan — use
+[infra/deploy.sh](infra/deploy.sh) instead if you need to override the region explicitly.
 
 There's no `CLIENT_ID` / `CLIENT_SECRET` to supply because the bot authenticates with a
 **User-Assigned Managed Identity** (Azure Bot's `UserAssignedMSI` app type) instead of a classic

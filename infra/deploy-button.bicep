@@ -21,9 +21,6 @@
 @description('Name of the Function App to create.')
 param functionAppName string = 'gti-team-bot'
 
-@description('Azure region for all resources. Defaults to the resource group\'s own recorded location — override this if that differs from where you actually want resources placed (e.g. redeploying into a resource group that already has same-named resources in a different region).')
-param location string = resourceGroup().location
-
 @description('Google Threat Intelligence Agentic API key. Stored as a Key Vault secret, never as a plaintext app setting.')
 @secure()
 param gtiApiKey string
@@ -49,7 +46,6 @@ module main 'main.bicep' = {
   name: 'gti-team-bot-main'
   params: {
     functionAppName: functionAppName
-    location: location
     gtiApiKey: gtiApiKey
     instanceMemoryMB: instanceMemoryMB
     maximumInstanceCount: maximumInstanceCount
