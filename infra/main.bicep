@@ -3,20 +3,28 @@
 // =============================================================================
 // Source: https://github.com/avadhsonagara/gti-team-bot
 //
-// Provisions a Flex Consumption Python Function App (matching the existing
-// "gti-team-bot" app: kind functionapp,linux, Flex Consumption plan), wires
-// up Application Insights + deployment storage, applies the app's runtime
-// configuration as app settings, and builds + uploads the Teams app manifest
-// package to a blob container in the same storage account.
+// Provisions everything the bot needs to run in Azure:
+//   - A Flex Consumption Python Function App hosting the bot code
+//   - An Azure Bot resource wired to that Function App via a User-Assigned
+//     Managed Identity — no app registration or client secret required; the
+//     identity's client ID *is* the bot's App ID (Azure Bot's "UserAssignedMSI"
+//     app type)
+//   - A Key Vault holding GTI_API_KEY, readable by that same identity
+//   - Application Insights + the storage account Flex Consumption needs
+//   - The Teams app manifest package, assembled and uploaded to blob storage
+//     at deploy time (see the "Teams manifest" section below for why)
 //
-// The manifest is assembled at deploy time (not shipped as a static zip):
-// manifest.json + icons are fetched from manifestSourceBaseUrl (defaults to
-// this repo's teams-app-manifest/ folder), manifest.json's id/botId fields
-// are rewritten to this deployment's own bot App ID (only known at deploy
-// time, since it's the Managed Identity created below), then zipped and
-// uploaded — so the sideloadable package always matches the bot this
-// deployment actually created, not a stale ID baked in ahead of time.
+// Two ways to deploy this template:
+//   - infra/deploy-button.bicep: a thin wrapper exposing only functionAppName /
+//     gtiApiKey / instanceMemoryMB / maximumInstanceCount, used by the
+//     "Deploy to Azure" button in the README.
+//   - infra/deploy.sh: full CLI control over every parameter below (custom
+//     naming, reusing an existing storage account or App Service Plan, etc.).
 // =============================================================================
+
+// ---------------------------------------------------------------------------
+// Core
+// ---------------------------------------------------------------------------
 
 @description('Name of the Function App to create.')
 param functionAppName string
@@ -24,13 +32,23 @@ param functionAppName string
 @description('Azure region for all resources.')
 param location string = resourceGroup().location
 
+@description('Tags applied to all resources.')
+param tags object = {}
+
+// ---------------------------------------------------------------------------
+// Compute — Flex Consumption Function App
+// ---------------------------------------------------------------------------
+
 @description('Globally-unique Storage Account name (3-24 lowercase alphanumeric characters).')
 @minLength(3)
 @maxLength(24)
 param storageAccountName string = toLower('${take(replace(functionAppName, '-', ''), 11)}${uniqueString(resourceGroup().id, functionAppName)}')
 
-@description('Name of the Application Insights resource.')
-param appInsightsName string = '${functionAppName}-insights'
+@description('Name of the Flex Consumption App Service Plan to use.')
+param appServicePlanName string = '${functionAppName}-plan'
+
+@description('Set to false to reuse an existing App Service Plan named appServicePlanName in this resource group, instead of creating a new one. A Function App cannot be moved between Flex Consumption plans in-place, so this must be false when redeploying onto an app that already exists on a different plan.')
+param createAppServicePlan bool = true
 
 @description('Python worker runtime version for the Function App.')
 @allowed([
@@ -54,14 +72,15 @@ param instanceMemoryMB int = 2048
 @maxValue(1000)
 param maximumInstanceCount int = 100
 
-@description('Name of the Flex Consumption App Service Plan to use.')
-param appServicePlanName string = '${functionAppName}-plan'
-
-@description('Set to false to reuse an existing App Service Plan named appServicePlanName in this resource group, instead of creating a new one. A Function App cannot be moved between Flex Consumption plans in-place, so this must be false when redeploying onto an app that already exists on a different plan.')
-param createAppServicePlan bool = true
-
 @description('Non-secret application settings merged onto the Function App (e.g. GTI_API_BASE_URL, LOG_FORMAT).')
 param appSettings object = {}
+
+// ---------------------------------------------------------------------------
+// Bot identity & secrets
+// ---------------------------------------------------------------------------
+
+@description('Name of the Azure Bot resource.')
+param botName string = '${functionAppName}-bot'
 
 @description('Microsoft Entra tenant ID for the Azure Bot registration. Defaults to the deployment\'s own tenant.')
 param tenantId string = subscription().tenantId
@@ -75,8 +94,23 @@ param gtiApiKey string
 @maxLength(24)
 param keyVaultName string = toLower('kv-${take(replace(functionAppName, '-', ''), 9)}-${take(uniqueString(resourceGroup().id, functionAppName), 9)}')
 
-@description('Name of the Azure Bot resource.')
-param botName string = '${functionAppName}-bot'
+// ---------------------------------------------------------------------------
+// Observability
+// ---------------------------------------------------------------------------
+
+@description('Name of the Application Insights resource.')
+param appInsightsName string = '${functionAppName}-insights'
+
+// ---------------------------------------------------------------------------
+// Teams manifest
+// ---------------------------------------------------------------------------
+// The manifest package is assembled at deploy time rather than shipped as a
+// static zip: every deployment creates a new bot App ID (the Managed
+// Identity's client ID), so a pre-built zip would always have a stale
+// id/botId baked in. Instead, the deployment script below fetches the raw
+// source files from manifestSourceBaseUrl, rewrites id/botId to this
+// deployment's actual bot App ID, and zips the result — so the sideloadable
+// package always matches the bot this deployment just created.
 
 @description('Blob container that receives the Teams app manifest package.')
 param manifestContainerName string = 'teams-manifest'
@@ -84,24 +118,30 @@ param manifestContainerName string = 'teams-manifest'
 @description('Blob name for the uploaded Teams app manifest zip.')
 param manifestBlobName string = 'teams-app-manifest.zip'
 
-@description('Base URL the Teams app manifest source files (manifest.json, color.png, outline.png) are fetched from at deploy time. Defaults to this repo\'s teams-app-manifest folder. Skip the upload by leaving this empty.')
+@description('Base URL the Teams app manifest source files (manifest.json, color.png, outline.png) are fetched from at deploy time. Defaults to this repo\'s teams-app-manifest folder. Skip the manifest upload entirely by leaving this empty.')
 param manifestSourceBaseUrl string = 'https://raw.githubusercontent.com/avadhsonagara/gti-team-bot/main/teams-app-manifest'
-
-@description('Tags applied to all resources.')
-param tags object = {}
 
 @description('Forces the manifest-upload deployment script to re-run on every deployment. Microsoft.Resources/deploymentScripts otherwise skips re-execution — and keeps its old environment variables (e.g. a stale storage account name) — when redeployed without this changing.')
 param forceUpdateTag string = utcNow()
 
+// ---------------------------------------------------------------------------
+// Variables
+// ---------------------------------------------------------------------------
+
 var deploymentContainerName = 'app-package-${toLower(functionAppName)}'
 var storageConnectionString = 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};AccountKey=${storageAccount.listKeys().keys[0].value};EndpointSuffix=${environment().suffixes.storage}'
 
-// Kept separate from the built-in (storage/App Insights) settings below because those are derived
-// from listKeys(), which cannot be referenced from inside a for-expression.
+// Kept separate from the built-in (storage/App Insights) app settings below
+// because those are derived from listKeys(), which cannot be referenced from
+// inside a for-expression.
 var customAppSettingsArray = [for key in items(appSettings): {
   name: key.key
   value: key.value
 }]
+
+// ---------------------------------------------------------------------------
+// Storage account (Function App deployment storage + Teams manifest blobs)
+// ---------------------------------------------------------------------------
 
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
   name: storageAccountName
@@ -123,6 +163,7 @@ resource blobServices 'Microsoft.Storage/storageAccounts/blobServices@2023-01-01
   name: 'default'
 }
 
+// Flex Consumption's own deployment package storage.
 resource deploymentContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-01-01' = {
   parent: blobServices
   name: deploymentContainerName
@@ -131,6 +172,7 @@ resource deploymentContainer 'Microsoft.Storage/storageAccounts/blobServices/con
   }
 }
 
+// Destination for the Teams manifest zip built by manifestUpload below.
 resource manifestContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-01-01' = {
   parent: blobServices
   name: manifestContainerName
@@ -139,11 +181,23 @@ resource manifestContainer 'Microsoft.Storage/storageAccounts/blobServices/conta
   }
 }
 
+// ---------------------------------------------------------------------------
+// Identity — shared by the Function App, the Azure Bot, and Key Vault access
+// ---------------------------------------------------------------------------
+// A User-Assigned (not System-Assigned) identity is required here: Azure
+// Bot's "UserAssignedMSI" app type needs a stable client ID it can be
+// configured with directly, and the same identity must be attached to the
+// Function App so its runtime can request tokens under that identity.
+
 resource botIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
   name: '${functionAppName}-identity'
   location: location
   tags: tags
 }
+
+// ---------------------------------------------------------------------------
+// Key Vault
+// ---------------------------------------------------------------------------
 
 resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   name: keyVaultName
@@ -169,6 +223,21 @@ resource kvSecretGtiApiKey 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   }
 }
 
+resource kvSecretsUserRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(keyVault.id, botIdentity.id, 'KeyVaultSecretsUser')
+  scope: keyVault
+  properties: {
+    // Built-in "Key Vault Secrets User" role — read-only access to secret values.
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')
+    principalId: botIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Application Insights
+// ---------------------------------------------------------------------------
+
 resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
   name: appInsightsName
   location: location
@@ -180,6 +249,10 @@ resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
     Request_Source: 'rest'
   }
 }
+
+// ---------------------------------------------------------------------------
+// App Service Plan (Flex Consumption)
+// ---------------------------------------------------------------------------
 
 resource appServicePlan 'Microsoft.Web/serverfarms@2023-12-01' = if (createAppServicePlan) {
   name: appServicePlanName
@@ -199,6 +272,10 @@ resource existingAppServicePlan 'Microsoft.Web/serverfarms@2023-12-01' existing 
   name: appServicePlanName
 }
 
+// ---------------------------------------------------------------------------
+// Function App
+// ---------------------------------------------------------------------------
+
 resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
   name: functionAppName
   location: location
@@ -213,6 +290,9 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
   properties: {
     serverFarmId: createAppServicePlan ? appServicePlan.id : existingAppServicePlan.id
     httpsOnly: true
+    // Key Vault references default to the site's System-Assigned identity;
+    // since this app only has a User-Assigned one, it must be named explicitly
+    // or the @Microsoft.KeyVault(...) app setting below silently fails to resolve.
     keyVaultReferenceIdentity: botIdentity.id
     siteConfig: {
       appSettings: concat([
@@ -229,6 +309,9 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
           value: appInsights.properties.ConnectionString
         }
         {
+          // The Teams SDK (microsoft_teams.apps.App) reads CLIENT_ID +
+          // MANAGED_IDENTITY_CLIENT_ID together to authenticate via managed
+          // identity instead of a client secret — see app/teams/bot.py.
           name: 'CLIENT_ID'
           value: botIdentity.properties.clientId
         }
@@ -272,16 +355,9 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
   ]
 }
 
-resource kvSecretsUserRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(keyVault.id, botIdentity.id, 'KeyVaultSecretsUser')
-  scope: keyVault
-  properties: {
-    // Built-in "Key Vault Secrets User" role — read-only access to secret values.
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')
-    principalId: botIdentity.properties.principalId
-    principalType: 'ServicePrincipal'
-  }
-}
+// ---------------------------------------------------------------------------
+// Teams manifest — build and upload
+// ---------------------------------------------------------------------------
 
 resource manifestUpload 'Microsoft.Resources/deploymentScripts@2023-08-01' = if (!empty(manifestSourceBaseUrl)) {
   name: '${functionAppName}-manifest-upload'
@@ -331,9 +407,6 @@ resource manifestUpload 'Microsoft.Resources/deploymentScripts@2023-08-01' = if 
     // The container has no guaranteed HTTP client (curl isn't present in this
     // image), so fetching + zipping runs through python3's stdlib instead —
     // it ships with the Azure CLI image, since az itself is a Python app.
-    // Rewriting manifest.json's id/botId here (rather than shipping a static
-    // pre-built zip) is what makes the package match the bot actually
-    // created by *this* deployment, since its App ID is only known now.
     scriptContent: '''
       set -e
       python3 - "$MANIFEST_JSON_URL" "$COLOR_ICON_URL" "$OUTLINE_ICON_URL" "$BOT_APP_ID" /tmp/manifest.zip <<'PY'
@@ -377,6 +450,10 @@ PY
   ]
 }
 
+// ---------------------------------------------------------------------------
+// Azure Bot
+// ---------------------------------------------------------------------------
+
 resource bot 'Microsoft.BotService/botServices@2022-09-15' = {
   name: botName
   location: 'global'
@@ -403,6 +480,10 @@ resource botTeamsChannel 'Microsoft.BotService/botServices/channels@2022-09-15' 
     channelName: 'MsTeamsChannel'
   }
 }
+
+// ---------------------------------------------------------------------------
+// Outputs
+// ---------------------------------------------------------------------------
 
 output functionAppName string = functionApp.name
 output functionAppDefaultHostName string = functionApp.properties.defaultHostName

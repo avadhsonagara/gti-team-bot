@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.46.1.21595",
-      "templateHash": "3884108933636510113"
+      "templateHash": "2813850205467585365"
     }
   },
   "parameters": {
@@ -85,7 +85,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.46.1.21595",
-              "templateHash": "7604294491830346654"
+              "templateHash": "8312406077072858353"
             }
           },
           "parameters": {
@@ -102,6 +102,13 @@
                 "description": "Azure region for all resources."
               }
             },
+            "tags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Tags applied to all resources."
+              }
+            },
             "storageAccountName": {
               "type": "string",
               "defaultValue": "[toLower(format('{0}{1}', take(replace(parameters('functionAppName'), '-', ''), 11), uniqueString(resourceGroup().id, parameters('functionAppName'))))]",
@@ -111,11 +118,18 @@
                 "description": "Globally-unique Storage Account name (3-24 lowercase alphanumeric characters)."
               }
             },
-            "appInsightsName": {
+            "appServicePlanName": {
               "type": "string",
-              "defaultValue": "[format('{0}-insights', parameters('functionAppName'))]",
+              "defaultValue": "[format('{0}-plan', parameters('functionAppName'))]",
               "metadata": {
-                "description": "Name of the Application Insights resource."
+                "description": "Name of the Flex Consumption App Service Plan to use."
+              }
+            },
+            "createAppServicePlan": {
+              "type": "bool",
+              "defaultValue": true,
+              "metadata": {
+                "description": "Set to false to reuse an existing App Service Plan named appServicePlanName in this resource group, instead of creating a new one. A Function App cannot be moved between Flex Consumption plans in-place, so this must be false when redeploying onto an app that already exists on a different plan."
               }
             },
             "pythonVersion": {
@@ -152,25 +166,18 @@
                 "description": "Maximum scale-out instance count for the Flex Consumption plan."
               }
             },
-            "appServicePlanName": {
-              "type": "string",
-              "defaultValue": "[format('{0}-plan', parameters('functionAppName'))]",
-              "metadata": {
-                "description": "Name of the Flex Consumption App Service Plan to use."
-              }
-            },
-            "createAppServicePlan": {
-              "type": "bool",
-              "defaultValue": true,
-              "metadata": {
-                "description": "Set to false to reuse an existing App Service Plan named appServicePlanName in this resource group, instead of creating a new one. A Function App cannot be moved between Flex Consumption plans in-place, so this must be false when redeploying onto an app that already exists on a different plan."
-              }
-            },
             "appSettings": {
               "type": "object",
               "defaultValue": {},
               "metadata": {
                 "description": "Non-secret application settings merged onto the Function App (e.g. GTI_API_BASE_URL, LOG_FORMAT)."
+              }
+            },
+            "botName": {
+              "type": "string",
+              "defaultValue": "[format('{0}-bot', parameters('functionAppName'))]",
+              "metadata": {
+                "description": "Name of the Azure Bot resource."
               }
             },
             "tenantId": {
@@ -195,11 +202,11 @@
                 "description": "Globally-unique Key Vault name (3-24 characters) used to store gtiApiKey."
               }
             },
-            "botName": {
+            "appInsightsName": {
               "type": "string",
-              "defaultValue": "[format('{0}-bot', parameters('functionAppName'))]",
+              "defaultValue": "[format('{0}-insights', parameters('functionAppName'))]",
               "metadata": {
-                "description": "Name of the Azure Bot resource."
+                "description": "Name of the Application Insights resource."
               }
             },
             "manifestContainerName": {
@@ -220,14 +227,7 @@
               "type": "string",
               "defaultValue": "https://raw.githubusercontent.com/avadhsonagara/gti-team-bot/main/teams-app-manifest",
               "metadata": {
-                "description": "Base URL the Teams app manifest source files (manifest.json, color.png, outline.png) are fetched from at deploy time. Defaults to this repo's teams-app-manifest folder. Skip the upload by leaving this empty."
-              }
-            },
-            "tags": {
-              "type": "object",
-              "defaultValue": {},
-              "metadata": {
-                "description": "Tags applied to all resources."
+                "description": "Base URL the Teams app manifest source files (manifest.json, color.png, outline.png) are fetched from at deploy time. Defaults to this repo's teams-app-manifest folder. Skip the manifest upload entirely by leaving this empty."
               }
             },
             "forceUpdateTag": {
@@ -334,6 +334,21 @@
               ]
             },
             {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName'))]",
+              "name": "[guid(resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName')), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('functionAppName'))), 'KeyVaultSecretsUser')]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')]",
+                "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('functionAppName'))), '2023-01-31').principalId]",
+                "principalType": "ServicePrincipal"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('functionAppName')))]",
+                "[resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName'))]"
+              ]
+            },
+            {
               "type": "Microsoft.Insights/components",
               "apiVersion": "2020-02-02",
               "name": "[parameters('appInsightsName')]",
@@ -410,21 +425,6 @@
                 "[resourceId('Microsoft.Storage/storageAccounts/blobServices/containers', parameters('storageAccountName'), 'default', variables('deploymentContainerName'))]",
                 "[resourceId('Microsoft.KeyVault/vaults/secrets', parameters('keyVaultName'), 'GtiApiKey')]",
                 "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
-              ]
-            },
-            {
-              "type": "Microsoft.Authorization/roleAssignments",
-              "apiVersion": "2022-04-01",
-              "scope": "[resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName'))]",
-              "name": "[guid(resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName')), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('functionAppName'))), 'KeyVaultSecretsUser')]",
-              "properties": {
-                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')]",
-                "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('functionAppName'))), '2023-01-31').principalId]",
-                "principalType": "ServicePrincipal"
-              },
-              "dependsOn": [
-                "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('functionAppName')))]",
-                "[resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName'))]"
               ]
             },
             {

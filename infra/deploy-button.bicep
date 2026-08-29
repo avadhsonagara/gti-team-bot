@@ -14,6 +14,10 @@
 // main.bicep directly via deploy.sh instead.
 // =============================================================================
 
+// ---------------------------------------------------------------------------
+// Parameters shown on the "Deploy to Azure" form
+// ---------------------------------------------------------------------------
+
 @description('Name of the Function App to create.')
 param functionAppName string = 'gti-team-bot'
 
@@ -37,6 +41,10 @@ param instanceMemoryMB int = 2048
 @maxValue(1000)
 param maximumInstanceCount int = 100
 
+// ---------------------------------------------------------------------------
+// Delegate everything else to main.bicep's own defaults
+// ---------------------------------------------------------------------------
+
 module main 'main.bicep' = {
   name: 'gti-team-bot-main'
   params: {
@@ -47,6 +55,10 @@ module main 'main.bicep' = {
     maximumInstanceCount: maximumInstanceCount
   }
 }
+
+// ---------------------------------------------------------------------------
+// Outputs
+// ---------------------------------------------------------------------------
 
 output functionAppName string = main.outputs.functionAppName
 output functionAppMessagingEndpoint string = main.outputs.functionAppMessagingEndpoint
