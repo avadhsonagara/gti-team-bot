@@ -10,101 +10,54 @@ Technical Design Document
 
 ---
 
-[Overview	4](#overview)
-
-[Problem Statement	5](#problem-statement)
-
-[Solution	5](#solution)
-
-[Target Use Cases & Capabilities	6](#target-use-cases-&-capabilities)
-
-[2.1 Supported Functional Modules	6](#2.1-supported-functional-modules)
-
-[2.2 Example Interaction Patterns	7](#2.2-example-interaction-patterns)
-
-[Technical Requirements	8](#technical-requirements)
-
-[Functional Requirements	8](#functional-requirements)
-
-[Conversation Support	8](#conversation-support)
-
-[Data Handling & Response Formatting	8](#data-handling-&-response-formatting)
-
-[Security Controls: PII & Guardrails	8](#security-controls:-pii-&-guardrails)
-
-[Non-Functional Requirements	9](#non-functional-requirements)
-
-[Integration 1: GTI Teams Bot App	10](#integration-1:-gti-teams-bot-app)
-
-[Architecture Diagram	11](#architecture-diagram)
-
-[Activity Diagram	12](#activity-diagram)
-
-[Technology Stack	13](#technology-stack)
-
-[Core Application Components	14](#core-application-components)
-
-[Application Entry Point & Web Server	14](#application-entry-point-&-web-server)
-
-[Centralized Configuration	14](#centralized-configuration)
-
-[GTI Agentic Pipeline	14](#gti-agentic-pipeline)
-
-[System Prompt Template	15](#system-prompt-template)
-
-[Teams Activity & Event Handlers	15](#teams-activity-&-event-handlers)
-
-[Shared Utilities	16](#shared-utilities)
-
-[Security Pipeline	17](#security-pipeline)
-
-[Why We Don't Publish the Bot to the Public Teams Marketplace	17](#why-we-dont-publish-the-bot-to-the-public-teams-marketplace)
-
-[Prompt-Based Guardrails	17](#prompt-based-guardrails)
-
-[Built-in Regex PII Filter	17](#built-in-regex-pii-filter)
-
-[Azure Bot Service & Tenant Verification	17](#azure-bot-service-&-tenant-verification)
-
-[Observability and Logging	18](#observability-and-logging)
-
-[Structured Logging	18](#structured-logging)
-
-[Per-Request Context	18](#per-request-context)
-
-[**Integration 2: RSA Notifications	19**](#integration-2:-rsa-notifications)
-
-[RSA Architecture Diagram	19](#rsa-architecture-diagram)
-
-[RSA Implementation Detail	20](#rsa-implementation-detail)
-
-[Alert Filtering and Batching	20](#alert-filtering-and-batching)
-
-[Filter Dimensions	20](#filter-dimensions)
-
-[Batching	21](#batching)
-
-[Alert Formatting	21](#alert-formatting)
-
-[State Management	21](#state-management)
-
-[Deployment (Azure Bicep / Terraform)	22](#deployment-\(azure-bicep-\/-terraform\))
-
-[Feature Flags & Configuration Parameters	22](#feature-flags-&-configuration-parameters)
-
-[Infrastructure Resources	22](#infrastructure-resources)
-
-[Deployment Procedure	24](#deployment-procedure)
-
-[Approach B: Azure Native Deployment (Target)	24](#approach-b:-azure-native-deployment-\(target\))
-
-[Approach A: GCP Cloud Run Deployment (Reference)	25](#approach-a:-gcp-cloud-run-deployment-\(reference\))
-
-[Step: Teams App Manifest Installation	25](#step:-teams-app-manifest-installation)
-
-[Limitations	26](#limitations)
-
-[References	27](#references)
+- [Overview](#overview)
+- [Problem Statement](#problem-statement)
+- [Solution](#solution)
+- [Target Use Cases & Capabilities](#target-use-cases--capabilities)
+  - [2.1 Supported Functional Modules](#21-supported-functional-modules)
+  - [2.2 Example Interaction Patterns](#22-example-interaction-patterns)
+- [Technical Requirements](#technical-requirements)
+  - [Functional Requirements](#functional-requirements)
+    - [Conversation Support](#conversation-support)
+    - [Data Handling & Response Formatting](#data-handling--response-formatting)
+    - [Security Controls: PII & Guardrails](#security-controls-pii--guardrails)
+  - [Non-Functional Requirements](#non-functional-requirements)
+- [Integration 1: GTI Teams Bot App](#integration-1-gti-teams-bot-app)
+  - [Architecture Diagram](#architecture-diagram)
+  - [Activity Diagram](#activity-diagram)
+  - [Technology Stack](#technology-stack)
+  - [Core Application Components](#core-application-components)
+    - [Application Entry Point & Web Server](#application-entry-point--web-server)
+    - [Centralized Configuration](#centralized-configuration)
+    - [GTI Agentic Pipeline](#gti-agentic-pipeline)
+    - [System Prompt Template](#system-prompt-template)
+    - [Teams Activity & Event Handlers](#teams-activity--event-handlers)
+    - [Shared Utilities](#shared-utilities)
+- [Security Pipeline](#security-pipeline)
+  - [Why We Don't Publish the Bot to the Public Teams Marketplace](#why-we-dont-publish-the-bot-to-the-public-teams-marketplace)
+  - [Prompt-Based Guardrails](#prompt-based-guardrails)
+  - [Built-in Regex PII Filter](#built-in-regex-pii-filter)
+  - [Azure Bot Service & Tenant Verification](#azure-bot-service--tenant-verification)
+- [Observability and Logging](#observability-and-logging)
+  - [Structured Logging](#structured-logging)
+  - [Per-Request Context](#per-request-context)
+- [Integration 2: RSA Notifications](#integration-2-rsa-notifications)
+  - [RSA Architecture Diagram](#rsa-architecture-diagram)
+  - [RSA Implementation Detail](#rsa-implementation-detail)
+  - [Alert Filtering and Batching](#alert-filtering-and-batching)
+    - [Filter Dimensions](#filter-dimensions)
+    - [Batching](#batching)
+    - [Alert Formatting](#alert-formatting)
+  - [State Management](#state-management)
+- [Deployment (Azure Bicep / Terraform)](#deployment-azure-bicep--terraform)
+  - [Feature Flags & Configuration Parameters](#feature-flags--configuration-parameters)
+  - [Infrastructure Resources](#infrastructure-resources)
+  - [Deployment Procedure](#deployment-procedure)
+    - [Approach B: Azure Native Deployment (Target)](#approach-b-azure-native-deployment-target)
+    - [Approach A: GCP Cloud Run Deployment (Reference)](#approach-a-gcp-cloud-run-deployment-reference)
+    - [Step: Teams App Manifest Installation](#step-teams-app-manifest-installation)
+- [Limitations](#limitations)
+- [References](#references)
 
 # 
 
@@ -277,113 +230,116 @@ The GTI Teams Bot App is a **FastAPI + ASGI** HTTPS application deployed on **Az
 **Approach B: Azure Native Hosting (Target Architecture)**
 
 ```
-┌────────────────────────────────────────────────────────────────────────┐
-│                        Microsoft Teams Clients                         │
-└────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│             Azure Bot Service (Bot Framework Channel Proxy)             │
-│            • Authenticates Teams activities via Entra ID               │
-│            • Routes HTTPS payload to Function App endpoint             │
-└────────────────────────────────────────────────────────────────────────┘
-                                    │  HTTPS POST /api/messages
-                                    ▼  (User-Assigned Managed Identity Auth)
-┌────────────────────────────────────────────────────────────────────────┐
-│              Azure Functions Backend (Flex Consumption)                │
-│                                                                        │
-│  ┌─────────────────────────┐           ┌────────────────────────────┐  │
-│  │   FastAPI ASGI Router   │           │    Azure Key Vault Client   │  │
-│  │  • /api/messages        │──────────►│  • Loads GTI_API_KEY       │  │
-│  │  • /health, /status     │           │  • Zero static credentials │  │
-│  └───────────┬─────────────┘           └────────────────────────────┘  │
-│              │                                                         │
-│              ▼                                                         │
-│  ┌──────────────────────────────────────────────────────────────────┐  │
-│  │                     GTI Agentic Client Module                    │  │
-│  │  • Assembles prompt with system guardrails & formatting rules    │  │
-│  │  • HTTP connection pooling (FastAPI lifespan httpx.AsyncClient)  │  │
-│  │  • Tenacity-based exponential backoff for 429/5xx retry handling │  │
-│  └───────────────────────────────────┬──────────────────────────────┘  │
-│                                      │                                 │
-│                                      ▼                                 │
-│  ┌──────────────────────────────────────────────────────────────────┐  │
-│  │                     Adaptive Card Builder                        │  │
-│  │  • Converts GTI markdown synthesis to Adaptive Card JSON schema   │  │
-│  │  • Attaches severity badges, verdict gauge, and deep link buttons│  │
-│  └──────────────────────────────────────────────────────────────────┘  │
-└────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼ HTTPS POST x-apikey
-┌────────────────────────────────────────────────────────────────────────┐
-│             Google Threat Intelligence (GTI) Agentic API                │
-│                    POST /agentspace/sessions/{session_id}              │
-│       • Hosted autonomous AI agent executes tool lookups & synthesis    │
-└────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────┐
+│           Microsoft Teams Client             │
+└──────────────────────┬───────────────────────┘
+                       │
+                       ▼
+┌──────────────────────────────────────────────┐
+│              Azure Bot Service               │
+│   (Bot Framework Proxy / Authentication)     │
+└──────────────────────┬───────────────────────┘
+                       │ HTTPS POST /api/messages
+                       ▼ (Managed Identity)
+┌──────────────────────────────────────────────┐
+│       Azure Functions (Flex Backend)         │
+│                                              │
+│  ┌────────────────────────────────────────┐  │
+│  │          FastAPI ASGI Router           │  │
+│  │      • /api/messages  • /health        │  │
+│  └───────────────────┬────────────────────┘  │
+│                      │                       │
+│                      ▼                       │
+│  ┌────────────────────────────────────────┐  │
+│  │        Azure Key Vault Client          │  │
+│  │      • Secure GTI_API_KEY Ingestion    │  │
+│  └───────────────────┬────────────────────┘  │
+│                      │                       │
+│                      ▼                       │
+│  ┌────────────────────────────────────────┐  │
+│  │        GTI Agent Client Module         │  │
+│  │      • Prompt Assembly & Guardrails    │  │
+│  │      • Connection Pool & Retries       │  │
+│  └───────────────────┬────────────────────┘  │
+│                      │                       │
+│                      ▼                       │
+│  ┌────────────────────────────────────────┐  │
+│  │         Adaptive Card Builder          │  │
+│  │      • Threat Verdict & Risk Gauge     │  │
+│  └────────────────────────────────────────┘  │
+└──────────────────────┬───────────────────────┘
+                       │ HTTPS POST x-apikey
+                       ▼
+┌──────────────────────────────────────────────┐
+│        Google Threat Intelligence (GTI)      │
+│               Agentic Sessions API           │
+│      POST /agentspace/sessions/{session_id}  │
+└──────────────────────────────────────────────┘
 ```
 
 **Approach A: GCP Cloud Run Hosting (Reference Architecture)**
 
 ```
-┌────────────────────────────────────────────────────────────────────────┐
-│                        Microsoft Teams Clients                         │
-└────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│             Azure Bot Service (Bot Framework Channel Proxy)             │
-└────────────────────────────────────────────────────────────────────────┘
-                                    │  HTTPS POST /api/messages
-                                    ▼  (OIDC / App Secret Auth)
-┌────────────────────────────────────────────────────────────────────────┐
-│                   GCP Cloud Run Service (FastAPI)                      │
-│                                                                        │
-│  ┌─────────────────────────┐           ┌────────────────────────────┐  │
-│  │    FastAPI via a2wsgi   │──────────►│    GCP Secret Manager      │  │
-│  │  • /api/messages        │           │  • GTI_API_KEY & Secrets   │  │
-│  └───────────┬─────────────┘           └────────────────────────────┘  │
-│              │                                                         │
-│              ▼                                                         │
-│  ┌──────────────────────────────────────────────────────────────────┐  │
-│  │            GTI Agentic Pipeline & Adaptive Card Builder          │  │
-│  └───────────────────────────────────┬──────────────────────────────┘  │
-└────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼ HTTPS POST x-apikey
-┌────────────────────────────────────────────────────────────────────────┐
-│             Google Threat Intelligence (GTI) Agentic API                │
-└────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────┐
+│           Microsoft Teams Client             │
+└──────────────────────┬───────────────────────┘
+                       │
+                       ▼
+┌──────────────────────────────────────────────┐
+│              Azure Bot Service               │
+│   (Bot Framework Proxy / Authentication)     │
+└──────────────────────┬───────────────────────┘
+                       │ HTTPS POST /api/messages
+                       ▼ (OIDC / App Secret)
+┌──────────────────────────────────────────────┐
+│         GCP Cloud Run Service (FastAPI)      │
+│                                              │
+│  ┌────────────────────────────────────────┐  │
+│  │           FastAPI via a2wsgi           │  │
+│  │      • /api/messages  • /health        │  │
+│  └───────────────────┬────────────────────┘  │
+│                      │                       │
+│                      ▼                       │
+│  ┌────────────────────────────────────────┐  │
+│  │          GCP Secret Manager            │  │
+│  │      • Loads GTI_API_KEY Secret        │  │
+│  └───────────────────┬────────────────────┘  │
+│                      │                       │
+│                      ▼                       │
+│  ┌────────────────────────────────────────┐  │
+│  │   GTI Agent Pipeline & Card Builder    │  │
+│  └────────────────────────────────────────┘  │
+└──────────────────────┬───────────────────────┘
+                       │ HTTPS POST x-apikey
+                       ▼
+┌──────────────────────────────────────────────┐
+│        Google Threat Intelligence (GTI)      │
+│               Agentic Sessions API           │
+└──────────────────────────────────────────────┘
 ```
 
 ### **Activity Diagram**
 
 ```
-Analyst (Teams)       Azure Bot Service       Bot Backend (FastAPI)          GTI Sessions API
-      │                       │                         │                           │
-      │── 1. @GTI query ─────►│                         │                           │
-      │   "Analyze 8.8.8.8"   │── 2. POST /api/messages►│                           │
-      │                       │      (Activity Payload) │                           │
-      │                       │                         │── 3. Validate Token & PII │
-      │                       │                         │                           │
-      │                       │◄── 4. Send Placeholder ─│                           │
-      │◄── 5. Show "⏳..." ───│      Card Activity      │                           │
-      │                       │                         │                           │
-      │                       │                         │── 6. POST /sessions ─────►│
-      │                       │                         │      (Prompt + API Key)   │
-      │                       │                         │                           │
-      │                       │                         │                           │ (GTI Agent executes
-      │                       │                         │                           │  internal VT tools &
-      │                       │                         │                           │  synthesizes data)
-      │                       │                         │                           │
-      │                       │                         │◄── 7. Stream Response ────│
-      │                       │                         │       (Threat Verdict)    │
-      │                       │                         │                           │
-      │                       │                         │── 8. Build Adaptive Card  │
-      │                       │                         │                           │
-      │                       │◄── 9. Update Activity ──│                           │
-      │                       │      (Replace "⏳" card)│                           │
-      │◄── 10. Render Card ───│                         │                           │
-      │    (Verdict & Links)  │                         │                           │
+Analyst            Azure Bot Svc       Bot Backend        GTI Sessions API
+   │                     │                  │                     │
+   │── 1. @GTI query ───►│                  │                     │
+   │   "Analyze 8.8.8.8" │── 2. Activity ──►│                     │
+   │                     │                  │── 3. Validate Token │
+   │                     │                  │      & PII Filter   │
+   │                     │◄── 4. Placehldr ─│                     │
+   │◄── 5. Show "⏳..." ─│      Card        │                     │
+   │                     │                  │── 6. Query Prompt ─►│
+   │                     │                  │      (API Key)      │
+   │                     │                  │                     │ (GTI Agent
+   │                     │                  │                     │  executes
+   │                     │                  │                     │  tools)
+   │                     │                  │◄── 7. Verdict ──────│
+   │                     │                  │                     │
+   │                     │                  │── 8. Build Card     │
+   │                     │◄── 9. Update Msg │                     │
+   │◄── 10. Final Card ──│      (In-place)  │                     │
+   │    (Verdict/Links)  │                  │                     │
 ```
 
 ### **Technology Stack**
@@ -548,23 +504,28 @@ RSA Notifications is an automated integration that fetches GTI threat alerts on 
 ### **RSA Architecture Diagram**
 
 ```
-┌───────────────────────────────┐
-│     Scheduled Timer Trigger   │ (e.g. Every 15 minutes)
-└───────────────┬───────────────┘
-                │
-                ▼
-┌───────────────────────────────┐       ┌───────────────────────────────┐
-│     Alert Poller Service      │◄─────►│    Azure Blob / Firestore     │
-│   (Azure Function / GCP CR)   │       │  (Reads/Writes cursor.json)   │
-└───────────────┬───────────────┘       └───────────────────────────────┘
-                │
-                ├──────────────────────────────────────┐
-                │ 1. Query Alerts (updateTime > cursor)│
-                ▼                                      ▼
-┌───────────────────────────────┐       ┌───────────────────────────────┐
-│        GTI Alerts API         │       │   Teams Channel (Bot API)     │
-│  (Fetches matching events)    │       │  (Posts Adaptive Alert Cards) │
-└───────────────────────────────┘       └───────────────────────────────┘
+┌──────────────────────────────────────────────┐
+│           Scheduled Timer Trigger            │
+│            (e.g., Every 15 mins)             │
+└──────────────────────┬───────────────────────┘
+                       │
+                       ▼
+┌──────────────────────────────────────────────┐
+│             Alert Poller Service             │
+│      (Azure Function / GCP Cloud Run)        │
+└───────────┬──────────────────────┬───────────┘
+            │                      │
+            ▼ (Read/Write)         ▼ (Query new)
+┌───────────────────────┐  ┌───────────────────┐
+│     State Storage     │  │  GTI Alerts API   │
+│  Azure Blob/Firestore │  │  (Fetch events)   │
+│    (cursor.json)      │  └─────────┬─────────┘
+└───────────────────────┘            │
+                                     ▼ (Post Cards)
+                           ┌───────────────────┐
+                           │   Teams Channel   │
+                           │ (Adaptive Cards)  │
+                           └───────────────────┘
 ```
 
 ### **RSA Implementation Detail**
@@ -748,4 +709,4 @@ terraform apply \
 * [GCP Cloud Run Documentation](https://cloud.google.com/run/docs)  
 * [Terraform Azure & Google Provider Documentation](https://registry.terraform.io/)  
 
-[image1]: <data:image/png;base64,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>
+[image1]: <data:image/png;base64,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>
