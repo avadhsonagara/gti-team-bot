@@ -90,28 +90,47 @@ We intentionally do **not** publish this bot as a public, multi-tenant app on th
 
 For organizations hosting their workloads in Google Cloud:
 
-```
-Microsoft Teams
-      │
-      ▼
- Azure Bot Service
-      │
-      ▼
- GCP Cloud Run (Bot Backend)  ◄──►  GCP Secret Manager (GTI API Key)
-      │                        ◄──►  Firestore (Checkpoints & Settings)
-      ▼
- GTI Agentic API (Google Threat Intelligence /agentspace/sessions/{session_id})
+```mermaid
+graph TD
+    subgraph MS[Microsoft Ecosystem]
+        Teams[Microsoft Teams]
+        BotSvc[Azure Bot Service]
+        AD[Entra ID App Registration]
+    end
 
- GCP Cloud Run Function (Alert Poller)  ◄──►  Firestore (Checkpoint Cursor)
-      │
-      ▼
- Microsoft Teams Channel Webhook
+    subgraph GC[Google Cloud Platform]
+        CloudRunBot[GCP Cloud Run<br>Bot Backend]
+        CloudRunAlerts[GCP Cloud Run<br>Alert Poller]
+        SecretManager[(GCP Secret Manager<br>API Keys)]
+        Firestore[(Firestore<br>State & Settings)]
+        Scheduler((Cloud Scheduler))
+    end
+
+    subgraph API[External APIs]
+        GTI[Google Threat Intelligence<br>Agentic API]
+    end
+
+    Teams -- Messages --> BotSvc
+    BotSvc -- Webhook POST --> CloudRunBot
+    CloudRunBot -- Auth --> AD
+    CloudRunBot -- Fetch Secrets --> SecretManager
+    CloudRunBot -- Analyze Threat --> GTI
+
+    Scheduler -- Trigger --> CloudRunAlerts
+    CloudRunAlerts -- Read/Write Cursor --> Firestore
+    CloudRunAlerts -- Fetch Secrets --> SecretManager
+    CloudRunAlerts -- Poll Alerts --> GTI
+    CloudRunAlerts -- Post Alert Cards --> Teams
 ```
 
 - **Compute:** GCP Cloud Run runs the interactive bot backend as an auto-scaling container service.
-- **Secrets Management:** The GTI API key is stored securely in **GCP Secret Manager** and provided to the application securely at startup.
+- **Secrets Management:** The GTI API key and Microsoft Client Secret are stored securely in **GCP Secret Manager** and provided to the application securely at startup.
 - **State Storage:** **Firestore** stores configuration settings and alert tracking cursors.
 - **Infrastructure as Code:** Automated with Terraform templates.
+
+**Limitations:**
+- **Cross-Cloud Dependency:** Demands infrastructure in both Azure (Bot Service, Entra ID) and GCP (Cloud Run). This requires managing Client Secrets to authenticate across clouds, rather than utilizing passwordless identities.
+- **Deployment Complexity:** The Terraform module must authenticate to both clouds simultaneously (`gcloud auth` and `az login`) to provision the setup end-to-end, requiring the deployer to have cross-cloud administrative permissions.
 
 ---
 
@@ -119,19 +138,37 @@ Microsoft Teams
 
 For organizations whose primary cloud ecosystem is Microsoft Azure:
 
-```
-Microsoft Teams
-      │
-      ▼
- Azure Bot Service  ◄── User-Assigned Managed Identity (Secure authentication without secrets)
-      │
-      ▼
- Azure Functions (Python)  ◄──►  Azure Key Vault (Secure GTI API Key storage)
-      │                     ◄──►  Application Insights (Logs & Health Monitoring)
-      ▼
- GTI Agentic API (Google Threat Intelligence /agentspace/sessions/{session_id})
+```mermaid
+graph TD
+    subgraph MS[Microsoft Ecosystem]
+        Teams[Microsoft Teams]
+        BotSvc[Azure Bot Service]
+        Identity[User-Assigned<br>Managed Identity]
+    end
 
- Azure Blob Storage  ← Teams App Manifest Archive & Alert Checkpoints
+    subgraph AZ[Microsoft Azure]
+        AzFuncBot[Azure Functions<br>Bot Backend]
+        AzFuncAlerts[Azure Functions<br>Timer Trigger]
+        KeyVault[(Azure Key Vault<br>GTI API Key)]
+        BlobStorage[(Azure Blob Storage<br>Checkpoints & Zips)]
+        AppInsights((Application Insights))
+    end
+
+    subgraph API[External APIs]
+        GTI[Google Threat Intelligence<br>Agentic API]
+    end
+
+    Teams -- Messages --> BotSvc
+    BotSvc -- Passwordless Auth --> Identity
+    Identity -. Grants Access .-> AzFuncBot
+    AzFuncBot -- Fetch Secrets --> KeyVault
+    AzFuncBot -- Telemetry --> AppInsights
+    AzFuncBot -- Analyze Threat --> GTI
+
+    AzFuncAlerts -- Read/Write Cursor --> BlobStorage
+    AzFuncAlerts -- Fetch Secrets --> KeyVault
+    AzFuncAlerts -- Poll Alerts --> GTI
+    AzFuncAlerts -- Post Alert Cards --> Teams
 ```
 
 - **Compute:** **Azure Functions (Flex Consumption, Python)** hosts the bot application. It scales on demand and executes requests rapidly with zero idle infrastructure cost.
@@ -139,7 +176,11 @@ Microsoft Teams
 - **Secret Protection:** The `GTI_API_KEY` is stored in **Azure Key Vault**. Azure Functions reads the key securely at runtime using its Managed Identity with the Key Vault Secrets User role.
 - **Blob Storage:** An **Azure Storage Account** stores the deployment package, the generated Teams app manifest archive, and alert tracking checkpoints.
 - **Monitoring & Observability:** **Application Insights** automatically collects performance metrics, error rates, and end-to-end request tracking IDs.
-- **Automated Infrastructure:** Full setup is automated using Azure Bicep templates, supporting single-command deployments and one-click deployment buttons.
+- **Automated Infrastructure:** Full setup is automated using Azure Bicep templates, supporting single-command deployments.
+
+**Limitations:**
+- **Platform Lock-in:** The architecture is tightly coupled to Azure-specific features (e.g., Managed Identities, Key Vault references, Flex Consumption scaling models, and Application Insights).
+- **Deployment Speed:** Azure Functions Flex Consumption deployments (which rely on remote build processes and zip deployments) can take longer to build and start compared to standard containerized deployments like GCP Cloud Run.
 
 ---
 
