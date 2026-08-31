@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.46.1.21595",
-      "templateHash": "5069927753322192869"
+      "templateHash": "12312654851244559910"
     }
   },
   "parameters": {
@@ -54,11 +54,11 @@
         "description": "Add RS Alerts to this Team: provisions a second, background Function App that polls Google Threat Intelligence alerts and posts them into a Teams channel. Set to \"Yes\" to also fill in the two fields below."
       }
     },
-    "rsAlertsTeamsChannelId": {
+    "rsAlertsChannelIdOrChannelLink": {
       "type": "string",
       "defaultValue": "",
       "metadata": {
-        "description": "Teams channel link or ID (19:xxx@thread.tacv2) that RS Alerts posts GTI alerts into. Required when \"Add RS Alerts to this Team\" is Yes."
+        "description": "The Teams channel RS Alerts posts GTI alerts into. Paste either the channel link (right-click the channel -> Get link to channel) or its bare ID (19:xxx@thread.tacv2). Required when \"Add RS Alerts to this Team\" is Yes."
       }
     },
     "rsAlertsGtiProject": {
@@ -96,7 +96,7 @@
             "value": "[equals(parameters('addRsAlerts'), 'Yes')]"
           },
           "rsAlertsTeamsChannelId": {
-            "value": "[parameters('rsAlertsTeamsChannelId')]"
+            "value": "[parameters('rsAlertsChannelIdOrChannelLink')]"
           },
           "rsAlertsGtiProject": {
             "value": "[parameters('rsAlertsGtiProject')]"

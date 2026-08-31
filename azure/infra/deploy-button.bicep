@@ -45,8 +45,8 @@ param maximumInstanceCount int = 100
 ])
 param addRsAlerts string = 'No'
 
-@description('Teams channel link or ID (19:xxx@thread.tacv2) that RS Alerts posts GTI alerts into. Required when "Add RS Alerts to this Team" is Yes.')
-param rsAlertsTeamsChannelId string = ''
+@description('The Teams channel RS Alerts posts GTI alerts into. Paste either the channel link (right-click the channel -> Get link to channel) or its bare ID (19:xxx@thread.tacv2). Required when "Add RS Alerts to this Team" is Yes.')
+param rsAlertsChannelIdOrChannelLink string = ''
 
 @description('GTI project ID for RS Alerts, from the Alerts URL (...&project=projects/<id>). Required when "Add RS Alerts to this Team" is Yes.')
 param rsAlertsGtiProject string = ''
@@ -63,7 +63,7 @@ module main 'main.bicep' = {
     instanceMemoryMB: instanceMemoryMB
     maximumInstanceCount: maximumInstanceCount
     enableRsAlerts: addRsAlerts == 'Yes'
-    rsAlertsTeamsChannelId: rsAlertsTeamsChannelId
+    rsAlertsTeamsChannelId: rsAlertsChannelIdOrChannelLink
     rsAlertsGtiProject: rsAlertsGtiProject
   }
 }
