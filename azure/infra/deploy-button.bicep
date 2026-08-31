@@ -38,6 +38,19 @@ param instanceMemoryMB int = 2048
 @maxValue(1000)
 param maximumInstanceCount int = 100
 
+@description('Add RS Alerts to this Team: provisions a second, background Function App that polls Google Threat Intelligence alerts and posts them into a Teams channel. Set to "Yes" to also fill in the two fields below.')
+@allowed([
+  'No'
+  'Yes'
+])
+param addRsAlerts string = 'No'
+
+@description('Teams channel link or ID (19:xxx@thread.tacv2) that RS Alerts posts GTI alerts into. Required when "Add RS Alerts to this Team" is Yes.')
+param rsAlertsTeamsChannelId string = ''
+
+@description('GTI project ID for RS Alerts, from the Alerts URL (...&project=projects/<id>). Required when "Add RS Alerts to this Team" is Yes.')
+param rsAlertsGtiProject string = ''
+
 // ---------------------------------------------------------------------------
 // Delegate everything else to main.bicep's own defaults
 // ---------------------------------------------------------------------------
@@ -49,6 +62,9 @@ module main 'main.bicep' = {
     gtiApiKey: gtiApiKey
     instanceMemoryMB: instanceMemoryMB
     maximumInstanceCount: maximumInstanceCount
+    enableRsAlerts: addRsAlerts == 'Yes'
+    rsAlertsTeamsChannelId: rsAlertsTeamsChannelId
+    rsAlertsGtiProject: rsAlertsGtiProject
   }
 }
 
@@ -62,3 +78,5 @@ output botName string = main.outputs.botName
 output botAppId string = main.outputs.botAppId
 output keyVaultName string = main.outputs.keyVaultName
 output manifestBlobUrl string = main.outputs.manifestBlobUrl
+output rsAlertsEnabled bool = main.outputs.rsAlertsEnabled
+output rsAlertsFunctionAppName string = main.outputs.rsAlertsFunctionAppName

@@ -32,6 +32,18 @@
     "manifestBlobName": {
       "value": "teams-app-manifest.zip"
     },
+    "enableRsAlerts": {
+      "value": false
+    },
+    "rsAlertsTeamsChannelId": {
+      "value": ""
+    },
+    "rsAlertsGtiProject": {
+      "value": ""
+    },
+    "rsAlertsSchedule": {
+      "value": "0 */15 * * * *"
+    },
     "tags": {
       "value": {
         "app": "gti-team-bot",

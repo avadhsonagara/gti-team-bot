@@ -125,6 +125,59 @@ param manifestSourceBaseUrl string = 'https://raw.githubusercontent.com/avadhson
 param forceUpdateTag string = utcNow()
 
 // ---------------------------------------------------------------------------
+// RS Alerts — optional background Function App (GTI Alerts -> Teams)
+// ---------------------------------------------------------------------------
+// A second, independently-deployed Function App (source: ../rs-alerts) that
+// polls the GTI List Alerts API on a timer and posts new alerts as Adaptive
+// Cards to a Teams channel via the Bot Framework Connector API. It's fully
+// optional and off by default — set enableRsAlerts to true (the "Yes" toggle
+// on the Deploy to Azure form) to provision it alongside the main bot. It
+// reuses the same bot identity (so it can call the Bot Framework Connector
+// API and read Key Vault via the same "Key Vault Secrets User" role
+// assignment), the same GTI_API_KEY secret, storage account, and
+// Application Insights instance — only its own deployment container, state
+// container, App Service Plan, and Function App are created separately.
+
+@description('Set to true to provision RS Alerts: a background, timer-triggered Function App that posts new Google Threat Intelligence alerts to a Teams channel.')
+param enableRsAlerts bool = false
+
+@description('Name of the RS Alerts Function App. Only used when enableRsAlerts is true.')
+param rsAlertsFunctionAppName string = '${functionAppName}-rs-alerts'
+
+@description('Name of the RS Alerts Flex Consumption App Service Plan. Only used when enableRsAlerts is true.')
+param rsAlertsAppServicePlanName string = '${rsAlertsFunctionAppName}-plan'
+
+@description('Teams channel link or ID (19:xxx@thread.tacv2) that RS Alerts posts GTI alerts into. Required when enableRsAlerts is true.')
+param rsAlertsTeamsChannelId string = ''
+
+@description('GTI project ID for RS Alerts, from the Alerts URL (...&project=projects/<id>). Required when enableRsAlerts is true.')
+param rsAlertsGtiProject string = ''
+
+@description('NCRONTAB schedule RS Alerts polls GTI on. Default: every 15 minutes.')
+param rsAlertsSchedule string = '0 */15 * * * *'
+
+@description('Days of GTI alert history to backfill on RS Alerts\' first run (max 7).')
+@minValue(1)
+@maxValue(7)
+param rsAlertsBackfillDays int = 7
+
+@description('Per-instance memory (MB) for the RS Alerts Flex Consumption plan.')
+@allowed([
+  512
+  2048
+  4096
+])
+param rsAlertsInstanceMemoryMB int = 512
+
+@description('Maximum scale-out instance count for the RS Alerts Flex Consumption plan.')
+@minValue(40)
+@maxValue(1000)
+param rsAlertsMaximumInstanceCount int = 40
+
+@description('Additional non-secret application settings merged onto the RS Alerts Function App (e.g. FILTER_SEVERITY_LEVEL).')
+param rsAlertsAppSettings object = {}
+
+// ---------------------------------------------------------------------------
 // Variables
 // ---------------------------------------------------------------------------
 
@@ -135,6 +188,13 @@ var storageConnectionString = 'DefaultEndpointsProtocol=https;AccountName=${stor
 // because those are derived from listKeys(), which cannot be referenced from
 // inside a for-expression.
 var customAppSettingsArray = [for key in items(appSettings): {
+  name: key.key
+  value: key.value
+}]
+
+var rsAlertsDeploymentContainerName = 'app-package-${toLower(rsAlertsFunctionAppName)}'
+var rsAlertsStateContainerName = 'rs-alerts-state'
+var rsAlertsCustomAppSettingsArray = [for key in items(rsAlertsAppSettings): {
   name: key.key
   value: key.value
 }]
@@ -176,6 +236,24 @@ resource deploymentContainer 'Microsoft.Storage/storageAccounts/blobServices/con
 resource manifestContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-01-01' = {
   parent: blobServices
   name: manifestContainerName
+  properties: {
+    publicAccess: 'None'
+  }
+}
+
+// RS Alerts' own deployment package storage and cursor state container —
+// only created when enableRsAlerts is true.
+resource rsAlertsDeploymentContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-01-01' = if (enableRsAlerts) {
+  parent: blobServices
+  name: rsAlertsDeploymentContainerName
+  properties: {
+    publicAccess: 'None'
+  }
+}
+
+resource rsAlertsStateContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-01-01' = if (enableRsAlerts) {
+  parent: blobServices
+  name: rsAlertsStateContainerName
   properties: {
     publicAccess: 'None'
   }
@@ -482,6 +560,122 @@ resource botTeamsChannel 'Microsoft.BotService/botServices/channels@2022-09-15' 
 }
 
 // ---------------------------------------------------------------------------
+// RS Alerts — App Service Plan + Function App (only when enableRsAlerts)
+// ---------------------------------------------------------------------------
+
+resource rsAlertsAppServicePlan 'Microsoft.Web/serverfarms@2023-12-01' = if (enableRsAlerts) {
+  name: rsAlertsAppServicePlanName
+  location: location
+  tags: tags
+  kind: 'functionapp'
+  sku: {
+    name: 'FC1'
+    tier: 'FlexConsumption'
+  }
+  properties: {
+    reserved: true
+  }
+}
+
+resource rsAlertsFunctionApp 'Microsoft.Web/sites@2023-12-01' = if (enableRsAlerts) {
+  name: rsAlertsFunctionAppName
+  location: location
+  tags: tags
+  kind: 'functionapp,linux'
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${botIdentity.id}': {}
+    }
+  }
+  properties: {
+    serverFarmId: rsAlertsAppServicePlan.id
+    httpsOnly: true
+    // Same reasoning as the main Function App: this site only has a
+    // User-Assigned identity, so Key Vault references must name it explicitly.
+    keyVaultReferenceIdentity: botIdentity.id
+    siteConfig: {
+      appSettings: concat([
+        {
+          name: 'AzureWebJobsStorage'
+          value: storageConnectionString
+        }
+        {
+          name: 'DEPLOYMENT_STORAGE_CONNECTION_STRING'
+          value: storageConnectionString
+        }
+        {
+          name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
+          value: appInsights.properties.ConnectionString
+        }
+        {
+          // Same User-Assigned Managed Identity as the main bot — its client
+          // ID is also the Azure Bot's msaAppId, so RS Alerts authenticates
+          // to the Bot Framework Connector API as the same bot (app/bot_auth.py).
+          name: 'CLIENT_ID'
+          value: botIdentity.properties.clientId
+        }
+        {
+          name: 'TENANT_ID'
+          value: tenantId
+        }
+        {
+          name: 'MANAGED_IDENTITY_CLIENT_ID'
+          value: botIdentity.properties.clientId
+        }
+        {
+          name: 'GTI_API_KEY'
+          value: '@Microsoft.KeyVault(SecretUri=${kvSecretGtiApiKey.properties.secretUri})'
+        }
+        {
+          name: 'GTI_RSA_PROJECT'
+          value: rsAlertsGtiProject
+        }
+        {
+          name: 'TEAMS_CHANNEL_ID'
+          value: rsAlertsTeamsChannelId
+        }
+        {
+          name: 'RS_ALERTS_SCHEDULE'
+          value: rsAlertsSchedule
+        }
+        {
+          name: 'BACKFILL_DAYS'
+          value: string(rsAlertsBackfillDays)
+        }
+        {
+          name: 'STATE_CONTAINER_NAME'
+          value: rsAlertsStateContainerName
+        }
+      ], rsAlertsCustomAppSettingsArray)
+    }
+    functionAppConfig: {
+      deployment: {
+        storage: {
+          type: 'blobContainer'
+          value: '${storageAccount.properties.primaryEndpoints.blob}${rsAlertsDeploymentContainerName}'
+          authentication: {
+            type: 'StorageAccountConnectionString'
+            storageAccountConnectionStringName: 'DEPLOYMENT_STORAGE_CONNECTION_STRING'
+          }
+        }
+      }
+      scaleAndConcurrency: {
+        maximumInstanceCount: rsAlertsMaximumInstanceCount
+        instanceMemoryMB: rsAlertsInstanceMemoryMB
+      }
+      runtime: {
+        name: 'python'
+        version: pythonVersion
+      }
+    }
+  }
+  dependsOn: [
+    rsAlertsDeploymentContainer
+  ]
+}
+
+// ---------------------------------------------------------------------------
 // Outputs
 // ---------------------------------------------------------------------------
 
@@ -495,3 +689,7 @@ output botName string = bot.name
 output botAppId string = botIdentity.properties.clientId
 output manifestContainerUrl string = '${storageAccount.properties.primaryEndpoints.blob}${manifestContainerName}'
 output manifestBlobUrl string = '${storageAccount.properties.primaryEndpoints.blob}${manifestContainerName}/${manifestBlobName}'
+
+output rsAlertsEnabled bool = enableRsAlerts
+output rsAlertsFunctionAppName string = enableRsAlerts ? rsAlertsFunctionApp.name : ''
+output rsAlertsFunctionAppDefaultHostName string = enableRsAlerts ? rsAlertsFunctionApp!.properties.defaultHostName : ''

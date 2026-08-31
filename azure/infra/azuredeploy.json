@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.46.1.21595",
-      "templateHash": "8312406077072858353"
+      "templateHash": "4241522222599020764"
     }
   },
   "parameters": {
@@ -156,6 +156,85 @@
       "metadata": {
         "description": "Forces the manifest-upload deployment script to re-run on every deployment. Microsoft.Resources/deploymentScripts otherwise skips re-execution — and keeps its old environment variables (e.g. a stale storage account name) — when redeployed without this changing."
       }
+    },
+    "enableRsAlerts": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Set to true to provision RS Alerts: a background, timer-triggered Function App that posts new Google Threat Intelligence alerts to a Teams channel."
+      }
+    },
+    "rsAlertsFunctionAppName": {
+      "type": "string",
+      "defaultValue": "[format('{0}-rs-alerts', parameters('functionAppName'))]",
+      "metadata": {
+        "description": "Name of the RS Alerts Function App. Only used when enableRsAlerts is true."
+      }
+    },
+    "rsAlertsAppServicePlanName": {
+      "type": "string",
+      "defaultValue": "[format('{0}-plan', parameters('rsAlertsFunctionAppName'))]",
+      "metadata": {
+        "description": "Name of the RS Alerts Flex Consumption App Service Plan. Only used when enableRsAlerts is true."
+      }
+    },
+    "rsAlertsTeamsChannelId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Teams channel link or ID (19:xxx@thread.tacv2) that RS Alerts posts GTI alerts into. Required when enableRsAlerts is true."
+      }
+    },
+    "rsAlertsGtiProject": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "GTI project ID for RS Alerts, from the Alerts URL (...&project=projects/<id>). Required when enableRsAlerts is true."
+      }
+    },
+    "rsAlertsSchedule": {
+      "type": "string",
+      "defaultValue": "0 */15 * * * *",
+      "metadata": {
+        "description": "NCRONTAB schedule RS Alerts polls GTI on. Default: every 15 minutes."
+      }
+    },
+    "rsAlertsBackfillDays": {
+      "type": "int",
+      "defaultValue": 7,
+      "minValue": 1,
+      "maxValue": 7,
+      "metadata": {
+        "description": "Days of GTI alert history to backfill on RS Alerts' first run (max 7)."
+      }
+    },
+    "rsAlertsInstanceMemoryMB": {
+      "type": "int",
+      "defaultValue": 512,
+      "allowedValues": [
+        512,
+        2048,
+        4096
+      ],
+      "metadata": {
+        "description": "Per-instance memory (MB) for the RS Alerts Flex Consumption plan."
+      }
+    },
+    "rsAlertsMaximumInstanceCount": {
+      "type": "int",
+      "defaultValue": 40,
+      "minValue": 40,
+      "maxValue": 1000,
+      "metadata": {
+        "description": "Maximum scale-out instance count for the RS Alerts Flex Consumption plan."
+      }
+    },
+    "rsAlertsAppSettings": {
+      "type": "object",
+      "defaultValue": {},
+      "metadata": {
+        "description": "Additional non-secret application settings merged onto the RS Alerts Function App (e.g. FILTER_SEVERITY_LEVEL)."
+      }
     }
   },
   "variables": {
@@ -167,9 +246,19 @@
           "name": "[items(parameters('appSettings'))[copyIndex('customAppSettingsArray')].key]",
           "value": "[items(parameters('appSettings'))[copyIndex('customAppSettingsArray')].value]"
         }
+      },
+      {
+        "name": "rsAlertsCustomAppSettingsArray",
+        "count": "[length(items(parameters('rsAlertsAppSettings')))]",
+        "input": {
+          "name": "[items(parameters('rsAlertsAppSettings'))[copyIndex('rsAlertsCustomAppSettingsArray')].key]",
+          "value": "[items(parameters('rsAlertsAppSettings'))[copyIndex('rsAlertsCustomAppSettingsArray')].value]"
+        }
       }
     ],
-    "deploymentContainerName": "[format('app-package-{0}', toLower(parameters('functionAppName')))]"
+    "deploymentContainerName": "[format('app-package-{0}', toLower(parameters('functionAppName')))]",
+    "rsAlertsDeploymentContainerName": "[format('app-package-{0}', toLower(parameters('rsAlertsFunctionAppName')))]",
+    "rsAlertsStateContainerName": "rs-alerts-state"
   },
   "resources": [
     {
@@ -211,6 +300,30 @@
       "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
       "apiVersion": "2023-01-01",
       "name": "[format('{0}/{1}/{2}', parameters('storageAccountName'), 'default', parameters('manifestContainerName'))]",
+      "properties": {
+        "publicAccess": "None"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/blobServices', parameters('storageAccountName'), 'default')]"
+      ]
+    },
+    {
+      "condition": "[parameters('enableRsAlerts')]",
+      "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+      "apiVersion": "2023-01-01",
+      "name": "[format('{0}/{1}/{2}', parameters('storageAccountName'), 'default', variables('rsAlertsDeploymentContainerName'))]",
+      "properties": {
+        "publicAccess": "None"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/blobServices', parameters('storageAccountName'), 'default')]"
+      ]
+    },
+    {
+      "condition": "[parameters('enableRsAlerts')]",
+      "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+      "apiVersion": "2023-01-01",
+      "name": "[format('{0}/{1}/{2}', parameters('storageAccountName'), 'default', variables('rsAlertsStateContainerName'))]",
       "properties": {
         "publicAccess": "None"
       },
@@ -437,6 +550,73 @@
       "dependsOn": [
         "[resourceId('Microsoft.BotService/botServices', parameters('botName'))]"
       ]
+    },
+    {
+      "condition": "[parameters('enableRsAlerts')]",
+      "type": "Microsoft.Web/serverfarms",
+      "apiVersion": "2023-12-01",
+      "name": "[parameters('rsAlertsAppServicePlanName')]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "kind": "functionapp",
+      "sku": {
+        "name": "FC1",
+        "tier": "FlexConsumption"
+      },
+      "properties": {
+        "reserved": true
+      }
+    },
+    {
+      "condition": "[parameters('enableRsAlerts')]",
+      "type": "Microsoft.Web/sites",
+      "apiVersion": "2023-12-01",
+      "name": "[parameters('rsAlertsFunctionAppName')]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "kind": "functionapp,linux",
+      "identity": {
+        "type": "UserAssigned",
+        "userAssignedIdentities": {
+          "[format('{0}', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('functionAppName'))))]": {}
+        }
+      },
+      "properties": {
+        "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', parameters('rsAlertsAppServicePlanName'))]",
+        "httpsOnly": true,
+        "keyVaultReferenceIdentity": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('functionAppName')))]",
+        "siteConfig": {
+          "appSettings": "[concat(createArray(createObject('name', 'AzureWebJobsStorage', 'value', format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix={2}', parameters('storageAccountName'), listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').keys[0].value, environment().suffixes.storage)), createObject('name', 'DEPLOYMENT_STORAGE_CONNECTION_STRING', 'value', format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix={2}', parameters('storageAccountName'), listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').keys[0].value, environment().suffixes.storage)), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference(resourceId('Microsoft.Insights/components', parameters('appInsightsName')), '2020-02-02').ConnectionString), createObject('name', 'CLIENT_ID', 'value', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('functionAppName'))), '2023-01-31').clientId), createObject('name', 'TENANT_ID', 'value', parameters('tenantId')), createObject('name', 'MANAGED_IDENTITY_CLIENT_ID', 'value', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('functionAppName'))), '2023-01-31').clientId), createObject('name', 'GTI_API_KEY', 'value', format('@Microsoft.KeyVault(SecretUri={0})', reference(resourceId('Microsoft.KeyVault/vaults/secrets', parameters('keyVaultName'), 'GtiApiKey'), '2023-07-01').secretUri)), createObject('name', 'GTI_RSA_PROJECT', 'value', parameters('rsAlertsGtiProject')), createObject('name', 'TEAMS_CHANNEL_ID', 'value', parameters('rsAlertsTeamsChannelId')), createObject('name', 'RS_ALERTS_SCHEDULE', 'value', parameters('rsAlertsSchedule')), createObject('name', 'BACKFILL_DAYS', 'value', string(parameters('rsAlertsBackfillDays'))), createObject('name', 'STATE_CONTAINER_NAME', 'value', variables('rsAlertsStateContainerName'))), variables('rsAlertsCustomAppSettingsArray'))]"
+        },
+        "functionAppConfig": {
+          "deployment": {
+            "storage": {
+              "type": "blobContainer",
+              "value": "[format('{0}{1}', reference(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').primaryEndpoints.blob, variables('rsAlertsDeploymentContainerName'))]",
+              "authentication": {
+                "type": "StorageAccountConnectionString",
+                "storageAccountConnectionStringName": "DEPLOYMENT_STORAGE_CONNECTION_STRING"
+              }
+            }
+          },
+          "scaleAndConcurrency": {
+            "maximumInstanceCount": "[parameters('rsAlertsMaximumInstanceCount')]",
+            "instanceMemoryMB": "[parameters('rsAlertsInstanceMemoryMB')]"
+          },
+          "runtime": {
+            "name": "python",
+            "version": "[parameters('pythonVersion')]"
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/components', parameters('appInsightsName'))]",
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('functionAppName')))]",
+        "[resourceId('Microsoft.KeyVault/vaults/secrets', parameters('keyVaultName'), 'GtiApiKey')]",
+        "[resourceId('Microsoft.Web/serverfarms', parameters('rsAlertsAppServicePlanName'))]",
+        "[resourceId('Microsoft.Storage/storageAccounts/blobServices/containers', parameters('storageAccountName'), 'default', variables('rsAlertsDeploymentContainerName'))]",
+        "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
+      ]
     }
   ],
   "outputs": {
@@ -479,6 +659,18 @@
     "manifestBlobUrl": {
       "type": "string",
       "value": "[format('{0}{1}/{2}', reference(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').primaryEndpoints.blob, parameters('manifestContainerName'), parameters('manifestBlobName'))]"
+    },
+    "rsAlertsEnabled": {
+      "type": "bool",
+      "value": "[parameters('enableRsAlerts')]"
+    },
+    "rsAlertsFunctionAppName": {
+      "type": "string",
+      "value": "[if(parameters('enableRsAlerts'), parameters('rsAlertsFunctionAppName'), '')]"
+    },
+    "rsAlertsFunctionAppDefaultHostName": {
+      "type": "string",
+      "value": "[if(parameters('enableRsAlerts'), reference(resourceId('Microsoft.Web/sites', parameters('rsAlertsFunctionAppName')), '2023-12-01').defaultHostName, '')]"
     }
   }
 }

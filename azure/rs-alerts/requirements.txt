@@ -1,0 +1,29 @@
+# =============================================================================
+# RS Alerts (GTI Alerts -> Microsoft Teams) — Azure Functions Dependencies
+# =============================================================================
+
+# Azure Functions Python worker — provides FunctionApp / timer & HTTP
+# triggers used in function_app.py.
+azure-functions>=1.21.0
+
+# HTTP client for the GTI Alerts API, Bot Framework token exchange (local
+# dev fallback), and the Bot Framework Connector API.
+requests>=2.31.0
+
+# Acquires a Bot Framework Connector API token via the Function App's
+# User-Assigned Managed Identity (app/bot_auth.py) — no client secret needed
+# in Azure.
+azure-identity>=1.17.0
+
+# Persists the incremental alert cursor as a blob in the Function App's own
+# storage account (app/state_store.py) — Flex Consumption instances are
+# ephemeral, so local-disk state isn't durable across timer ticks.
+azure-storage-blob>=12.19.0
+
+# Type-safe, validated configuration from environment variables
+# (Azure Function App Settings are exposed as env vars at runtime)
+pydantic-settings>=2.0
+
+# Local development only — load .env file into environment when running
+# outside of `func start`.
+python-dotenv>=1.0

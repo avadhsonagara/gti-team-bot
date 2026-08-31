@@ -24,6 +24,13 @@
 # the name of an existing plan to reuse it instead — required when
 # functionAppName already exists on a plan Bicep didn't create (a Function
 # App cannot be moved between Flex Consumption plans in-place).
+#
+# RS Alerts (background GTI Alerts -> Teams Function App) is off by default.
+# Turn it on by exporting ENABLE_RS_ALERTS=true along with
+# RS_ALERTS_TEAMS_CHANNEL_ID and RS_ALERTS_GTI_PROJECT:
+#   export ENABLE_RS_ALERTS=true
+#   export RS_ALERTS_TEAMS_CHANNEL_ID=https://teams.microsoft.com/l/channel/19%3a...
+#   export RS_ALERTS_GTI_PROJECT=your-gti-project-id
 # =============================================================================
 set -euo pipefail
 
@@ -39,12 +46,21 @@ if [ -z "${GTI_API_KEY:-}" ]; then
   exit 1
 fi
 
+ENABLE_RS_ALERTS="${ENABLE_RS_ALERTS:-false}"
+if [ "$ENABLE_RS_ALERTS" = "true" ] && { [ -z "${RS_ALERTS_TEAMS_CHANNEL_ID:-}" ] || [ -z "${RS_ALERTS_GTI_PROJECT:-}" ]; }; then
+  echo "ENABLE_RS_ALERTS=true requires RS_ALERTS_TEAMS_CHANNEL_ID and RS_ALERTS_GTI_PROJECT" >&2
+  exit 1
+fi
+
 EXTRA_PARAMS=()
 if [ -n "$STORAGE_ACCOUNT_NAME" ]; then
   EXTRA_PARAMS+=(--parameters "storageAccountName=$STORAGE_ACCOUNT_NAME")
 fi
 if [ -n "$EXISTING_PLAN_NAME" ]; then
   EXTRA_PARAMS+=(--parameters "appServicePlanName=$EXISTING_PLAN_NAME" "createAppServicePlan=false")
+fi
+if [ "$ENABLE_RS_ALERTS" = "true" ]; then
+  EXTRA_PARAMS+=(--parameters "enableRsAlerts=true" "rsAlertsTeamsChannelId=$RS_ALERTS_TEAMS_CHANNEL_ID" "rsAlertsGtiProject=$RS_ALERTS_GTI_PROJECT")
 fi
 
 az deployment group create \
