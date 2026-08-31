@@ -65,6 +65,40 @@ if [ -n "$EXISTING_PLAN_NAME" ]; then
 fi
 if [ "$ENABLE_RS_ALERTS" = "true" ]; then
   EXTRA_PARAMS+=(--parameters "enableRsAlerts=true" "rsAlertsTeamsChannelId=$RS_ALERTS_TEAMS_CHANNEL_ID" "rsAlertsGtiProject=$RS_ALERTS_GTI_PROJECT")
+  
+  if [ -n "${RSA_FUNCTION_NAME:-}" ]; then
+    EXTRA_PARAMS+=(--parameters "rsAlertsFunctionAppName=$RSA_FUNCTION_NAME")
+  fi
+  if [ -n "${RSA_SCHEDULE:-}" ]; then
+    EXTRA_PARAMS+=(--parameters "rsAlertsSchedule=$RSA_SCHEDULE")
+  fi
+  if [ -n "${RSA_SCHEDULE_TIMEZONE:-}" ]; then
+    EXTRA_PARAMS+=(--parameters "rsAlertsScheduleTimezone=$RSA_SCHEDULE_TIMEZONE")
+  fi
+  if [ -n "${RSA_BACKFILL_DAYS:-}" ]; then
+    EXTRA_PARAMS+=(--parameters "rsAlertsBackfillDays=$RSA_BACKFILL_DAYS")
+  fi
+  if [ -n "${RSA_PAGE_SIZE:-}" ]; then
+    EXTRA_PARAMS+=(--parameters "rsAlertsPageSize=$RSA_PAGE_SIZE")
+  fi
+  if [ -n "${RSA_FUNCTION_MEMORY:-}" ]; then
+    EXTRA_PARAMS+=(--parameters "rsAlertsInstanceMemoryMB=$RSA_FUNCTION_MEMORY")
+  fi
+  if [ -n "${RSA_FUNCTION_TIMEOUT_SECONDS:-}" ]; then
+    EXTRA_PARAMS+=(--parameters "rsAlertsFunctionTimeoutSeconds=$RSA_FUNCTION_TIMEOUT_SECONDS")
+  fi
+  if [ -n "${RSA_FILTER_SEVERITY_LEVEL:-}" ]; then
+    EXTRA_PARAMS+=(--parameters "rsAlertsFilterSeverityLevel=$RSA_FILTER_SEVERITY_LEVEL")
+  fi
+  if [ -n "${RSA_FILTER_PRIORITY_LEVEL:-}" ]; then
+    EXTRA_PARAMS+=(--parameters "rsAlertsFilterPriorityLevel=$RSA_FILTER_PRIORITY_LEVEL")
+  fi
+  if [ -n "${RSA_FILTER_RELEVANCE_LEVEL:-}" ]; then
+    EXTRA_PARAMS+=(--parameters "rsAlertsFilterRelevanceLevel=$RSA_FILTER_RELEVANCE_LEVEL")
+  fi
+  if [ -n "${RSA_FILTER_RELEVANCE_CONFIDENCE:-}" ]; then
+    EXTRA_PARAMS+=(--parameters "rsAlertsFilterRelevanceConfidence=$RSA_FILTER_RELEVANCE_CONFIDENCE")
+  fi
 fi
 if [ -n "${OUTPUT_FORMAT_INSTRUCTIONS:-}" ]; then
   EXTRA_PARAMS+=(--parameters "outputFormatInstructions=$OUTPUT_FORMAT_INSTRUCTIONS")

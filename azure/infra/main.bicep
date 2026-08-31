@@ -159,10 +159,16 @@ param rsAlertsGtiProject string = ''
 @description('NCRONTAB schedule RS Alerts polls GTI on. Default: every 15 minutes.')
 param rsAlertsSchedule string = '0 */15 * * * *'
 
+@description('Timezone for the RS Alerts schedule.')
+param rsAlertsScheduleTimezone string = 'Etc/UTC'
+
 @description('Days of GTI alert history to backfill on RS Alerts\' first run (max 7).')
 @minValue(1)
 @maxValue(7)
 param rsAlertsBackfillDays int = 7
+
+@description('Page size for the GTI Alerts API.')
+param rsAlertsPageSize string = '1000'
 
 @description('Per-instance memory (MB) for the RS Alerts Flex Consumption plan.')
 @allowed([
@@ -176,6 +182,21 @@ param rsAlertsInstanceMemoryMB int = 512
 @minValue(40)
 @maxValue(1000)
 param rsAlertsMaximumInstanceCount int = 40
+
+@description('Function execution timeout in seconds.')
+param rsAlertsFunctionTimeoutSeconds string = '540'
+
+@description('Filter: Severity level.')
+param rsAlertsFilterSeverityLevel string = 'MEDIUM,HIGH'
+
+@description('Filter: Priority level.')
+param rsAlertsFilterPriorityLevel string = 'MEDIUM,HIGH,CRITICAL'
+
+@description('Filter: Relevance level.')
+param rsAlertsFilterRelevanceLevel string = 'MEDIUM,HIGH'
+
+@description('Filter: Relevance confidence.')
+param rsAlertsFilterRelevanceConfidence string = 'MEDIUM,HIGH'
 
 @description('Additional non-secret application settings merged onto the RS Alerts Function App (e.g. FILTER_SEVERITY_LEVEL).')
 param rsAlertsAppSettings object = {}
@@ -649,6 +670,34 @@ resource rsAlertsFunctionApp 'Microsoft.Web/sites@2023-12-01' = if (enableRsAler
         {
           name: 'BACKFILL_DAYS'
           value: string(rsAlertsBackfillDays)
+        }
+        {
+          name: 'PAGE_SIZE'
+          value: rsAlertsPageSize
+        }
+        {
+          name: 'WEBSITE_TIME_ZONE'
+          value: rsAlertsScheduleTimezone
+        }
+        {
+          name: 'FUNCTION_TIMEOUT_SECONDS'
+          value: rsAlertsFunctionTimeoutSeconds
+        }
+        {
+          name: 'FILTER_SEVERITY_LEVEL'
+          value: rsAlertsFilterSeverityLevel
+        }
+        {
+          name: 'FILTER_PRIORITY_LEVEL'
+          value: rsAlertsFilterPriorityLevel
+        }
+        {
+          name: 'FILTER_RELEVANCE_LEVEL'
+          value: rsAlertsFilterRelevanceLevel
+        }
+        {
+          name: 'FILTER_RELEVANCE_CONFIDENCE'
+          value: rsAlertsFilterRelevanceConfidence
         }
         {
           name: 'STATE_CONTAINER_NAME'

@@ -1,0 +1,38 @@
+# =============================================================================
+# GTI Teams Bot (Agentic) — GCP Terraform Variables Example
+# =============================================================================
+# Copy this file to terraform.tfvars and fill in your values:
+#   cp terraform.tfvars.example terraform.tfvars
+# =============================================================================
+
+project_id = "gtimsteamaiintegration-3898"
+region     = "us-central1"
+bot_name   = "gti-team-bot"
+
+
+# Google Threat Intelligence API Key
+gti_api_key = "YOUR_GTI_VIRUSTOTAL_API_KEY"
+
+# Optional: Custom bot formatting instructions
+output_format_instructions = ""
+
+# ── Optional: RS Alerts (Background GTI Alerts -> Teams) ─────────────────────
+enable_rs_alerts           = false
+rs_alerts_teams_channel_id = "19:exampleChannelId@thread.tacv2" # channel that receives alert messages
+
+# Optional RSA tuning (defaults shown)
+# rsa_function_name            = "gti-alerts-fetch"
+# rsa_schedule                 = "0 * * * *"   # every hour, at minute 0
+# rsa_schedule_timezone        = "Etc/UTC"
+# rsa_backfill_days            = 7
+# rsa_page_size                = 1000
+# rsa_function_memory          = "256Mi"
+# rsa_function_timeout_seconds = 540
+
+# Optional RSA alert filters (defaults shown; comma-separated, OR'd within a
+# field, AND'd across fields). Widen e.g. to "LOW,MEDIUM,HIGH" to disable
+# filtering on that field.
+# rsa_filter_severity_level       = "MEDIUM,HIGH"            # valid: LOW, MEDIUM, HIGH
+# rsa_filter_priority_level       = "MEDIUM,HIGH,CRITICAL"   # valid: LOW, MEDIUM, HIGH, CRITICAL
+# rsa_filter_relevance_level      = "MEDIUM,HIGH"            # valid: LOW, MEDIUM, HIGH
+# rsa_filter_relevance_confidence = "MEDIUM,HIGH"            # valid: LOW, MEDIUM, HIGH

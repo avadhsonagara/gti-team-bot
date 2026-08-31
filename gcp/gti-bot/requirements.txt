@@ -1,0 +1,44 @@
+# =============================================================================
+# GTI MS Teams Bot (Agentic) — GCP Cloud Run Functions Dependencies
+# =============================================================================
+
+# Google Cloud Functions Framework — provides HTTP trigger support for Cloud Run functions
+functions-framework>=3.8.0
+
+# ASGI to WSGI adapter to host FastAPI seamlessly under Functions Framework
+a2wsgi>=1.10.0
+
+# Microsoft Teams SDK — Bot Framework activity handling, FastAPI adapter,
+# Adaptive Card send/update.
+# https://microsoft.github.io/teams-sdk/python/
+microsoft-teams-apps>=1.0
+
+# HTTP client for Google Threat Intelligence (GTI) Agentic REST API
+httpx>=0.27,<1.0
+
+# FastAPI — Web framework for endpoints and lifecycle management
+fastapi>=0.110
+
+# Google Cloud Firestore — durable persistence for bot output format instructions
+google-cloud-firestore>=2.14.0
+
+# Google Cloud Logging — structured log integration
+google-cloud-logging>=3.11.0
+
+# Optional: User-Assigned Managed Identity authentication support
+azure-identity>=1.17.0
+
+# Type-safe, validated configuration from environment variables / Secret Manager
+pydantic-settings>=2.0
+
+# Local development only — load .env file into environment
+python-dotenv>=1.0
+
+# Fast JSON parsing — ~2-5x faster than stdlib json for Adaptive Card responses
+orjson>=3.9
+
+# ASGI server for local development and container execution
+uvicorn>=0.29.0
+
+# WSGI utilities
+werkzeug>=3.0.0
