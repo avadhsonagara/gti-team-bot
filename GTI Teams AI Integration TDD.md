@@ -260,6 +260,36 @@ In addition to interactive questions from analysts, the solution supports an aut
 
 ---
 
+## Configuration Parameters
+
+Both the interactive Bot Backend and the RS Alerts worker load their configuration dynamically via environment variables.
+
+### Core Bot Settings (Interactive & RS Alerts)
+
+| Environment Variable | Required | Default | Description |
+| :--- | :---: | :--- | :--- |
+| `GTI_API_KEY` | ✅ | `""` | The Google Threat Intelligence API Key used to authenticate agentic requests. |
+| `CLIENT_ID` | ✅* | `""` | The Microsoft Entra ID App Registration Client ID. (*Not required if using Azure Managed Identities) |
+| `CLIENT_SECRET` | ✅* | `""` | The Microsoft Entra ID Client Secret. (*Not required if using Azure Managed Identities) |
+| `TENANT_ID` | ✅* | `""` | The Microsoft Entra ID Tenant ID. (*Not required if using Azure Managed Identities) |
+| `LOG_LEVEL` | | `"INFO"` | Standard Python logging level (e.g., `DEBUG`, `INFO`, `WARNING`, `ERROR`). |
+| `LOG_FORMAT` | | `""` | Set to `"json"` for structured Google Cloud Logging / Azure Application Insights ingestion. |
+
+### RS Alerts Tuning (Worker Only)
+
+| Environment Variable | Required | Default | Description |
+| :--- | :---: | :--- | :--- |
+| `TEAMS_CHANNEL_ID` | ✅ | `""` | The Microsoft Teams `19:...@thread.tacv2` channel ID where alerts will be posted. |
+| `GCP_PROJECT_ID` | | _Dynamic_ | (GCP Only) Specifies the Google Cloud project hosting Firestore state. |
+| `BACKFILL_DAYS` | | `7` | Days of historical GTI alerts to fetch on the very first execution. |
+| `PAGE_SIZE` | | `1000` | Number of alerts to retrieve per page from the GTI API. |
+| `FILTER_SEVERITY_LEVEL` | | `"MEDIUM,HIGH"` | Comma-separated list of severity levels to process. |
+| `FILTER_PRIORITY_LEVEL` | | `"MEDIUM,HIGH,CRITICAL"`| Comma-separated list of priority levels to process. |
+| `FILTER_RELEVANCE_LEVEL`| | `"MEDIUM,HIGH"` | Comma-separated list of relevance levels to process. |
+| `FILTER_RELEVANCE_CONFIDENCE`| | `"MEDIUM,HIGH"` | Comma-separated list of confidence levels to process. |
+
+---
+
 ## Deployment Instructions
 
 ### Option 1: GCP Hosting (Reference)
