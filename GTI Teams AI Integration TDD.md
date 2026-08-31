@@ -90,37 +90,22 @@ We intentionally do **not** publish this bot as a public, multi-tenant app on th
 
 For organizations hosting their workloads in Google Cloud:
 
-```mermaid
-graph TD
-    subgraph MS[Microsoft Ecosystem]
-        Teams[Microsoft Teams]
-        BotSvc[Azure Bot Service]
-        AD[Entra ID App Registration]
-    end
+```
+Microsoft Teams
+      │
+      ▼
+ Azure Bot Service
+      │
+      ▼
+ GCP Cloud Run (Bot Backend)  ◄──►  GCP Secret Manager (API Keys)
+      │                        ◄──►  Entra ID App Registration
+      ▼
+ GTI Agentic API (Google Threat Intelligence /agentspace/sessions/{session_id})
 
-    subgraph GC[Google Cloud Platform]
-        CloudRunBot[GCP Cloud Run<br>Bot Backend]
-        CloudRunAlerts[GCP Cloud Run<br>Alert Poller]
-        SecretManager[(GCP Secret Manager<br>API Keys)]
-        Firestore[(Firestore<br>State & Settings)]
-        Scheduler((Cloud Scheduler))
-    end
-
-    subgraph API[External APIs]
-        GTI[Google Threat Intelligence<br>Agentic API]
-    end
-
-    Teams -- Messages --> BotSvc
-    BotSvc -- Webhook POST --> CloudRunBot
-    CloudRunBot -- Auth --> AD
-    CloudRunBot -- Fetch Secrets --> SecretManager
-    CloudRunBot -- Analyze Threat --> GTI
-
-    Scheduler -- Trigger --> CloudRunAlerts
-    CloudRunAlerts -- Read/Write Cursor --> Firestore
-    CloudRunAlerts -- Fetch Secrets --> SecretManager
-    CloudRunAlerts -- Poll Alerts --> GTI
-    CloudRunAlerts -- Post Alert Cards --> Teams
+ GCP Cloud Run Function (Alert Poller)  ◄──►  Firestore (State & Settings)
+      │                                 ◄──►  GCP Secret Manager (API Keys)
+      ▼
+ Microsoft Teams Channel Webhook
 ```
 
 - **Compute:** GCP Cloud Run runs the interactive bot backend as an auto-scaling container service.
@@ -138,37 +123,19 @@ graph TD
 
 For organizations whose primary cloud ecosystem is Microsoft Azure:
 
-```mermaid
-graph TD
-    subgraph MS[Microsoft Ecosystem]
-        Teams[Microsoft Teams]
-        BotSvc[Azure Bot Service]
-        Identity[User-Assigned<br>Managed Identity]
-    end
+```
+Microsoft Teams
+      │
+      ▼
+ Azure Bot Service  ◄── User-Assigned Managed Identity (Secure authentication without secrets)
+      │
+      ▼
+ Azure Functions (Python)  ◄──►  Azure Key Vault (Secure GTI API Key storage)
+      │                     ◄──►  Application Insights (Logs & Health Monitoring)
+      ▼
+ GTI Agentic API (Google Threat Intelligence /agentspace/sessions/{session_id})
 
-    subgraph AZ[Microsoft Azure]
-        AzFuncBot[Azure Functions<br>Bot Backend]
-        AzFuncAlerts[Azure Functions<br>Timer Trigger]
-        KeyVault[(Azure Key Vault<br>GTI API Key)]
-        BlobStorage[(Azure Blob Storage<br>Checkpoints & Zips)]
-        AppInsights((Application Insights))
-    end
-
-    subgraph API[External APIs]
-        GTI[Google Threat Intelligence<br>Agentic API]
-    end
-
-    Teams -- Messages --> BotSvc
-    BotSvc -- Passwordless Auth --> Identity
-    Identity -. Grants Access .-> AzFuncBot
-    AzFuncBot -- Fetch Secrets --> KeyVault
-    AzFuncBot -- Telemetry --> AppInsights
-    AzFuncBot -- Analyze Threat --> GTI
-
-    AzFuncAlerts -- Read/Write Cursor --> BlobStorage
-    AzFuncAlerts -- Fetch Secrets --> KeyVault
-    AzFuncAlerts -- Poll Alerts --> GTI
-    AzFuncAlerts -- Post Alert Cards --> Teams
+ Azure Blob Storage  ← Teams App Manifest Archive & Alert Checkpoints
 ```
 
 - **Compute:** **Azure Functions (Flex Consumption, Python)** hosts the bot application. It scales on demand and executes requests rapidly with zero idle infrastructure cost.
