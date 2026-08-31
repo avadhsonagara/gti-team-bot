@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.46.1.21595",
-      "templateHash": "4241522222599020764"
+      "templateHash": "14152904226820261298"
     }
   },
   "parameters": {
@@ -145,7 +145,7 @@
     },
     "manifestSourceBaseUrl": {
       "type": "string",
-      "defaultValue": "https://raw.githubusercontent.com/avadhsonagara/gti-team-bot/main/teams-app-manifest",
+      "defaultValue": "https://raw.githubusercontent.com/avadhsonagara/gti-team-bot/main/azure/gti-bot/teams-app-manifest",
       "metadata": {
         "description": "Base URL the Teams app manifest source files (manifest.json, color.png, outline.png) are fetched from at deploy time. Defaults to this repo's teams-app-manifest folder. Skip the manifest upload entirely by leaving this empty."
       }
