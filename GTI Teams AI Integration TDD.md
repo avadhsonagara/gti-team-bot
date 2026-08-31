@@ -95,8 +95,8 @@ For organizations hosting their workloads in Google Cloud:
 │                 Microsoft Teams                       │
 └───────────────────────────────────────────────────────┘
             │                               ▲
-    (1:1 &  │     Azure Bot Service         │ Alert
-    Groups) ▼     (Webhook router)          │ Webhook
+    (1:1 &  │     Azure Bot Service         │ Bot
+    Groups) ▼     (Bot Framework API)       │ API
 ┌───────────────────────┐       ┌───────────────────────┐
 │    GCP Cloud Run      │       │    GCP Cloud Run      │
 │    (Bot Backend)      │       │   (Alert Poller)      │
@@ -134,8 +134,8 @@ For organizations whose primary cloud ecosystem is Microsoft Azure:
 │                 Microsoft Teams                       │
 └───────────────────────────────────────────────────────┘
             │                               ▲
-    (1:1 &  │     Azure Bot Service         │ Alert
-    Groups) ▼    (Passwordless Auth)        │ Webhook
+    (1:1 &  │     Azure Bot Service         │ Bot
+    Groups) ▼    (Passwordless Auth)        │ API
 ┌───────────────────────┐       ┌───────────────────────┐
 │ Azure Functions (HTTP)│       │Azure Functions (Timer)│
 │    (Bot Backend)      │       │   (Alert Poller)      │
