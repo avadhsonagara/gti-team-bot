@@ -11,14 +11,11 @@ Technical Design Document
 1. [Overview](#overview)
 2. [Technical Requirements](#technical-requirements)
 3. [Deployment Architecture & Strategy](#deployment-architecture--strategy)
-4. [Why We Don't Publish the Bot to the Public Teams Marketplace](#why-we-dont-publish-the-bot-to-the-public-teams-marketplace)
+4. [Security & Data Privacy](#security--data-privacy)
 5. [System Architecture — Two Approaches](#system-architecture--two-approaches)
-   - [Approach A: GCP Hosting (Reference Architecture)](#approach-a-gcp-hosting-reference-architecture)
-   - [Approach B: Azure Native Hosting (Target Architecture)](#approach-b-azure-native-hosting-target-architecture)
-   - [Cloud Service Mapping Matrix](#cloud-service-mapping-matrix)
-6. [Integration 1: GTI Teams Bot App](#integration-1-gti-teams-bot-app)
-7. [GTI Agentic API Integration Detail](#gti-agentic-api-integration-detail)
-8. [Integration 2: Real-time System (RS) Threat Alerts](#integration-2-real-time-system-rs-threat-alerts)
+6. [Deep Dive: The Bot Backend (FastAPI + ASGI)](#deep-dive-the-bot-backend-fastapi--asgi)
+7. [Deep Dive: GTI Agentic Sessions API](#deep-dive-gti-agentic-sessions-api)
+8. [Deep Dive: Scalability, Resilience, & State Management](#deep-dive-scalability-resilience--state-management)
 9. [Deployment Instructions](#deployment-instructions)
 10. [User Perspective & Interaction Examples](#user-perspective--interaction-examples)
 11. [References](#references)
@@ -74,13 +71,13 @@ Microsoft Teams Users  ──►  Azure Bot Service (Secure Proxy)  ──►  B
 
 ---
 
-## Why We Don't Publish the Bot to the Public Teams Marketplace
+## Security & Data Privacy
 
-We intentionally do **not** publish this bot as a public, multi-tenant app on the Microsoft Teams Marketplace for critical security reasons:
+We intentionally do **not** publish this bot as a public, multi-tenant app on the Microsoft Teams Marketplace. By distributing this as Infrastructure-as-Code (Terraform/Bicep), we ensure the highest level of enterprise security:
 
-- **Customer Data Privacy:** A public marketplace app would require a single shared backend server that holds every customer's GTI API keys and processes all internal security queries in one shared environment.
-- **Dedicated Cloud Deployment:** Instead, each customer deploys the bot into **their own cloud subscription** (Azure or GCP) using automated infrastructure templates.
-- **Total Ownership:** All API keys, chat messages, and threat queries remain entirely inside the customer's own cloud security boundary.
+- **Total Data Sovereignty:** A public marketplace app would require a single shared backend server that holds every customer's GTI API keys and processes all internal security queries in one shared environment. By deploying into **your own cloud subscription** (Azure or GCP), all API keys, chat messages, and threat queries remain entirely inside your security boundary.
+- **Zero-Trust Identity:** The architecture leans heavily on identity-based authentication rather than static passwords. In Azure, the bot authenticates to the Bot Service and Key Vault using a **User-Assigned Managed Identity**. This eliminates the risk of leaked Client Secrets entirely.
+- **Secret Vaulting:** The only static secret required is the `GTI_API_KEY`. It is never stored in environment variables directly; it is vaulted in **Azure Key Vault** or **GCP Secret Manager** and injected securely into the application memory only at runtime.
 
 ---
 
@@ -182,85 +179,56 @@ For organizations whose primary cloud ecosystem is Microsoft Azure:
 
 ---
 
-## Integration 1: GTI Teams Bot App
+## Deep Dive: The Bot Backend (FastAPI + ASGI)
 
-### Overview
+The bot backend is built using a modern web framework (**FastAPI**) rather than relying solely on the legacy Bot Framework SDK routers. This provides massive benefits for local testing, Pydantic validation, and OpenAPI documentation.
 
-The bot backend is built using a modern web framework (FastAPI) running as a serverless ASGI application. It provides standard HTTP endpoints:
+### The ASGI Portability Layer
+To ensure the bot is cloud-agnostic, the core `main.py` FastAPI app is wrapped dynamically depending on the deployment target:
+- **Locally:** It runs natively using `uvicorn`.
+- **In GCP:** It uses the `a2wsgi` middleware to convert the ASGI app into a WSGI app compatible with Google Cloud's `functions-framework`.
+- **In Azure:** It uses `azure.functions.AsgiFunctionApp`, allowing the exact same API router to map perfectly to the Azure Functions runtime without rewriting any HTTP logic.
 
-| Endpoint Route | HTTP Method | Purpose |
-| :--- | :--- | :--- |
-| `/` | `GET` | Service status and welcome information |
-| `/health` | `GET` | Health check probe |
-| `/api/messages` | `POST` | Core messaging endpoint for Microsoft Teams activities |
-
-### Key Design Highlights
-
-- **Direct API Model:** The bot does not run its own complex local language model. Instead, it delegates reasoning and threat intelligence data aggregation directly to Google's hosted agent via a single secure API call per query.
-- **Asynchronous Architecture:** All network operations and API calls are fully asynchronous, ensuring fast response times.
-- **Zero-Secret Identity on Azure:** Uses Azure Managed Identities to eliminate password expiration and secret leak risks.
-
-### Core Application Components
-
-1. **Application Entry & Routing Layer:** Manages incoming web requests and connects the Microsoft Teams SDK with the application endpoints.
-2. **Centralized Configuration:** Loads environment variables, API keys, connection strings, and timeout settings safely at application startup.
-3. **GTI Agent Client:** Manages HTTP communication with Google Threat Intelligence, handling automatic retries, backoff delays, and network resilience.
-4. **Teams Message Pipeline:**
-   - Cleans the incoming message text by removing mention tags (`@GTI`).
-   - Validates that the query contains meaningful text; if empty, replies with usage tips.
-   - Posts a temporary loading card in Teams (`⏳ Looking into that with Google Threat Intelligence…`).
-   - Dispatches the prompt to Google Threat Intelligence's Agentic API.
-   - Parses the returned threat analysis and converts it into a visual Teams Adaptive Card.
-   - Updates the temporary message with the final Adaptive Card.
-5. **Adaptive Card Builder:** Assembles structured visual cards that display threat severity tags, key evidence facts, timestamps, and direct web links to the Google Threat Intelligence console.
-6. **Error & Fallback Handling:** If Google Threat Intelligence is temporarily unavailable or returns an error, the bot delivers an informative, user-friendly card describing the situation.
+### Lifespan and Connection Pooling
+Instead of creating a new HTTP connection to the GTI API on every single Teams message, the application leverages FastAPI's `@asynccontextmanager lifespan` protocol. When the serverless container starts, it creates a persistent `httpx.AsyncClient` pool. When the container scales down, it shuts down the pool cleanly, drastically reducing TCP handshake latency.
 
 ---
 
-## GTI Agentic API Integration Detail
+## Deep Dive: GTI Agentic Sessions API
 
-The bot communicates with the **GTI Agentic Sessions API** using an `x-apikey` authentication header.
+The bot does not run its own complex local language model. Instead, it delegates reasoning and threat intelligence data aggregation directly to Google's hosted **GTI Agentic Sessions API** via an `x-apikey` authentication header.
 
-### Primary API Endpoint
+### Stateful Conversational Agent
+Unlike traditional REST APIs where you query an IP and get a JSON dump, the `/agentspace/sessions/{session_id}` endpoint initiates a stateful session with an LLM. 
+The LLM acts autonomously: it takes the user's prompt (e.g., "Analyze this domain"), identifies which internal VirusTotal or GTI tools to use, calls them, aggregates the intelligence, and summarizes it. 
 
-`POST /agentspace/sessions/{session_id}`
+### System Prompt & Formatting
+To ensure the LLM returns data that fits perfectly inside a Microsoft Teams Adaptive Card, the bot injects a hidden **System Prompt** along with the user's query. This instructs the agent to:
+1. Avoid generic pleasantries.
+2. Structure the findings using standard Markdown (which Adaptive Cards parse).
+3. Return a definitive threat verdict (Malicious, Suspicious, Safe).
 
-This endpoint sends a message to an active threat investigation session and synchronously returns the updated session state along with the agent's findings.
-
-- **Path Parameter:** `session_id` (string, required) — The unique identifier for the conversation session.
-- **Request Body (`multipart/form-data`):**
-  - `message` (string, required) — The analyst's query along with system formatting instructions.
-  - `files` (array of files, optional) — Optional file attachments or artifact indicators.
-
-### Key Interaction Characteristics
-
-- **Response Extraction:** The bot reads the event stream returned by Google Threat Intelligence and extracts the final threat summary and markdown findings.
-- **Built-in Resilience:** The client automatically retries transient errors (`429` rate limits, `5xx` server issues, connection timeouts) with exponential backoff before reporting an issue.
-- **Output Formatting:** A standardized system prompt instructs the hosted GTI agent to return structured data suitable for direct presentation in Microsoft Teams Adaptive Cards.
+The bot then extracts this markdown stream and renders it inside an interactive visual card.
 
 ---
 
-## Integration 2: Real-time System (RS) Threat Alerts
+## Deep Dive: Scalability, Resilience, & State Management
 
-### Overview
+### Handling Transient Errors
+The `gti_client.py` uses `tenacity` to implement exponential backoff. If the GTI API returns a `429 Too Many Requests` or a temporary `5xx` error, the bot will automatically sleep and retry up to `gti_max_retries` times. This ensures temporary network blips do not result in a broken experience for the security analyst in Teams.
 
-In addition to interactive questions from analysts, the solution supports an automated **Real-time System (RS) Alerting** workflow. This background task continuously checks Google Threat Intelligence for newly detected security events and posts alert cards into a designated Teams channel.
+### Serverless Concurrency Models
+- **GCP Cloud Run:** Handles hundreds of concurrent requests per container instance. It is extremely fast to scale and highly efficient for high-volume chat environments.
+- **Azure Flex Consumption:** Azure Functions dynamically allocates workers based on queue depth. By utilizing the new "Flex" consumption model, the bot benefits from faster virtual networking and reduced cold-start latency compared to traditional Azure Consumption plans.
 
-- **Fully Automated:** Runs independently on a schedule without needing user interaction.
-- **No Duplicate Alerts:** Remembers the timestamp of the last delivered alert (using a persistent cursor checkpoint) so alerts are never sent twice.
-- **Configurable Filters & Tuning:** Allows security teams to precisely tune the alerting frequency and scope using variables such as schedule timezone, page size, execution timeouts, and strict matching on severity, priority, and relevance confidence (e.g., High and Critical only). Both the Azure Bicep and GCP Terraform templates expose these properties for full infrastructure-as-code automation.
-
-### Execution Flow
-
-1. **Trigger:** A scheduled timer runs at regular intervals (e.g., every 5 minutes).
-2. **Fetch Checkpoint:** The service reads the last saved alert timestamp from cloud storage.
-3. **Query GTI Alerts API:** The service calls the Google Threat Intelligence alerts API to request new alerts updated since that timestamp.
-4. **Filter & Format:** Matching alerts are converted into structured Adaptive Cards highlighting threat type, affected assets, and recommended actions.
-5. **Publish & Update:** Cards are sent to the designated Teams channel webhook. After successful delivery, the new checkpoint timestamp is saved.
+### RS Alerts Checkpoint Persistence
+The **Real-time System (RS) Alerting** workflow runs on a schedule (e.g., every 15 minutes) to poll GTI for new threat notifications. 
+To guarantee alerts are never sent twice, it maintains a strict `updateTime` cursor:
+- It fetches the cursor from **Firestore** (GCP) or **Azure Blob Storage** (Azure).
+- It queries the GTI Alerts API for events newer than the cursor.
+- It processes the events, sends them to the Teams Bot Framework API, and then writes the newest timestamp back to the storage layer atomically.
 
 ---
-
-
 
 ## Deployment Instructions
 
