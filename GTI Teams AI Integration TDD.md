@@ -91,21 +91,27 @@ We intentionally do **not** publish this bot as a public, multi-tenant app on th
 For organizations hosting their workloads in Google Cloud:
 
 ```
-Microsoft Teams
-      │
-      ▼
- Azure Bot Service
-      │
-      ▼
- GCP Cloud Run (Bot Backend)  ◄──►  GCP Secret Manager (API Keys)
-      │                        ◄──►  Entra ID App Registration
-      ▼
- GTI Agentic API (Google Threat Intelligence /agentspace/sessions/{session_id})
-
- GCP Cloud Run Function (Alert Poller)  ◄──►  Firestore (State & Settings)
-      │                                 ◄──►  GCP Secret Manager (API Keys)
-      ▼
- Microsoft Teams Channel Webhook
+┌───────────────────────────────────────────────────────┐
+│                 Microsoft Teams                       │
+└───────────────────────────────────────────────────────┘
+            │                               ▲
+    (1:1 &  │     Azure Bot Service         │ Alert
+    Groups) ▼     (Webhook router)          │ Webhook
+┌───────────────────────┐       ┌───────────────────────┐
+│    GCP Cloud Run      │       │    GCP Cloud Run      │
+│    (Bot Backend)      │       │   (Alert Poller)      │
+│                       │       │                       │
+│ 1. Parse Message      │       │ 1. Cloud Scheduler    │
+│ 2. Load Secrets       │       │ 2. Load Checkpoint    │
+│    (Secret Manager)   │       │    (Firestore)        │
+│ 3. Query GTI API      │       │ 3. Fetch/Filter Alerts│
+│ 4. Build Adaptive Card│       │ 4. Send Adaptive Card │
+│ 5. Reply to Teams     │       │ 5. Save Checkpoint    │
+└───────────────────────┘       └───────────────────────┘
+            │                               │
+            ▼                               ▼
+    GTI Agentic API                GTI Agentic API
+  (sessions endpoint)             (alerts endpoint)
 ```
 
 - **Compute:** GCP Cloud Run runs the interactive bot backend as an auto-scaling container service.
@@ -124,18 +130,27 @@ Microsoft Teams
 For organizations whose primary cloud ecosystem is Microsoft Azure:
 
 ```
-Microsoft Teams
-      │
-      ▼
- Azure Bot Service  ◄── User-Assigned Managed Identity (Secure authentication without secrets)
-      │
-      ▼
- Azure Functions (Python)  ◄──►  Azure Key Vault (Secure GTI API Key storage)
-      │                     ◄──►  Application Insights (Logs & Health Monitoring)
-      ▼
- GTI Agentic API (Google Threat Intelligence /agentspace/sessions/{session_id})
-
- Azure Blob Storage  ← Teams App Manifest Archive & Alert Checkpoints
+┌───────────────────────────────────────────────────────┐
+│                 Microsoft Teams                       │
+└───────────────────────────────────────────────────────┘
+            │                               ▲
+    (1:1 &  │     Azure Bot Service         │ Alert
+    Groups) ▼    (Passwordless Auth)        │ Webhook
+┌───────────────────────┐       ┌───────────────────────┐
+│ Azure Functions (HTTP)│       │Azure Functions (Timer)│
+│    (Bot Backend)      │       │   (Alert Poller)      │
+│                       │       │                       │
+│ 1. Parse Message      │       │ 1. Scheduled Trigger  │
+│ 2. Load Secrets       │       │ 2. Load Checkpoint    │
+│    (Azure Key Vault)  │       │    (Blob Storage)     │
+│ 3. Query GTI API      │       │ 3. Fetch/Filter Alerts│
+│ 4. Build Adaptive Card│       │ 4. Send Adaptive Card │
+│ 5. Reply to Teams     │       │ 5. Save Checkpoint    │
+└───────────────────────┘       └───────────────────────┘
+            │                               │
+            ▼                               ▼
+    GTI Agentic API                GTI Agentic API
+  (sessions endpoint)             (alerts endpoint)
 ```
 
 - **Compute:** **Azure Functions (Flex Consumption, Python)** hosts the bot application. It scales on demand and executes requests rapidly with zero idle infrastructure cost.
