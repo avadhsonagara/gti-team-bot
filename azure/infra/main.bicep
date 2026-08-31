@@ -183,9 +183,6 @@ param rsAlertsInstanceMemoryMB int = 512
 @maxValue(1000)
 param rsAlertsMaximumInstanceCount int = 40
 
-@description('Function execution timeout in seconds.')
-param rsAlertsFunctionTimeoutSeconds string = '540'
-
 @description('Filter: Severity level.')
 param rsAlertsFilterSeverityLevel string = 'MEDIUM,HIGH'
 
@@ -678,10 +675,6 @@ resource rsAlertsFunctionApp 'Microsoft.Web/sites@2023-12-01' = if (enableRsAler
         {
           name: 'WEBSITE_TIME_ZONE'
           value: rsAlertsScheduleTimezone
-        }
-        {
-          name: 'FUNCTION_TIMEOUT_SECONDS'
-          value: rsAlertsFunctionTimeoutSeconds
         }
         {
           name: 'FILTER_SEVERITY_LEVEL'

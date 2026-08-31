@@ -40,6 +40,10 @@ class GTIServiceError(GTIError):
     """Raised when the GTI service returns a 5xx error or is temporarily unavailable."""
 
 
+class GTIBadRequestError(GTIError):
+    """Raised for a permanent 4xx client error (e.g. malformed request) — not retried."""
+
+
 class GTITimeoutError(GTIError):
     """Raised when the request to the GTI Agentic API times out."""
 
@@ -94,7 +98,7 @@ class GTIAgenticClient:
             return "No response generated."
 
         events = (
-            data.get("data", {})
+            (data.get("data") or {})
             .get("attributes", {})
             .get("events", [])
         )
@@ -185,6 +189,10 @@ class GTIAgenticClient:
                         continue
                     raise GTIServiceError(f"GTI service error ({response.status_code}): {response.text}")
 
+                if 400 <= response.status_code < 500:
+                    logger.error("[GTI] Bad request (%d): %s", response.status_code, response.text)
+                    raise GTIBadRequestError(f"GTI API rejected the request ({response.status_code}).")
+
                 # Other HTTP errors
                 response.raise_for_status()
                 return response.json()
@@ -199,7 +207,7 @@ class GTIAgenticClient:
                     continue
                 raise GTITimeoutError(f"GTI request timed out or network failed: {exc}") from exc
 
-            except (GTIAuthenticationError, GTISessionNotFoundError, GTIRateLimitError):
+            except (GTIAuthenticationError, GTISessionNotFoundError, GTIRateLimitError, GTIBadRequestError):
                 # Don't retry client-side / permanent errors
                 raise
 
@@ -243,7 +251,7 @@ class GTIAgenticClient:
             files=form_files,
         )
 
-        session_id = raw_data.get("data", {}).get("id", "")
+        session_id = (raw_data.get("data") or {}).get("id", "")
         text = self._extract_response_text(raw_data)
         logger.info("[GTI] Created new session id=%s | text_len=%d", session_id, len(text))
         return session_id, text, raw_data

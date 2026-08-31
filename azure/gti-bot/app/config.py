@@ -53,10 +53,10 @@ class Settings(BaseSettings):
         val = (v or "https://www.virustotal.com/api/v3").strip()
         return val.rstrip("/")
 
-    @field_validator("gti_api_key", mode="before")
+    @field_validator("gti_api_key", "client_secret", mode="before")
     @classmethod
-    def strip_api_key(cls, v: str) -> str:
-        """Trim whitespace from the configured GTI API key."""
+    def strip_secret(cls, v: str) -> str:
+        """Trim whitespace from secret-like values."""
         return (v or "").strip()
 
 

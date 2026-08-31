@@ -73,8 +73,15 @@ class AlertSender:
         resp.raise_for_status()
 
         self.total_sent += 1
-        update_time = alert.get("audit", {}).get("updateTime")
+        audit = alert.get("audit", {})
+        update_time = audit.get("updateTime") or audit.get("createTime")
         if self._on_checkpoint and update_time:
             self._on_checkpoint(update_time)
+        elif self._on_checkpoint:
+            logger.warning(
+                "Alert %s has no audit.updateTime or audit.createTime — cursor "
+                "cannot advance past it and it may be re-sent on the next run.",
+                alert.get("name", "<unknown>"),
+            )
 
         time.sleep(0.3)  # Rate-limit protection

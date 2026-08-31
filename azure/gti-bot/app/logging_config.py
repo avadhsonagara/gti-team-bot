@@ -1,8 +1,11 @@
 """
-Logging setup for GCP Cloud Logging and local console compatibility.
+Logging setup for Azure Functions and local console compatibility.
 
-- On GCP (K_SERVICE / FUNCTION_TARGET set): emits one JSON object per line.
-- Locally (or LOG_FORMAT=text): emits human-readable formatted lines.
+Azure Functions forwards everything written through the standard `logging`
+module to Application Insights automatically, so structured formatting isn't
+required for ingestion. Text is the default; set LOG_FORMAT=json for
+line-delimited JSON (e.g. for local structured-log tooling or Log Analytics
+queries over the raw stream).
 """
 import json
 import logging
@@ -15,9 +18,9 @@ _LIBRARY_TAG_PREFIXES = (
     ("microsoft_teams", "[TEAMS]"),
     ("httpx", "[HTTP]"),
     ("httpcore", "[HTTP]"),
-    ("google.auth", "[AUTH]"),
-    ("google.api_core", "[GCP]"),
-    ("google.cloud", "[GCP]"),
+    ("azure.storage", "[STORAGE]"),
+    ("azure.core", "[AZURE]"),
+    ("azure.identity", "[AUTH]"),
 )
 
 
@@ -48,7 +51,7 @@ class SuppressLibraryTracebacksFilter(logging.Filter):
         return True
 
 
-_GCP_SEVERITY = {
+_SEVERITY = {
     logging.DEBUG:    "DEBUG",
     logging.INFO:     "INFO",
     logging.WARNING:  "WARNING",
@@ -64,13 +67,13 @@ _RESERVED_RECORD_ATTRS = frozenset({
 })
 
 
-class GCPJsonFormatter(logging.Formatter):
-    """One JSON object per log line — compatible with GCP Cloud Logging."""
+class JsonFormatter(logging.Formatter):
+    """One JSON object per log line."""
 
     def format(self, record: logging.LogRecord) -> str:
         lib_tag = getattr(record, "lib_tag", "")
         entry = {
-            "severity": _GCP_SEVERITY.get(record.levelno, "DEFAULT"),
+            "severity": _SEVERITY.get(record.levelno, "DEFAULT"),
             "message":  f"{lib_tag}{record.getMessage()}",
             "logger":   record.name,
             "module":   record.module,
@@ -85,23 +88,20 @@ class GCPJsonFormatter(logging.Formatter):
         for key, value in record.__dict__.items():
             if key in _RESERVED_RECORD_ATTRS:
                 continue
-            if key == "trace":
-                entry["logging.googleapis.com/trace"] = value
-            elif key not in entry:
+            if key not in entry:
                 entry[key] = value
 
         return json.dumps(entry, ensure_ascii=False, default=str)
 
 
 def setup_logging() -> None:
-    """Configure root logging for local or container execution."""
-    is_gcp = bool(os.getenv("K_SERVICE") or os.getenv("FUNCTION_TARGET"))
-    log_format = os.getenv("LOG_FORMAT", "json" if is_gcp else "text").lower()
+    """Configure root logging for local or Azure Functions execution."""
+    log_format = os.getenv("LOG_FORMAT", "text").lower()
     log_level = getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO)
 
     stream_handler = logging.StreamHandler()
     if log_format == "json":
-        stream_handler.setFormatter(GCPJsonFormatter())
+        stream_handler.setFormatter(JsonFormatter())
     else:
         stream_handler.setFormatter(logging.Formatter(
             "%(asctime)s %(levelname)-8s [%(request_id)s] | %(lib_tag)s%(message)s",

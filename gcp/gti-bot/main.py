@@ -7,6 +7,7 @@ Handles:
   - OPTIONS /api/messages for CORS/preflight
   - Cloud Run function HTTP entrypoint: gti_bot_http
 """
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -90,6 +91,15 @@ async def get_messages():
 # ── Cloud Run function (2nd Gen) Entry Point ─────────────────────────────────
 
 wsgi_app = ASGIMiddleware(api)
+
+# ASGIMiddleware bridges only the ASGI "http" scope — it never sends the
+# "lifespan" events FastAPI's `lifespan()` above relies on, so
+# `teams_app.initialize()` would otherwise never run under this entrypoint.
+# ASGIMiddleware creates one event loop that runs forever in a background
+# thread and reuses it for every request, so it's safe to run initialize()
+# on that same loop once here, at cold start, before any request is served.
+asyncio.run_coroutine_threadsafe(teams_app.initialize(), wsgi_app.loop).result()
+logger.info("Teams App initialized (Cloud Functions cold start).")
 
 
 @functions_framework.http

@@ -84,9 +84,6 @@ if [ "$ENABLE_RS_ALERTS" = "true" ]; then
   if [ -n "${RSA_FUNCTION_MEMORY:-}" ]; then
     EXTRA_PARAMS+=(--parameters "rsAlertsInstanceMemoryMB=$RSA_FUNCTION_MEMORY")
   fi
-  if [ -n "${RSA_FUNCTION_TIMEOUT_SECONDS:-}" ]; then
-    EXTRA_PARAMS+=(--parameters "rsAlertsFunctionTimeoutSeconds=$RSA_FUNCTION_TIMEOUT_SECONDS")
-  fi
   if [ -n "${RSA_FILTER_SEVERITY_LEVEL:-}" ]; then
     EXTRA_PARAMS+=(--parameters "rsAlertsFilterSeverityLevel=$RSA_FILTER_SEVERITY_LEVEL")
   fi

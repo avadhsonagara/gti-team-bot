@@ -33,15 +33,12 @@ class Settings(BaseSettings):
 
     # ── Google Threat Intelligence (GTI) Alerts API ──────────────────────────
     gti_api_key: str = ""
-    gti_rsa_project: str = Field(
-        default_factory=lambda: (
-            os.getenv("GTI_RSA_PROJECT")
-            or os.getenv("GCP_PROJECT_ID")
-            or os.getenv("GOOGLE_CLOUD_PROJECT")
-            or os.getenv("GCP_PROJECT")
-            or "gtimsteamaiintegration-3898"
-        )
-    )
+    # Intentionally has no fallback to gcp_project_id/GCP_PROJECT_ID: the GTI
+    # project and the GCP project hosting this infrastructure are different
+    # concepts and are rarely the same value. Leaving this unset must fail
+    # the required-config check in job.py rather than silently defaulting to
+    # the wrong project.
+    gti_rsa_project: str = ""
     backfill_days: int = 7
     page_size: int = 1000
 

@@ -16,8 +16,10 @@ from app.config import settings
 from app.constants import SYSTEM_PROMPT
 from app.gti.client import (
     GTIAuthenticationError,
+    GTIBadRequestError,
     GTIRateLimitError,
     GTIServiceError,
+    GTISessionNotFoundError,
     GTITimeoutError,
     gti_client,
 )
@@ -90,7 +92,7 @@ async def handle_message(ctx) -> None:
         bind_request(tenant=tenant_id)
 
     try:
-        if not user_text or not re.search(r"[a-zA-Z0-9]", user_text):
+        if not user_text or not re.search(r"\w", user_text, re.UNICODE):
             logger.info("[EVENT] Message with no meaningful query — replying with usage hint.")
             await ctx.send(EMPTY_QUERY_NOTICE)
             return
@@ -186,6 +188,16 @@ async def _handle_user_query(
     except GTIServiceError as exc:
         logger.error("[ERROR] GTI service unavailable: %s", exc)
         err_msg = "⚠️ **Threat Intelligence Service Unavailable**\n\nThe Google Threat Intelligence service is temporarily unreachable. Please try again shortly."
+        await deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg))
+
+    except GTISessionNotFoundError as exc:
+        logger.error("[ERROR] GTI session not found or expired: %s", exc)
+        err_msg = "🔄 **Session Expired**\n\nYour conversation session with the Google Threat Intelligence service has expired. Please start a new query."
+        await deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg))
+
+    except GTIBadRequestError as exc:
+        logger.error("[ERROR] GTI rejected the request: %s", exc)
+        err_msg = "🚫 **Request Rejected**\n\nThe Google Threat Intelligence service could not process this query. Try rephrasing your question."
         await deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg))
 
     except Exception:

@@ -9,6 +9,7 @@ in a dedicated container.
 """
 import json
 import logging
+import time
 
 from azure.core.exceptions import ResourceExistsError, ResourceNotFoundError
 from azure.storage.blob import BlobServiceClient
@@ -16,6 +17,9 @@ from azure.storage.blob import BlobServiceClient
 from app.config import Settings
 
 logger = logging.getLogger("rs-alerts")
+
+_CHECKPOINT_WRITE_RETRIES = 3
+_CHECKPOINT_WRITE_BACKOFF_SECONDS = 1.0
 
 
 def _blob_client(settings: Settings):
@@ -47,6 +51,26 @@ def read_cursor(settings: Settings) -> str | None:
 
 
 def write_cursor(settings: Settings, update_time: str) -> None:
-    """Write the incremental cursor to blob storage."""
+    """Write the incremental cursor to blob storage.
+
+    The checkpoint is written after the alert has already been delivered to
+    Teams, so a transient failure here (rather than a genuine one) would
+    otherwise cause that alert to be re-sent on the next run. Retry with
+    backoff to close most of that window before giving up and propagating.
+    """
     blob_client = _blob_client(settings)
-    blob_client.upload_blob(json.dumps({"last_update_time": update_time}), overwrite=True)
+    payload = json.dumps({"last_update_time": update_time})
+
+    for attempt in range(_CHECKPOINT_WRITE_RETRIES):
+        try:
+            blob_client.upload_blob(payload, overwrite=True)
+            return
+        except Exception:
+            if attempt == _CHECKPOINT_WRITE_RETRIES - 1:
+                raise
+            delay = _CHECKPOINT_WRITE_BACKOFF_SECONDS * (2 ** attempt)
+            logger.warning(
+                "Checkpoint write failed (attempt %d/%d) — retrying in %.1fs.",
+                attempt + 1, _CHECKPOINT_WRITE_RETRIES, delay,
+            )
+            time.sleep(delay)

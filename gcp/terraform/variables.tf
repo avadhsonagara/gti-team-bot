@@ -105,6 +105,12 @@ variable "rs_alerts_teams_channel_id" {
   default     = ""
 }
 
+variable "rsa_gti_project" {
+  description = "Google Threat Intelligence project ID that RS Alerts queries for alerts. This is a GTI-side project, not necessarily the same as `project_id` (the GCP project hosting this infrastructure) — required when enable_rs_alerts is true."
+  type        = string
+  default     = ""
+}
+
 # Optional RSA tuning (defaults shown)
 variable "rsa_function_name" {
   description = "Name of the RS Alerts Cloud Run function."
@@ -113,9 +119,9 @@ variable "rsa_function_name" {
 }
 
 variable "rsa_schedule" {
-  description = "Cron expression for the Cloud Scheduler job triggering RS Alerts. Default: every hour at minute 0."
+  description = "Cron expression for the Cloud Scheduler job triggering RS Alerts. Default: every 15 minutes (matches the Azure deployment's default cadence)."
   type        = string
-  default     = "0 * * * *"
+  default     = "*/15 * * * *"
 }
 
 variable "rsa_schedule_timezone" {
