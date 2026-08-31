@@ -6,6 +6,7 @@ Every inbound Teams message is routed through handle_message():
   - Empty or whitespace-only messages -> usage hint.
   - Any query -> GTI Agentic Sessions API pipeline.
 """
+import asyncio
 import logging
 from datetime import datetime, timezone
 import re
@@ -21,6 +22,7 @@ from app.gti.client import (
     gti_client,
 )
 from app.observability import bind_request, clear_request
+from app.output_format_store import get_output_format
 from app.teams.cards import (
     build_gti_response_card,
     build_status_card,
@@ -28,6 +30,7 @@ from app.teams.cards import (
 )
 from app.utils.helpers import (
     EMPTY_QUERY_NOTICE,
+    build_custom_format_section,
     deliver_message,
     parse_adaptive_card,
     strip_mentions,
@@ -36,12 +39,13 @@ from app.utils.helpers import (
 logger = logging.getLogger("gti-teams-bot")
 
 
-def _render_system_prompt(user_query: str) -> str:
-    """Render the system prompt with user query and dynamic UTC timestamp."""
+def _render_system_prompt(user_query: str, output_format: str = "") -> str:
+    """Render the system prompt with user query, dynamic UTC timestamp, and output format."""
     if not SYSTEM_PROMPT:
         return user_query
     now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
     prompt = SYSTEM_PROMPT.replace("{{CURRENT_DATETIME_UTC}}", now_utc)
+    prompt = prompt.replace("{{CUSTOM_FORMAT}}", build_custom_format_section(output_format))
     if "{{USER_QUERY}}" in prompt:
         prompt = prompt.replace("{{USER_QUERY}}", user_query)
     else:
@@ -132,7 +136,8 @@ async def _handle_user_query(
             logger.warning("[PLACEHOLDER] Failed (%s) — will post fresh reply directly", exc)
 
         # ── Step 2: Query GTI Agentic Sessions API (Stateless Query) ──────────
-        initial_msg = _render_system_prompt(user_query=user_text)
+        output_format = await asyncio.to_thread(get_output_format, settings)
+        initial_msg = _render_system_prompt(user_query=user_text, output_format=output_format)
         logger.info("[AGENTIC] Dispatching query to GTI Agentic API for conversation=%s", conversation_id)
         session_id, response_text, _ = await gti_client.create_session(message=initial_msg)
         bind_request(session_id=session_id)

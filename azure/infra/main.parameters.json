@@ -32,6 +32,9 @@
     "manifestBlobName": {
       "value": "teams-app-manifest.zip"
     },
+    "outputFormatInstructions": {
+      "value": ""
+    },
     "enableRsAlerts": {
       "value": false
     },

@@ -31,3 +31,7 @@ python-dotenv>=1.0
 # Fast JSON parsing — ~2-5x faster than stdlib json for Adaptive Card
 # response parsing (app/utils/helpers.py)
 orjson>=3.9
+
+# Persists the configured output-format instructions as a JSON blob in the
+# Function App's own storage account (app/output_format_store.py).
+azure-storage-blob>=12.19.0

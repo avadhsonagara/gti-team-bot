@@ -38,6 +38,9 @@ param instanceMemoryMB int = 2048
 @maxValue(1000)
 param maximumInstanceCount int = 100
 
+@description('Optional formatting instructions applied to every bot response (e.g. "Show severity as bold text instead of emoji"). Stored as a JSON config blob in the Function App\'s own storage account. Leave empty to use the bot\'s built-in formatting.')
+param outputFormatInstructions string = ''
+
 @description('Add RS Alerts to this Team: provisions a second, background Function App that polls Google Threat Intelligence alerts and posts them into a Teams channel. Set to "Yes" to also fill in the two fields below.')
 @allowed([
   'No'
@@ -62,6 +65,7 @@ module main 'main.bicep' = {
     gtiApiKey: gtiApiKey
     instanceMemoryMB: instanceMemoryMB
     maximumInstanceCount: maximumInstanceCount
+    outputFormatInstructions: outputFormatInstructions
     enableRsAlerts: addRsAlerts == 'Yes'
     rsAlertsTeamsChannelId: rsAlertsChannelIdOrChannelLink
     rsAlertsGtiProject: rsAlertsGtiProject

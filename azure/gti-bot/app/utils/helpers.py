@@ -72,6 +72,28 @@ def parse_adaptive_card(raw_text: str | None) -> tuple[Optional[dict], str]:
     return None, raw_text or "No response generated."
 
 
+# ── Output format instructions ────────────────────────────────────────────────
+
+def build_custom_format_section(output_format: str) -> str:
+    """
+    Wrap the configured output-format instructions for injection into the prompt.
+
+    Returns an empty string when no custom format is set, so the
+    {{CUSTOM_FORMAT}} placeholder disappears rather than leaving a dangling section.
+    """
+    if not output_format.strip():
+        return ""
+    logger.info("[PROMPT] Custom output format applied (%d chars)", len(output_format))
+    return (
+        "---\n\n"
+        "## CUSTOM OUTPUT FORMAT INSTRUCTIONS\n"
+        "Apply these instructions IN ADDITION TO the Adaptive Card rules above.\n"
+        "They refine presentation only — they do not replace the Adaptive Card structure.\n\n"
+        "─── CUSTOM FORMAT ───\n"
+        f"{output_format.strip()}\n"
+        "────────────────────"
+    )
+
 
 # ── Standard User Notices ─────────────────────────────────────────────────────
 

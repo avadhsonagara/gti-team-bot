@@ -5,7 +5,7 @@ Reads values from environment variables (and .env at startup).
 Field names map to env vars via automatic uppercasing:
   e.g. `client_id` reads from `CLIENT_ID`.
 """
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -16,6 +16,7 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
+        populate_by_name=True,
     )
 
     # ── Microsoft Teams / Bot Framework ─────────────────────────────────────────
@@ -30,6 +31,12 @@ class Settings(BaseSettings):
     gti_timeout_seconds: float = 180.0
     gti_max_retries: int = 2
     gti_retry_delay: float = 2.0
+
+    # ── Output format instructions ───────────────────────────────────────────
+    # Deploy-time default (main.bicep's outputFormatInstructions param), used
+    # to seed the JSON config blob on first read — see app/output_format_store.py.
+    output_format_instructions: str = ""
+    azure_web_jobs_storage: str = Field(default="", validation_alias="AzureWebJobsStorage")
 
     # ── Server ────────────────────────────────────────────────────────────────
     port: int = 8080

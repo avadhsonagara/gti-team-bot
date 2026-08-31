@@ -31,6 +31,10 @@
 #   export ENABLE_RS_ALERTS=true
 #   export RS_ALERTS_TEAMS_CHANNEL_ID=https://teams.microsoft.com/l/channel/19%3a...
 #   export RS_ALERTS_GTI_PROJECT=your-gti-project-id
+#
+# Optional bot-wide response formatting instructions (empty by default — see
+# main.bicep's outputFormatInstructions param / app/output_format_store.py):
+#   export OUTPUT_FORMAT_INSTRUCTIONS="Show severity as bold text instead of emoji"
 # =============================================================================
 set -euo pipefail
 
@@ -61,6 +65,9 @@ if [ -n "$EXISTING_PLAN_NAME" ]; then
 fi
 if [ "$ENABLE_RS_ALERTS" = "true" ]; then
   EXTRA_PARAMS+=(--parameters "enableRsAlerts=true" "rsAlertsTeamsChannelId=$RS_ALERTS_TEAMS_CHANNEL_ID" "rsAlertsGtiProject=$RS_ALERTS_GTI_PROJECT")
+fi
+if [ -n "${OUTPUT_FORMAT_INSTRUCTIONS:-}" ]; then
+  EXTRA_PARAMS+=(--parameters "outputFormatInstructions=$OUTPUT_FORMAT_INSTRUCTIONS")
 fi
 
 az deployment group create \

@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.46.1.21595",
-      "templateHash": "12312654851244559910"
+      "templateHash": "2518714225191861388"
     }
   },
   "parameters": {
@@ -41,6 +41,13 @@
       "maxValue": 1000,
       "metadata": {
         "description": "Maximum scale-out instance count for the Flex Consumption plan."
+      }
+    },
+    "outputFormatInstructions": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Optional formatting instructions applied to every bot response (e.g. \"Show severity as bold text instead of emoji\"). Stored as a JSON config blob in the Function App's own storage account. Leave empty to use the bot's built-in formatting."
       }
     },
     "addRsAlerts": {
@@ -92,6 +99,9 @@
           "maximumInstanceCount": {
             "value": "[parameters('maximumInstanceCount')]"
           },
+          "outputFormatInstructions": {
+            "value": "[parameters('outputFormatInstructions')]"
+          },
           "enableRsAlerts": {
             "value": "[equals(parameters('addRsAlerts'), 'Yes')]"
           },
@@ -109,7 +119,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.46.1.21595",
-              "templateHash": "14152904226820261298"
+              "templateHash": "1028531870033978144"
             }
           },
           "parameters": {
@@ -195,6 +205,13 @@
               "defaultValue": {},
               "metadata": {
                 "description": "Non-secret application settings merged onto the Function App (e.g. GTI_API_BASE_URL, LOG_FORMAT)."
+              }
+            },
+            "outputFormatInstructions": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Optional formatting instructions applied to every bot response (e.g. \"Show severity as bold text instead of emoji\"). Seeds a JSON config blob (bot-config/output-format.json) in the Function App's own storage account on first read — after that the blob is the source of truth and this value is ignored. Leave empty to use the built-in formatting from app/prompt.md."
               }
             },
             "botName": {
@@ -532,7 +549,7 @@
                 "httpsOnly": true,
                 "keyVaultReferenceIdentity": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('functionAppName')))]",
                 "siteConfig": {
-                  "appSettings": "[concat(createArray(createObject('name', 'AzureWebJobsStorage', 'value', format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix={2}', parameters('storageAccountName'), listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').keys[0].value, environment().suffixes.storage)), createObject('name', 'DEPLOYMENT_STORAGE_CONNECTION_STRING', 'value', format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix={2}', parameters('storageAccountName'), listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').keys[0].value, environment().suffixes.storage)), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference(resourceId('Microsoft.Insights/components', parameters('appInsightsName')), '2020-02-02').ConnectionString), createObject('name', 'CLIENT_ID', 'value', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('functionAppName'))), '2023-01-31').clientId), createObject('name', 'TENANT_ID', 'value', parameters('tenantId')), createObject('name', 'MANAGED_IDENTITY_CLIENT_ID', 'value', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('functionAppName'))), '2023-01-31').clientId), createObject('name', 'GTI_API_KEY', 'value', format('@Microsoft.KeyVault(SecretUri={0})', reference(resourceId('Microsoft.KeyVault/vaults/secrets', parameters('keyVaultName'), 'GtiApiKey'), '2023-07-01').secretUri))), variables('customAppSettingsArray'))]"
+                  "appSettings": "[concat(createArray(createObject('name', 'AzureWebJobsStorage', 'value', format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix={2}', parameters('storageAccountName'), listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').keys[0].value, environment().suffixes.storage)), createObject('name', 'DEPLOYMENT_STORAGE_CONNECTION_STRING', 'value', format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix={2}', parameters('storageAccountName'), listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').keys[0].value, environment().suffixes.storage)), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference(resourceId('Microsoft.Insights/components', parameters('appInsightsName')), '2020-02-02').ConnectionString), createObject('name', 'CLIENT_ID', 'value', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('functionAppName'))), '2023-01-31').clientId), createObject('name', 'TENANT_ID', 'value', parameters('tenantId')), createObject('name', 'MANAGED_IDENTITY_CLIENT_ID', 'value', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('functionAppName'))), '2023-01-31').clientId), createObject('name', 'GTI_API_KEY', 'value', format('@Microsoft.KeyVault(SecretUri={0})', reference(resourceId('Microsoft.KeyVault/vaults/secrets', parameters('keyVaultName'), 'GtiApiKey'), '2023-07-01').secretUri)), createObject('name', 'OUTPUT_FORMAT_INSTRUCTIONS', 'value', parameters('outputFormatInstructions'))), variables('customAppSettingsArray'))]"
                 },
                 "functionAppConfig": {
                   "deployment": {

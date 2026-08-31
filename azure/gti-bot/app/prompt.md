@@ -239,3 +239,5 @@ an `ActionSet` element placed inside `body`, nested in that item's own `Containe
     them: fetch and render their full GTI report/search results normally (per the rules
     above) in the SAME response, alongside the invalid-format element(s) for the ones that
     failed. Only skip GTI tool calls entirely if every identifier in the query is invalid.
+
+{{CUSTOM_FORMAT}}
