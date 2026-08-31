@@ -260,39 +260,31 @@ In addition to interactive questions from analysts, the solution supports an aut
 
 ---
 
-## Configuration Parameters
 
-Both the interactive Bot Backend and the RS Alerts worker load their configuration dynamically via environment variables.
-
-### Core Bot Settings (Interactive & RS Alerts)
-
-| Environment Variable | Required | Default | Description |
-| :--- | :---: | :--- | :--- |
-| `GTI_API_KEY` | ✅ | `""` | The Google Threat Intelligence API Key used to authenticate agentic requests. |
-| `CLIENT_ID` | ✅* | `""` | The Microsoft Entra ID App Registration Client ID. (*Not required if using Azure Managed Identities) |
-| `CLIENT_SECRET` | ✅* | `""` | The Microsoft Entra ID Client Secret. (*Not required if using Azure Managed Identities) |
-| `TENANT_ID` | ✅* | `""` | The Microsoft Entra ID Tenant ID. (*Not required if using Azure Managed Identities) |
-| `LOG_LEVEL` | | `"INFO"` | Standard Python logging level (e.g., `DEBUG`, `INFO`, `WARNING`, `ERROR`). |
-| `LOG_FORMAT` | | `""` | Set to `"json"` for structured Google Cloud Logging / Azure Application Insights ingestion. |
-
-### RS Alerts Tuning (Worker Only)
-
-| Environment Variable | Required | Default | Description |
-| :--- | :---: | :--- | :--- |
-| `TEAMS_CHANNEL_ID` | ✅ | `""` | The Microsoft Teams `19:...@thread.tacv2` channel ID where alerts will be posted. |
-| `GCP_PROJECT_ID` | | _Dynamic_ | (GCP Only) Specifies the Google Cloud project hosting Firestore state. |
-| `BACKFILL_DAYS` | | `7` | Days of historical GTI alerts to fetch on the very first execution. |
-| `PAGE_SIZE` | | `1000` | Number of alerts to retrieve per page from the GTI API. |
-| `FILTER_SEVERITY_LEVEL` | | `"MEDIUM,HIGH"` | Comma-separated list of severity levels to process. |
-| `FILTER_PRIORITY_LEVEL` | | `"MEDIUM,HIGH,CRITICAL"`| Comma-separated list of priority levels to process. |
-| `FILTER_RELEVANCE_LEVEL`| | `"MEDIUM,HIGH"` | Comma-separated list of relevance levels to process. |
-| `FILTER_RELEVANCE_CONFIDENCE`| | `"MEDIUM,HIGH"` | Comma-separated list of confidence levels to process. |
-
----
 
 ## Deployment Instructions
 
 ### Option 1: GCP Hosting (Reference)
+
+#### Configuration Parameters (`terraform.tfvars`)
+
+| Variable | Required | Default | Description |
+| :--- | :---: | :--- | :--- |
+| `project_id` | ✅ | | Your Google Cloud Project ID. |
+| `region` | ✅ | | The Google Cloud region to deploy to (e.g., `us-central1`). |
+| `gti_api_key` | ✅ | | Your Google Threat Intelligence API key. |
+| `azure_tenant_id` | ✅ | | The Microsoft Entra ID Tenant ID for bot registration. |
+| `azure_subscription_id` | ✅ | | The Microsoft Azure Subscription ID. |
+| `rs_alerts_enabled` | | `false` | Set to `true` to deploy the Real-time System (RS) Alert poller. |
+| `rs_alerts_teams_channel_id` | | | The Teams channel URL/ID for RS Alerts (`19:...@thread.tacv2`). |
+| `rsa_schedule` | | `"*/15 * * * *"` | The Cloud Scheduler chron string for RS Alerts. |
+| `rsa_filter_severity_level` | | `"MEDIUM,HIGH"` | Comma-separated list of severity levels to process. |
+| `rsa_filter_priority_level` | | `"MEDIUM,HIGH,CRITICAL"`| Comma-separated list of priority levels to process. |
+| `rsa_filter_relevance_level`| | `"MEDIUM,HIGH"` | Comma-separated list of relevance levels to process. |
+| `rsa_filter_relevance_confidence`| | `"MEDIUM,HIGH"` | Comma-separated list of confidence levels to process. |
+| `log_level` | | `"INFO"` | Standard Python logging level (e.g., `DEBUG`, `INFO`). |
+
+#### Deployment Steps
 
 1. **Configure Parameters:** Set your GCP Project ID, region, and GTI API key in the Terraform configuration variables.
 2. **Run Terraform:** Execute `terraform init` and `terraform apply`.
@@ -302,6 +294,22 @@ Both the interactive Bot Backend and the RS Alerts worker load their configurati
 ---
 
 ### Option 2: Azure Native Hosting (Target Architecture)
+
+#### Configuration Parameters (`deploy.sh`)
+
+| Environment Variable | Required | Default | Description |
+| :--- | :---: | :--- | :--- |
+| `GTI_API_KEY` | ✅ | | Your Google Threat Intelligence API key. |
+| `ENABLE_RS_ALERTS` | | `false` | Set to `"true"` to enable the Real-time System (RS) Alert poller. |
+| `RS_ALERTS_TEAMS_CHANNEL_ID` | | | The Teams channel URL/ID for RS Alerts (`19:...@thread.tacv2`). |
+| `RS_ALERTS_GTI_PROJECT` | | | The GTI Project ID (required if RS alerts are enabled). |
+| `RSA_SCHEDULE` | | `"0 */15 * * * *"`| The Azure NCRONTAB string for the RS Alerts timer trigger. |
+| `RSA_BACKFILL_DAYS` | | `7` | Days of historical GTI alerts to fetch on first execution. |
+| `RSA_PAGE_SIZE` | | `1000` | Number of alerts to retrieve per page from the GTI API. |
+| `RSA_FILTER_SEVERITY_LEVEL` | | `"MEDIUM,HIGH"` | Comma-separated list of severity levels to process. |
+| `RSA_FILTER_PRIORITY_LEVEL` | | `"MEDIUM,HIGH,CRITICAL"`| Comma-separated list of priority levels to process. |
+| `RSA_FILTER_RELEVANCE_LEVEL`| | `"MEDIUM,HIGH"` | Comma-separated list of relevance levels to process. |
+| `RSA_FILTER_RELEVANCE_CONFIDENCE`| | `"MEDIUM,HIGH"` | Comma-separated list of confidence levels to process. |
 
 #### Simple Deployment via Azure Template
 
