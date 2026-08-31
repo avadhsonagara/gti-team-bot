@@ -58,9 +58,6 @@ class Settings(BaseSettings):
     state_container_name: str = "rs-alerts-state"
     state_blob_name: str = "cursor.json"
 
-    # ── Server ────────────────────────────────────────────────────────────────
-    log_format: str = ""
-
     # ── Validators ────────────────────────────────────────────────────────────
 
     @field_validator("gti_api_key", "client_secret", mode="before")

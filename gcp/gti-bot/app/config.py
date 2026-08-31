@@ -28,9 +28,6 @@ class Settings(BaseSettings):
     # ── Google Threat Intelligence (GTI) Agentic API ────────────────────────────
     gti_api_key: str = ""
     gti_api_base_url: str = "https://www.virustotal.com/api/v3"
-    gti_timeout_seconds: float = 180.0
-    gti_max_retries: int = 2
-    gti_retry_delay: float = 2.0
 
     # ── Google Cloud Platform / Firestore Persistence ─────────────────────────
     gcp_project_id: str = Field(
@@ -50,8 +47,6 @@ class Settings(BaseSettings):
 
     # ── Server & Observability ────────────────────────────────────────────────
     port: int = 8080
-    log_format: str = ""
-    log_level: str = "INFO"
     ssl_keyfile: str = ""
     ssl_certfile: str = ""
 

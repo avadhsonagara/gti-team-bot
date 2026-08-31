@@ -19,11 +19,7 @@
     },
     "appSettings": {
       "value": {
-        "GTI_API_BASE_URL": "https://www.virustotal.com/api/v3",
-        "GTI_TIMEOUT_SECONDS": "180.0",
-        "GTI_MAX_RETRIES": "2",
-        "GTI_RETRY_DELAY": "2.0",
-        "LOG_FORMAT": "text"
+        "GTI_API_BASE_URL": "https://www.virustotal.com/api/v3"
       }
     },
     "manifestContainerName": {

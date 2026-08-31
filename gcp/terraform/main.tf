@@ -423,7 +423,6 @@ resource "google_cloudfunctions2_function" "gti_bot" {
       FIRESTORE_BOT_CONFIG_COLLECTION = var.firestore_bot_config_collection
       FIRESTORE_OUTPUT_FORMAT_DOC     = var.firestore_output_format_doc
       OUTPUT_FORMAT_INSTRUCTIONS      = var.output_format_instructions
-      LOG_FORMAT                      = "json"
     }
 
     secret_environment_variables {
@@ -501,7 +500,6 @@ resource "google_cloudfunctions2_function" "rs_alerts" {
       FIRESTORE_DATABASE          = "(default)"
       FIRESTORE_STATE_COLLECTION  = var.firestore_state_collection
       FIRESTORE_STATE_DOC         = var.firestore_state_doc
-      LOG_FORMAT                  = "json"
     }
 
     secret_environment_variables {

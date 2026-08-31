@@ -28,9 +28,6 @@ class Settings(BaseSettings):
     # API key authenticated via the x-apikey header
     gti_api_key: str = ""
     gti_api_base_url: str = "https://www.virustotal.com/api/v3"
-    gti_timeout_seconds: float = 180.0
-    gti_max_retries: int = 2
-    gti_retry_delay: float = 2.0
 
     # ── Output format instructions ───────────────────────────────────────────
     # Deploy-time default (main.bicep's outputFormatInstructions param), used
@@ -40,7 +37,6 @@ class Settings(BaseSettings):
 
     # ── Server ────────────────────────────────────────────────────────────────
     port: int = 8080
-    log_format: str = ""
     ssl_keyfile: str = ""
     ssl_certfile: str = ""
 

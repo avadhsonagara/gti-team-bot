@@ -63,9 +63,9 @@ class GTIAgenticClient:
     ) -> None:
         self.api_key = api_key or settings.gti_api_key
         self.base_url = (base_url or settings.gti_api_base_url).rstrip("/")
-        self.timeout = timeout or settings.gti_timeout_seconds
-        self.max_retries = max_retries if max_retries is not None else settings.gti_max_retries
-        self.retry_delay = retry_delay if retry_delay is not None else settings.gti_retry_delay
+        self.timeout = timeout if timeout is not None else 240.0
+        self.max_retries = max_retries if max_retries is not None else 2
+        self.retry_delay = retry_delay if retry_delay is not None else 2.0
         self._client: httpx.AsyncClient | None = None
 
     async def _get_client(self) -> httpx.AsyncClient:

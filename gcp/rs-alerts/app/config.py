@@ -61,10 +61,6 @@ class Settings(BaseSettings):
     firestore_state_collection: str = "rs-alerts-state"
     firestore_state_doc: str = "cursor"
 
-    # ── Observability & Server ────────────────────────────────────────────────
-    log_format: str = ""
-    log_level: str = "INFO"
-
     # ── Validators ────────────────────────────────────────────────────────────
 
     @field_validator("gti_api_key", "client_secret", mode="before")

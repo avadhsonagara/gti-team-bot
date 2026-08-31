@@ -2,7 +2,7 @@
   "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.25/MicrosoftTeams.schema.json",
   "manifestVersion": "1.25",
   "version": "1.0.1",
-  "id": "083c9bb8-cdf8-4f80-b69d-4f5bdc2b666e",
+  "id": "",
   "developer": {
     "name": "Google",
     "websiteUrl": "https://example.com",
@@ -24,7 +24,7 @@
   "accentColor": "#2D1B4D",
   "bots": [
     {
-      "botId": "083c9bb8-cdf8-4f80-b69d-4f5bdc2b666e",
+      "botId": "",
       "scopes": ["personal", "team", "groupChat"],
       "supportsFiles": false,
       "isNotificationOnly": false

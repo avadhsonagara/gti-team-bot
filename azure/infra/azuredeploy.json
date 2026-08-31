@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.46.1.21595",
-      "templateHash": "15950594589517590468"
+      "templateHash": "13192361528087802710"
     }
   },
   "parameters": {
@@ -90,7 +90,7 @@
       "type": "object",
       "defaultValue": {},
       "metadata": {
-        "description": "Non-secret application settings merged onto the Function App (e.g. GTI_API_BASE_URL, LOG_FORMAT)."
+        "description": "Non-secret application settings merged onto the Function App (e.g. GTI_API_BASE_URL)."
       }
     },
     "outputFormatInstructions": {

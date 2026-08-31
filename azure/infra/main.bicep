@@ -72,7 +72,7 @@ param instanceMemoryMB int = 2048
 @maxValue(1000)
 param maximumInstanceCount int = 100
 
-@description('Non-secret application settings merged onto the Function App (e.g. GTI_API_BASE_URL, LOG_FORMAT).')
+@description('Non-secret application settings merged onto the Function App (e.g. GTI_API_BASE_URL).')
 param appSettings object = {}
 
 @description('Optional formatting instructions applied to every bot response (e.g. "Show severity as bold text instead of emoji"). Seeds a JSON config blob (bot-config/output-format.json) in the Function App\'s own storage account on first read — after that the blob is the source of truth and this value is ignored. Leave empty to use the built-in formatting from app/prompt.md.')

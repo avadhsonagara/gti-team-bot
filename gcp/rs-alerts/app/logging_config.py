@@ -34,11 +34,9 @@ class GCPJsonFormatter(logging.Formatter):
 def setup_logging() -> None:
     """Configure root logging for local or Cloud Run execution."""
     is_gcp = bool(os.getenv("K_SERVICE") or os.getenv("FUNCTION_TARGET"))
-    log_format = os.getenv("LOG_FORMAT", "json" if is_gcp else "text").lower()
-    log_level = getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO)
 
     stream_handler = logging.StreamHandler()
-    if log_format == "json":
+    if is_gcp:
         stream_handler.setFormatter(GCPJsonFormatter())
     else:
         stream_handler.setFormatter(logging.Formatter(
@@ -46,4 +44,4 @@ def setup_logging() -> None:
             datefmt="%H:%M:%S",
         ))
 
-    logging.basicConfig(level=log_level, handlers=[stream_handler], force=True)
+    logging.basicConfig(level=logging.INFO, handlers=[stream_handler], force=True)
