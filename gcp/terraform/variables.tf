@@ -154,29 +154,29 @@ variable "rsa_function_timeout_seconds" {
   default     = 540
 }
 
-# Optional RSA alert filters
+# Optional RSA alert filters (empty = no filter on that field)
 variable "rsa_filter_severity_level" {
-  description = "Allowed alert severities (comma-separated: LOW,MEDIUM,HIGH)."
+  description = "Allowed alert severities (comma-separated: LOW,MEDIUM,HIGH). Empty = no filter on this field."
   type        = string
-  default     = "MEDIUM,HIGH"
+  default     = ""
 }
 
 variable "rsa_filter_priority_level" {
-  description = "Allowed alert priorities (comma-separated: LOW,MEDIUM,HIGH,CRITICAL)."
+  description = "Allowed alert priorities (comma-separated: LOW,MEDIUM,HIGH,CRITICAL). Empty = no filter on this field."
   type        = string
-  default     = "MEDIUM,HIGH,CRITICAL"
+  default     = ""
 }
 
 variable "rsa_filter_relevance_level" {
-  description = "Allowed alert relevance levels (comma-separated: LOW,MEDIUM,HIGH)."
+  description = "Allowed alert relevance levels (comma-separated: LOW,MEDIUM,HIGH). Empty = no filter on this field."
   type        = string
-  default     = "MEDIUM,HIGH"
+  default     = ""
 }
 
 variable "rsa_filter_relevance_confidence" {
-  description = "Allowed alert relevance confidences (comma-separated: LOW,MEDIUM,HIGH)."
+  description = "Allowed alert relevance confidences (comma-separated: LOW,MEDIUM,HIGH). Empty = no filter on this field."
   type        = string
-  default     = "MEDIUM,HIGH"
+  default     = ""
 }
 
 variable "firestore_state_collection" {

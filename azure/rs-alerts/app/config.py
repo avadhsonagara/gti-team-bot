@@ -47,11 +47,11 @@ class Settings(BaseSettings):
     backfill_days: int = 7
     page_size: int = 1000
 
-    # ── Alert filters (comma-separated levels) ───────────────────────────────
-    filter_severity_level: str = "MEDIUM,HIGH"
-    filter_priority_level: str = "MEDIUM,HIGH,CRITICAL"
-    filter_relevance_level: str = "MEDIUM,HIGH"
-    filter_relevance_confidence: str = "MEDIUM,HIGH"
+    # ── Alert filters (comma-separated levels, empty = no filter on that field) ──
+    filter_severity_level: str = ""
+    filter_priority_level: str = ""
+    filter_relevance_level: str = ""
+    filter_relevance_confidence: str = ""
 
     # ── Cursor state (Azure Blob Storage) ────────────────────────────────────
     # Flex Consumption instances are ephemeral and may scale to zero between

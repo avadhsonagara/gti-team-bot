@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.46.1.21595",
-      "templateHash": "13160369979672869942"
+      "templateHash": "10368216072836644446"
     }
   },
   "parameters": {
@@ -252,30 +252,30 @@
     },
     "rsAlertsFilterSeverityLevel": {
       "type": "string",
-      "defaultValue": "MEDIUM,HIGH",
+      "defaultValue": "",
       "metadata": {
-        "description": "Filter: Severity level."
+        "description": "Filter: Severity level (comma-separated LOW/MEDIUM/HIGH). Empty = no filter on this field."
       }
     },
     "rsAlertsFilterPriorityLevel": {
       "type": "string",
-      "defaultValue": "MEDIUM,HIGH,CRITICAL",
+      "defaultValue": "",
       "metadata": {
-        "description": "Filter: Priority level."
+        "description": "Filter: Priority level (comma-separated LOW/MEDIUM/HIGH/CRITICAL). Empty = no filter on this field."
       }
     },
     "rsAlertsFilterRelevanceLevel": {
       "type": "string",
-      "defaultValue": "MEDIUM,HIGH",
+      "defaultValue": "",
       "metadata": {
-        "description": "Filter: Relevance level."
+        "description": "Filter: Relevance level (comma-separated LOW/MEDIUM/HIGH). Empty = no filter on this field."
       }
     },
     "rsAlertsFilterRelevanceConfidence": {
       "type": "string",
-      "defaultValue": "MEDIUM,HIGH",
+      "defaultValue": "",
       "metadata": {
-        "description": "Filter: Relevance confidence."
+        "description": "Filter: Relevance confidence (comma-separated LOW/MEDIUM/HIGH). Empty = no filter on this field."
       }
     },
     "rsAlertsAppSettings": {

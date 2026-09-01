@@ -37,9 +37,9 @@ rsa_gti_project = "YOUR_GTI_PROJECT_ID"
 # rsa_function_memory          = "256Mi"
 # rsa_function_timeout_seconds = 540
 
-# Optional RSA alert filters (defaults shown; comma-separated, OR'd within a
-# field, AND'd across fields). Widen e.g. to "LOW,MEDIUM,HIGH" to disable
-# filtering on that field.
+# Optional RSA alert filters (comma-separated, OR'd within a field, AND'd
+# across fields). Default is empty for all four = no filtering at all,
+# every alert is delivered regardless of severity/priority/relevance.
 # rsa_filter_severity_level       = "MEDIUM,HIGH"            # valid: LOW, MEDIUM, HIGH
 # rsa_filter_priority_level       = "MEDIUM,HIGH,CRITICAL"   # valid: LOW, MEDIUM, HIGH, CRITICAL
 # rsa_filter_relevance_level      = "MEDIUM,HIGH"            # valid: LOW, MEDIUM, HIGH

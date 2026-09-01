@@ -44,7 +44,8 @@ def get_gti_access_token(api_key: str) -> str:
 
 def _level_filter_clause(
     field: str, settings_attr: str, prefix: str, valid_suffixes: tuple, settings: Settings
-) -> str:
+) -> str | None:
+    """Build one level's OR-clause, or None if the setting is empty (no filter on this field)."""
     raw = getattr(settings, settings_attr)
     values = []
     for part in raw.split(","):
@@ -59,17 +60,26 @@ def _level_filter_clause(
         if full not in values:
             values.append(full)
     if not values:
-        raise RuntimeError(f"{settings_attr} resolved to no values.")
+        return None
     clause = " OR ".join(f'{field} = "{v}"' for v in values)
     return f"({clause})" if len(values) > 1 else clause
 
 
 def build_filter(updated_after: str | None, settings: Settings) -> str:
-    """Compose the List Alerts filter: cursor AND level filters."""
+    """Compose the List Alerts filter: cursor AND any configured level filters.
+
+    An empty filter_* setting means "no filter on that dimension" — leaving
+    all four empty returns every alert regardless of severity/priority/
+    relevance/confidence (still narrowed by the cursor, if one exists).
+    """
     clauses = []
     if updated_after:
         clauses.append(f'audit.update_time > "{updated_after}"')
-    clauses.extend(_level_filter_clause(*spec, settings) for spec in _LEVEL_FILTERS)
+    clauses.extend(
+        clause for clause in (
+            _level_filter_clause(*spec, settings) for spec in _LEVEL_FILTERS
+        ) if clause is not None
+    )
     return " AND ".join(clauses)
 
 

@@ -183,17 +183,17 @@ param rsAlertsInstanceMemoryMB int = 512
 @maxValue(1000)
 param rsAlertsMaximumInstanceCount int = 40
 
-@description('Filter: Severity level.')
-param rsAlertsFilterSeverityLevel string = 'MEDIUM,HIGH'
+@description('Filter: Severity level (comma-separated LOW/MEDIUM/HIGH). Empty = no filter on this field.')
+param rsAlertsFilterSeverityLevel string = ''
 
-@description('Filter: Priority level.')
-param rsAlertsFilterPriorityLevel string = 'MEDIUM,HIGH,CRITICAL'
+@description('Filter: Priority level (comma-separated LOW/MEDIUM/HIGH/CRITICAL). Empty = no filter on this field.')
+param rsAlertsFilterPriorityLevel string = ''
 
-@description('Filter: Relevance level.')
-param rsAlertsFilterRelevanceLevel string = 'MEDIUM,HIGH'
+@description('Filter: Relevance level (comma-separated LOW/MEDIUM/HIGH). Empty = no filter on this field.')
+param rsAlertsFilterRelevanceLevel string = ''
 
-@description('Filter: Relevance confidence.')
-param rsAlertsFilterRelevanceConfidence string = 'MEDIUM,HIGH'
+@description('Filter: Relevance confidence (comma-separated LOW/MEDIUM/HIGH). Empty = no filter on this field.')
+param rsAlertsFilterRelevanceConfidence string = ''
 
 @description('Additional non-secret application settings merged onto the RS Alerts Function App (e.g. FILTER_SEVERITY_LEVEL).')
 param rsAlertsAppSettings object = {}
