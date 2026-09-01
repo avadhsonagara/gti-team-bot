@@ -119,9 +119,9 @@ variable "rsa_function_name" {
 }
 
 variable "rsa_schedule" {
-  description = "Cron expression for the Cloud Scheduler job triggering RS Alerts. Default: every 15 minutes (matches the Azure deployment's default cadence)."
+  description = "Cron expression for the Cloud Scheduler job triggering RS Alerts. Default: every 3 minutes (matches the Azure deployment's default cadence)."
   type        = string
-  default     = "*/15 * * * *"
+  default     = "*/3 * * * *"
 }
 
 variable "rsa_schedule_timezone" {

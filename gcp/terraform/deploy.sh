@@ -13,7 +13,7 @@
 #   export RSA_GTI_PROJECT="your-gti-project-id"
 #
 # Optional RS Alerts tuning:
-#   export RSA_SCHEDULE="*/15 * * * *"
+#   export RSA_SCHEDULE="*/3 * * * *"
 #   export RSA_SCHEDULE_TIMEZONE="Etc/UTC"
 #   export RSA_FUNCTION_NAME="gti-alerts-fetch"
 #   export RSA_BACKFILL_DAYS=7

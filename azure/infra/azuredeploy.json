@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.46.1.21595",
-      "templateHash": "13192361528087802710"
+      "templateHash": "13160369979672869942"
     }
   },
   "parameters": {
@@ -201,9 +201,9 @@
     },
     "rsAlertsSchedule": {
       "type": "string",
-      "defaultValue": "0 */15 * * * *",
+      "defaultValue": "0 */3 * * * *",
       "metadata": {
-        "description": "NCRONTAB schedule RS Alerts polls GTI on. Default: every 15 minutes."
+        "description": "NCRONTAB schedule RS Alerts polls GTI on. Default: every 3 minutes."
       }
     },
     "rsAlertsScheduleTimezone": {
@@ -650,7 +650,13 @@
           },
           "scaleAndConcurrency": {
             "maximumInstanceCount": "[parameters('rsAlertsMaximumInstanceCount')]",
-            "instanceMemoryMB": "[parameters('rsAlertsInstanceMemoryMB')]"
+            "instanceMemoryMB": "[parameters('rsAlertsInstanceMemoryMB')]",
+            "alwaysReady": [
+              {
+                "name": "function:rs_alerts_timer",
+                "instanceCount": 1
+              }
+            ]
           },
           "runtime": {
             "name": "python",

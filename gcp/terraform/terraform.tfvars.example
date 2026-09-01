@@ -30,7 +30,7 @@ rsa_gti_project = "YOUR_GTI_PROJECT_ID"
 
 # Optional RSA tuning (defaults shown)
 # rsa_function_name            = "gti-alerts-fetch"
-# rsa_schedule                 = "*/15 * * * *"   # every 15 minutes
+# rsa_schedule                 = "*/3 * * * *"   # every 3 minutes
 # rsa_schedule_timezone        = "Etc/UTC"
 # rsa_backfill_days            = 7
 # rsa_page_size                = 1000

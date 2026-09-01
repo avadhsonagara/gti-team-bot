@@ -41,7 +41,7 @@
       "value": ""
     },
     "rsAlertsSchedule": {
-      "value": "0 */15 * * * *"
+      "value": "0 */3 * * * *"
     },
     "tags": {
       "value": {

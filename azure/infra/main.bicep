@@ -156,8 +156,8 @@ param rsAlertsTeamsChannelId string = ''
 @description('GTI project ID for RS Alerts, from the Alerts URL (...&project=projects/<id>). Required when enableRsAlerts is true.')
 param rsAlertsGtiProject string = ''
 
-@description('NCRONTAB schedule RS Alerts polls GTI on. Default: every 15 minutes.')
-param rsAlertsSchedule string = '0 */15 * * * *'
+@description('NCRONTAB schedule RS Alerts polls GTI on. Default: every 3 minutes.')
+param rsAlertsSchedule string = '0 */3 * * * *'
 
 @description('Timezone for the RS Alerts schedule.')
 param rsAlertsScheduleTimezone string = 'Etc/UTC'
@@ -714,6 +714,16 @@ resource rsAlertsFunctionApp 'Microsoft.Web/sites@2023-12-01' = if (enableRsAler
       scaleAndConcurrency: {
         maximumInstanceCount: rsAlertsMaximumInstanceCount
         instanceMemoryMB: rsAlertsInstanceMemoryMB
+        // Timer triggers on Flex Consumption need at least one always-ready
+        // instance to fire while scaled to zero — without this, the app has
+        // nothing listening for the schedule tick and the timer silently
+        // never runs.
+        alwaysReady: [
+          {
+            name: 'function:rs_alerts_timer'
+            instanceCount: 1
+          }
+        ]
       }
       runtime: {
         name: 'python'
