@@ -99,9 +99,10 @@ variable "enable_rs_alerts" {
   default     = false
 }
 
-variable "rs_alerts_teams_channel_id" {
-  description = "Teams channel link or ID (19:...@thread.tacv2) that RS Alerts posts GTI alerts into. Required when enable_rs_alerts is true."
+variable "rs_alerts_webhook_url" {
+  description = "Teams incoming webhook URL (Workflows/Power Automate) that RS Alerts posts GTI alert Adaptive Cards to. Required when enable_rs_alerts is true."
   type        = string
+  sensitive   = true
   default     = ""
 }
 

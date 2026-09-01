@@ -5,7 +5,7 @@
 # Google Cloud Functions Framework — provides HTTP trigger support for Cloud Run functions
 functions-framework>=3.8.0
 
-# HTTP client for GTI Alerts API, Entra ID token exchange, and Bot Framework Connector API
+# HTTP client for the GTI Alerts API and the Teams incoming webhook
 requests>=2.31.0
 
 # Google Cloud Firestore — durable persistence for incremental alert cursor
@@ -13,9 +13,6 @@ google-cloud-firestore>=2.14.0
 
 # Google Cloud Logging — structured log integration
 google-cloud-logging>=3.11.0
-
-# Optional: Acquires Bot Framework Connector API token via User-Assigned Managed Identity
-azure-identity>=1.17.0
 
 # Type-safe, validated configuration from environment variables / Secret Manager
 pydantic-settings>=2.0

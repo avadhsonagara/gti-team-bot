@@ -48,8 +48,9 @@ param outputFormatInstructions string = ''
 ])
 param addRsAlerts string = 'No'
 
-@description('The Teams channel RS Alerts posts GTI alerts into. Paste either the channel link (right-click the channel -> Get link to channel) or its bare ID (19:xxx@thread.tacv2). Required when "Add RS Alerts to this Team" is Yes.')
-param rsAlertsChannelIdOrChannelLink string = ''
+@description('Teams incoming webhook URL that RS Alerts posts GTI alerts into (Teams channel -> Workflows -> "Post to a channel when a webhook request is received" -> copy the webhook URL). Required when "Add RS Alerts to this Team" is Yes.')
+@secure()
+param rsAlertsWebhookUrl string = ''
 
 @description('GTI project ID for RS Alerts, from the Alerts URL (...&project=projects/<id>). Required when "Add RS Alerts to this Team" is Yes.')
 param rsAlertsGtiProject string = ''
@@ -67,7 +68,7 @@ module main 'main.bicep' = {
     maximumInstanceCount: maximumInstanceCount
     outputFormatInstructions: outputFormatInstructions
     enableRsAlerts: addRsAlerts == 'Yes'
-    rsAlertsTeamsChannelId: rsAlertsChannelIdOrChannelLink
+    rsAlertsWebhookUrl: rsAlertsWebhookUrl
     rsAlertsGtiProject: rsAlertsGtiProject
   }
 }

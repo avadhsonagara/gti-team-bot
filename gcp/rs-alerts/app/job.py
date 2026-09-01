@@ -9,7 +9,7 @@ Flow:
      filters, ordered by ``audit.update_time asc``, paginating through all
      pages.
   4. For each alert, post an Adaptive Card (v1.4) to the Teams channel via
-     the Bot Framework Connector API, checkpointing the cursor in Firestore
+     the configured incoming webhook, checkpointing the cursor in Firestore
      after every successful send.
 """
 import logging
@@ -17,17 +17,17 @@ from datetime import datetime, timedelta, timezone
 
 from app.config import Settings
 from app.gti_client import build_filter, get_gti_access_token, list_alerts
-from app.sender import AlertSender, extract_channel_id
+from app.sender import AlertSender
 from app.state_store import read_cursor, write_cursor
 
 logger = logging.getLogger("rs-alerts")
 
 
-def _validate_settings(settings: Settings) -> str:
-    """Validate required configuration and return the canonical Teams channel ID."""
+def _validate_settings(settings: Settings) -> None:
+    """Validate required configuration."""
     missing = [
         name for name, val in (
-            ("TEAMS_CHANNEL_ID", settings.teams_channel_id),
+            ("RS_ALERTS_WEBHOOK_URL", settings.rs_alerts_webhook_url),
             ("GTI_API_KEY", settings.gti_api_key),
             ("GTI_RSA_PROJECT", settings.gti_rsa_project),
         ) if not val
@@ -35,18 +35,11 @@ def _validate_settings(settings: Settings) -> str:
     if missing:
         raise RuntimeError(f"Missing required configuration setting(s): {', '.join(missing)}")
 
-    if not (settings.client_id and settings.client_secret and settings.tenant_id):
-        raise RuntimeError(
-            "No Bot Framework credentials configured: set CLIENT_ID + CLIENT_SECRET + TENANT_ID."
-        )
-
-    return extract_channel_id(settings.teams_channel_id)
-
 
 def run_job(settings: Settings) -> dict:
     """Fetch incremental GTI alerts and deliver them to the Teams channel."""
-    channel_id = _validate_settings(settings)
-    logger.info("Configuration validated. Target channel ID: %s", channel_id)
+    _validate_settings(settings)
+    logger.info("Configuration validated.")
 
     backfill_days = max(1, min(settings.backfill_days, 7))
 
@@ -68,7 +61,7 @@ def run_job(settings: Settings) -> dict:
         newest_str = update_time
         logger.info("Firestore checkpoint saved: %s", update_time)
 
-    sender = AlertSender(settings, channel_id, on_checkpoint=checkpoint)
+    sender = AlertSender(settings, on_checkpoint=checkpoint)
 
     gti_token = get_gti_access_token(settings.gti_api_key)
     logger.info("GTI token acquired. Fetching alerts...")
