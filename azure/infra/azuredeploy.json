@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.46.1.21595",
-      "templateHash": "596574729522824565"
+      "templateHash": "13192361528087802710"
     }
   },
   "parameters": {
@@ -185,11 +185,11 @@
         "description": "Name of the RS Alerts Flex Consumption App Service Plan. Only used when enableRsAlerts is true."
       }
     },
-    "rsAlertsWebhookUrl": {
-      "type": "securestring",
+    "rsAlertsTeamsChannelId": {
+      "type": "string",
       "defaultValue": "",
       "metadata": {
-        "description": "Teams incoming webhook URL (Workflows/Power Automate) that RS Alerts posts GTI alert Adaptive Cards to. Required when enableRsAlerts is true."
+        "description": "Teams channel link or ID (19:xxx@thread.tacv2) that RS Alerts posts GTI alerts into. Required when enableRsAlerts is true."
       }
     },
     "rsAlertsGtiProject": {
@@ -635,7 +635,7 @@
         "httpsOnly": true,
         "keyVaultReferenceIdentity": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('functionAppName')))]",
         "siteConfig": {
-          "appSettings": "[concat(createArray(createObject('name', 'AzureWebJobsStorage', 'value', format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix={2}', parameters('storageAccountName'), listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').keys[0].value, environment().suffixes.storage)), createObject('name', 'DEPLOYMENT_STORAGE_CONNECTION_STRING', 'value', format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix={2}', parameters('storageAccountName'), listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').keys[0].value, environment().suffixes.storage)), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference(resourceId('Microsoft.Insights/components', parameters('appInsightsName')), '2020-02-02').ConnectionString), createObject('name', 'GTI_API_KEY', 'value', format('@Microsoft.KeyVault(SecretUri={0})', reference(resourceId('Microsoft.KeyVault/vaults/secrets', parameters('keyVaultName'), 'GtiApiKey'), '2023-07-01').secretUri)), createObject('name', 'GTI_RSA_PROJECT', 'value', parameters('rsAlertsGtiProject')), createObject('name', 'RS_ALERTS_WEBHOOK_URL', 'value', parameters('rsAlertsWebhookUrl')), createObject('name', 'RS_ALERTS_SCHEDULE', 'value', parameters('rsAlertsSchedule')), createObject('name', 'BACKFILL_DAYS', 'value', string(parameters('rsAlertsBackfillDays'))), createObject('name', 'PAGE_SIZE', 'value', parameters('rsAlertsPageSize')), createObject('name', 'WEBSITE_TIME_ZONE', 'value', parameters('rsAlertsScheduleTimezone')), createObject('name', 'FILTER_SEVERITY_LEVEL', 'value', parameters('rsAlertsFilterSeverityLevel')), createObject('name', 'FILTER_PRIORITY_LEVEL', 'value', parameters('rsAlertsFilterPriorityLevel')), createObject('name', 'FILTER_RELEVANCE_LEVEL', 'value', parameters('rsAlertsFilterRelevanceLevel')), createObject('name', 'FILTER_RELEVANCE_CONFIDENCE', 'value', parameters('rsAlertsFilterRelevanceConfidence')), createObject('name', 'STATE_CONTAINER_NAME', 'value', variables('rsAlertsStateContainerName'))), variables('rsAlertsCustomAppSettingsArray'))]"
+          "appSettings": "[concat(createArray(createObject('name', 'AzureWebJobsStorage', 'value', format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix={2}', parameters('storageAccountName'), listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').keys[0].value, environment().suffixes.storage)), createObject('name', 'DEPLOYMENT_STORAGE_CONNECTION_STRING', 'value', format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix={2}', parameters('storageAccountName'), listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').keys[0].value, environment().suffixes.storage)), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference(resourceId('Microsoft.Insights/components', parameters('appInsightsName')), '2020-02-02').ConnectionString), createObject('name', 'CLIENT_ID', 'value', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('functionAppName'))), '2023-01-31').clientId), createObject('name', 'TENANT_ID', 'value', parameters('tenantId')), createObject('name', 'MANAGED_IDENTITY_CLIENT_ID', 'value', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('functionAppName'))), '2023-01-31').clientId), createObject('name', 'GTI_API_KEY', 'value', format('@Microsoft.KeyVault(SecretUri={0})', reference(resourceId('Microsoft.KeyVault/vaults/secrets', parameters('keyVaultName'), 'GtiApiKey'), '2023-07-01').secretUri)), createObject('name', 'GTI_RSA_PROJECT', 'value', parameters('rsAlertsGtiProject')), createObject('name', 'TEAMS_CHANNEL_ID', 'value', parameters('rsAlertsTeamsChannelId')), createObject('name', 'RS_ALERTS_SCHEDULE', 'value', parameters('rsAlertsSchedule')), createObject('name', 'BACKFILL_DAYS', 'value', string(parameters('rsAlertsBackfillDays'))), createObject('name', 'PAGE_SIZE', 'value', parameters('rsAlertsPageSize')), createObject('name', 'WEBSITE_TIME_ZONE', 'value', parameters('rsAlertsScheduleTimezone')), createObject('name', 'FILTER_SEVERITY_LEVEL', 'value', parameters('rsAlertsFilterSeverityLevel')), createObject('name', 'FILTER_PRIORITY_LEVEL', 'value', parameters('rsAlertsFilterPriorityLevel')), createObject('name', 'FILTER_RELEVANCE_LEVEL', 'value', parameters('rsAlertsFilterRelevanceLevel')), createObject('name', 'FILTER_RELEVANCE_CONFIDENCE', 'value', parameters('rsAlertsFilterRelevanceConfidence')), createObject('name', 'STATE_CONTAINER_NAME', 'value', variables('rsAlertsStateContainerName'))), variables('rsAlertsCustomAppSettingsArray'))]"
         },
         "functionAppConfig": {
           "deployment": {

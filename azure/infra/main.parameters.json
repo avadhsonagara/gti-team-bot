@@ -34,7 +34,7 @@
     "enableRsAlerts": {
       "value": false
     },
-    "rsAlertsWebhookUrl": {
+    "rsAlertsTeamsChannelId": {
       "value": ""
     },
     "rsAlertsGtiProject": {

@@ -5,7 +5,8 @@
 # Google Cloud Functions Framework — provides HTTP trigger support for Cloud Run functions
 functions-framework>=3.8.0
 
-# HTTP client for the GTI Alerts API and the Teams incoming webhook
+# HTTP client for the GTI Alerts API, Entra ID token exchange, the Bot
+# Framework Connector API, and Microsoft Graph
 requests>=2.31.0
 
 # Google Cloud Firestore — durable persistence for incremental alert cursor

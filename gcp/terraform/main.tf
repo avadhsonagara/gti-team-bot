@@ -300,27 +300,6 @@ resource "google_secret_manager_secret_version" "client_secret_version" {
   secret_data = azuread_application_password.bot_secret.value
 }
 
-# RS Alerts' Teams incoming webhook URL (Workflows/Power Automate) — a
-# bearer credential, so it's kept in Secret Manager like the other secrets
-# above rather than a plain environment variable.
-resource "google_secret_manager_secret" "rs_alerts_webhook_url" {
-  count     = var.enable_rs_alerts ? 1 : 0
-  secret_id = "${var.bot_name}-rs-alerts-webhook-url"
-  labels    = var.labels
-
-  replication {
-    auto {}
-  }
-
-  depends_on = [google_project_service.apis]
-}
-
-resource "google_secret_manager_secret_version" "rs_alerts_webhook_url_version" {
-  count       = var.enable_rs_alerts ? 1 : 0
-  secret      = google_secret_manager_secret.rs_alerts_webhook_url[0].id
-  secret_data = var.rs_alerts_webhook_url
-}
-
 # -----------------------------------------------------------------------------
 # Service Accounts & IAM Roles
 # -----------------------------------------------------------------------------
@@ -391,9 +370,9 @@ resource "google_secret_manager_secret_iam_member" "rs_alerts_gti_key_accessor" 
   member    = "serviceAccount:${google_service_account.rs_alerts_sa[0].email}"
 }
 
-resource "google_secret_manager_secret_iam_member" "rs_alerts_webhook_url_accessor" {
+resource "google_secret_manager_secret_iam_member" "rs_alerts_client_secret_accessor" {
   count     = var.enable_rs_alerts ? 1 : 0
-  secret_id = google_secret_manager_secret.rs_alerts_webhook_url[0].id
+  secret_id = google_secret_manager_secret.client_secret.id
   role      = "roles/secretmanager.secretAccessor"
   member    = "serviceAccount:${google_service_account.rs_alerts_sa[0].email}"
 }
@@ -508,6 +487,9 @@ resource "google_cloudfunctions2_function" "rs_alerts" {
 
     environment_variables = {
       GCP_PROJECT_ID              = var.project_id
+      CLIENT_ID                   = azuread_application.bot_app.client_id
+      TENANT_ID                   = data.azuread_client_config.current.tenant_id
+      TEAMS_CHANNEL_ID            = var.rs_alerts_teams_channel_id
       GTI_RSA_PROJECT             = var.rsa_gti_project
       BACKFILL_DAYS               = tostring(var.rsa_backfill_days)
       PAGE_SIZE                   = tostring(var.rsa_page_size)
@@ -528,12 +510,9 @@ resource "google_cloudfunctions2_function" "rs_alerts" {
     }
 
     secret_environment_variables {
-      // RS Alerts posts via a Teams incoming webhook (Workflows/Power
-      // Automate) rather than the Bot Framework Connector API, so this URL
-      // is a bearer credential — kept in Secret Manager like GTI_API_KEY.
-      key        = "RS_ALERTS_WEBHOOK_URL"
+      key        = "CLIENT_SECRET"
       project_id = var.project_id
-      secret     = google_secret_manager_secret.rs_alerts_webhook_url[0].secret_id
+      secret     = google_secret_manager_secret.client_secret.secret_id
       version    = "latest"
     }
   }
@@ -541,7 +520,7 @@ resource "google_cloudfunctions2_function" "rs_alerts" {
   depends_on = [
     google_project_service.apis,
     google_secret_manager_secret_version.gti_api_key_version,
-    google_secret_manager_secret_version.rs_alerts_webhook_url_version,
+    google_secret_manager_secret_version.client_secret_version,
   ]
 }
 

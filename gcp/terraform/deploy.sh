@@ -6,11 +6,10 @@
 #   export GTI_API_KEY="your-gti-api-key"
 #   ./deploy.sh [project_id] [region] [bot_name]
 #
-# Optional RS Alerts (delivers via a Teams incoming webhook — Workflows/
-# Power Automate — not the bot itself, so no Azure AD credentials or bot
-# team-membership needed for delivery):
+# Optional RS Alerts. Pass the FULL channel link (not a bare ID) so the
+# bot's Teams app can be auto-installed into the team via Microsoft Graph:
 #   export ENABLE_RS_ALERTS=true
-#   export RS_ALERTS_WEBHOOK_URL="https://.../workflows/.../triggers/manual/paths/invoke?..."
+#   export RS_ALERTS_TEAMS_CHANNEL_ID="https://teams.microsoft.com/l/channel/19%3a...?groupId=..."
 #   export RSA_GTI_PROJECT="your-gti-project-id"
 #
 # Optional RS Alerts tuning:
@@ -46,8 +45,8 @@ fi
 
 ENABLE_RS_ALERTS="${ENABLE_RS_ALERTS:-false}"
 if [ "$ENABLE_RS_ALERTS" = "true" ]; then
-  if [ -z "${RS_ALERTS_WEBHOOK_URL:-}" ]; then
-    echo "Error: ENABLE_RS_ALERTS=true requires RS_ALERTS_WEBHOOK_URL" >&2
+  if [ -z "${RS_ALERTS_TEAMS_CHANNEL_ID:-}" ]; then
+    echo "Error: ENABLE_RS_ALERTS=true requires RS_ALERTS_TEAMS_CHANNEL_ID" >&2
     exit 1
   fi
   if [ -z "${RSA_GTI_PROJECT:-}" ]; then
@@ -72,7 +71,7 @@ TF_VARS=(
 if [ "$ENABLE_RS_ALERTS" = "true" ]; then
   TF_VARS+=(
     -var="enable_rs_alerts=true"
-    -var="rs_alerts_webhook_url=$RS_ALERTS_WEBHOOK_URL"
+    -var="rs_alerts_teams_channel_id=$RS_ALERTS_TEAMS_CHANNEL_ID"
     -var="rsa_gti_project=$RSA_GTI_PROJECT"
   )
   if [ -n "${RSA_SCHEDULE:-}" ]; then

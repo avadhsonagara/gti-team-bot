@@ -27,12 +27,11 @@
 #
 # RS Alerts (background GTI Alerts -> Teams Function App) is off by default.
 # Turn it on by exporting ENABLE_RS_ALERTS=true along with
-# RS_ALERTS_WEBHOOK_URL and RS_ALERTS_GTI_PROJECT. RS Alerts delivers via a
-# Teams incoming webhook (channel -> Workflows -> "Post to a channel when a
-# webhook request is received" -> copy the webhook URL) rather than the bot
-# itself, so no Bot Framework/Azure AD credentials are needed for delivery:
+# RS_ALERTS_TEAMS_CHANNEL_ID and RS_ALERTS_GTI_PROJECT. Pass the FULL channel
+# link (not a bare ID) so the bot's Teams app can be auto-installed into the
+# team via Microsoft Graph (app/graph_client.py):
 #   export ENABLE_RS_ALERTS=true
-#   export RS_ALERTS_WEBHOOK_URL=https://.../workflows/.../triggers/manual/paths/invoke?...
+#   export RS_ALERTS_TEAMS_CHANNEL_ID=https://teams.microsoft.com/l/channel/19%3a...?groupId=...
 #   export RS_ALERTS_GTI_PROJECT=your-gti-project-id
 #
 # Optional bot-wide response formatting instructions (empty by default — see
@@ -54,8 +53,8 @@ if [ -z "${GTI_API_KEY:-}" ]; then
 fi
 
 ENABLE_RS_ALERTS="${ENABLE_RS_ALERTS:-false}"
-if [ "$ENABLE_RS_ALERTS" = "true" ] && { [ -z "${RS_ALERTS_WEBHOOK_URL:-}" ] || [ -z "${RS_ALERTS_GTI_PROJECT:-}" ]; }; then
-  echo "ENABLE_RS_ALERTS=true requires RS_ALERTS_WEBHOOK_URL and RS_ALERTS_GTI_PROJECT" >&2
+if [ "$ENABLE_RS_ALERTS" = "true" ] && { [ -z "${RS_ALERTS_TEAMS_CHANNEL_ID:-}" ] || [ -z "${RS_ALERTS_GTI_PROJECT:-}" ]; }; then
+  echo "ENABLE_RS_ALERTS=true requires RS_ALERTS_TEAMS_CHANNEL_ID and RS_ALERTS_GTI_PROJECT" >&2
   exit 1
 fi
 
@@ -67,7 +66,7 @@ if [ -n "$EXISTING_PLAN_NAME" ]; then
   EXTRA_PARAMS+=(--parameters "appServicePlanName=$EXISTING_PLAN_NAME" "createAppServicePlan=false")
 fi
 if [ "$ENABLE_RS_ALERTS" = "true" ]; then
-  EXTRA_PARAMS+=(--parameters "enableRsAlerts=true" "rsAlertsWebhookUrl=$RS_ALERTS_WEBHOOK_URL" "rsAlertsGtiProject=$RS_ALERTS_GTI_PROJECT")
+  EXTRA_PARAMS+=(--parameters "enableRsAlerts=true" "rsAlertsTeamsChannelId=$RS_ALERTS_TEAMS_CHANNEL_ID" "rsAlertsGtiProject=$RS_ALERTS_GTI_PROJECT")
   
   if [ -n "${RSA_FUNCTION_NAME:-}" ]; then
     EXTRA_PARAMS+=(--parameters "rsAlertsFunctionAppName=$RSA_FUNCTION_NAME")

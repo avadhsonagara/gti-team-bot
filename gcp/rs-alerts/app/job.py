@@ -4,30 +4,34 @@ Core RS Alerts job: fetch incremental GTI alerts and deliver them to Teams.
 Flow:
   1. Load the cursor (last seen ``audit.update_time``) from Firestore.
        - First run / no state -> backfill from ``BACKFILL_DAYS`` ago.
-  2. Exchange the GTI API key for a short-lived bearer token.
-  3. Call List Alerts with a filter combining the cursor AND the level
+  2. Ensure the bot's Teams app is installed in the target team (Microsoft
+     Graph auto-install — only possible when TEAMS_CHANNEL_ID is the full
+     channel link, since that's what carries the team id).
+  3. Exchange the GTI API key for a short-lived bearer token.
+  4. Call List Alerts with a filter combining the cursor AND the level
      filters, ordered by ``audit.update_time asc``, paginating through all
      pages.
-  4. For each alert, post an Adaptive Card (v1.4) to the Teams channel via
-     the configured incoming webhook, checkpointing the cursor in Firestore
+  5. For each alert, post an Adaptive Card (v1.4) to the Teams channel via
+     the Bot Framework Connector API, checkpointing the cursor in Firestore
      after every successful send.
 """
 import logging
 from datetime import datetime, timedelta, timezone
 
 from app.config import Settings
+from app.graph_client import ensure_app_installed
 from app.gti_client import build_filter, get_gti_access_token, list_alerts
-from app.sender import AlertSender
+from app.sender import AlertSender, extract_channel_id, extract_team_id
 from app.state_store import read_cursor, write_cursor
 
 logger = logging.getLogger("rs-alerts")
 
 
-def _validate_settings(settings: Settings) -> None:
-    """Validate required configuration."""
+def _validate_settings(settings: Settings) -> str:
+    """Validate required configuration and return the canonical Teams channel ID."""
     missing = [
         name for name, val in (
-            ("RS_ALERTS_WEBHOOK_URL", settings.rs_alerts_webhook_url),
+            ("TEAMS_CHANNEL_ID", settings.teams_channel_id),
             ("GTI_API_KEY", settings.gti_api_key),
             ("GTI_RSA_PROJECT", settings.gti_rsa_project),
         ) if not val
@@ -35,11 +39,28 @@ def _validate_settings(settings: Settings) -> None:
     if missing:
         raise RuntimeError(f"Missing required configuration setting(s): {', '.join(missing)}")
 
+    if not (settings.client_id and settings.client_secret and settings.tenant_id):
+        raise RuntimeError(
+            "No Bot Framework credentials configured: set CLIENT_ID + CLIENT_SECRET + TENANT_ID."
+        )
+
+    return extract_channel_id(settings.teams_channel_id)
+
 
 def run_job(settings: Settings) -> dict:
     """Fetch incremental GTI alerts and deliver them to the Teams channel."""
-    _validate_settings(settings)
-    logger.info("Configuration validated.")
+    channel_id = _validate_settings(settings)
+    logger.info("Configuration validated. Target channel ID: %s", channel_id)
+
+    team_id = extract_team_id(settings.teams_channel_id)
+    if team_id:
+        ensure_app_installed(team_id, settings)
+    else:
+        logger.info(
+            "TEAMS_CHANNEL_ID has no groupId (a bare channel ID was given, not the "
+            "full link) — skipping Teams app auto-install; the bot must already be "
+            "a member of the target team for delivery to succeed."
+        )
 
     backfill_days = max(1, min(settings.backfill_days, 7))
 
@@ -61,7 +82,7 @@ def run_job(settings: Settings) -> dict:
         newest_str = update_time
         logger.info("Firestore checkpoint saved: %s", update_time)
 
-    sender = AlertSender(settings, on_checkpoint=checkpoint)
+    sender = AlertSender(settings, channel_id, on_checkpoint=checkpoint)
 
     gti_token = get_gti_access_token(settings.gti_api_key)
     logger.info("GTI token acquired. Fetching alerts...")

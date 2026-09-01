@@ -48,9 +48,8 @@ param outputFormatInstructions string = ''
 ])
 param addRsAlerts string = 'No'
 
-@description('Teams incoming webhook URL that RS Alerts posts GTI alerts into (Teams channel -> Workflows -> "Post to a channel when a webhook request is received" -> copy the webhook URL). Required when "Add RS Alerts to this Team" is Yes.')
-@secure()
-param rsAlertsWebhookUrl string = ''
+@description('The Teams channel RS Alerts posts GTI alerts into. Paste the FULL channel link (right-click the channel -> Get link to channel) — the full link is required so the bot\'s Teams app can be auto-installed into the team via Microsoft Graph. A bare ID (19:xxx@thread.tacv2) still works for delivery, but skips auto-install. Required when "Add RS Alerts to this Team" is Yes.')
+param rsAlertsChannelIdOrChannelLink string = ''
 
 @description('GTI project ID for RS Alerts, from the Alerts URL (...&project=projects/<id>). Required when "Add RS Alerts to this Team" is Yes.')
 param rsAlertsGtiProject string = ''
@@ -68,7 +67,7 @@ module main 'main.bicep' = {
     maximumInstanceCount: maximumInstanceCount
     outputFormatInstructions: outputFormatInstructions
     enableRsAlerts: addRsAlerts == 'Yes'
-    rsAlertsWebhookUrl: rsAlertsWebhookUrl
+    rsAlertsTeamsChannelId: rsAlertsChannelIdOrChannelLink
     rsAlertsGtiProject: rsAlertsGtiProject
   }
 }

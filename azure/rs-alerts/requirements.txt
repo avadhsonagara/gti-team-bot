@@ -6,8 +6,14 @@
 # triggers used in function_app.py.
 azure-functions>=1.21.0
 
-# HTTP client for the GTI Alerts API and the Teams incoming webhook.
+# HTTP client for the GTI Alerts API, Bot Framework token exchange (local
+# dev fallback), the Bot Framework Connector API, and Microsoft Graph.
 requests>=2.31.0
+
+# Acquires a Bot Framework Connector API / Microsoft Graph token via the
+# Function App's User-Assigned Managed Identity (app/bot_auth.py,
+# app/graph_client.py) — no client secret needed in Azure.
+azure-identity>=1.17.0
 
 # Persists the incremental alert cursor as a blob in the Function App's own
 # storage account (app/state_store.py) — Flex Consumption instances are

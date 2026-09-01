@@ -150,9 +150,8 @@ param rsAlertsFunctionAppName string = '${functionAppName}-rs-alerts'
 @description('Name of the RS Alerts Flex Consumption App Service Plan. Only used when enableRsAlerts is true.')
 param rsAlertsAppServicePlanName string = '${rsAlertsFunctionAppName}-plan'
 
-@description('Teams incoming webhook URL (Workflows/Power Automate) that RS Alerts posts GTI alert Adaptive Cards to. Required when enableRsAlerts is true.')
-@secure()
-param rsAlertsWebhookUrl string = ''
+@description('Teams channel link or ID (19:xxx@thread.tacv2) that RS Alerts posts GTI alerts into. Required when enableRsAlerts is true.')
+param rsAlertsTeamsChannelId string = ''
 
 @description('GTI project ID for RS Alerts, from the Alerts URL (...&project=projects/<id>). Required when enableRsAlerts is true.')
 param rsAlertsGtiProject string = ''
@@ -635,6 +634,23 @@ resource rsAlertsFunctionApp 'Microsoft.Web/sites@2023-12-01' = if (enableRsAler
           value: appInsights.properties.ConnectionString
         }
         {
+          // Same User-Assigned Managed Identity as the main bot — its client
+          // ID is also the Azure Bot's msaAppId, so RS Alerts authenticates
+          // to the Bot Framework Connector API (and Microsoft Graph, for
+          // Teams app auto-install) as the same bot (app/bot_auth.py,
+          // app/graph_client.py).
+          name: 'CLIENT_ID'
+          value: botIdentity.properties.clientId
+        }
+        {
+          name: 'TENANT_ID'
+          value: tenantId
+        }
+        {
+          name: 'MANAGED_IDENTITY_CLIENT_ID'
+          value: botIdentity.properties.clientId
+        }
+        {
           name: 'GTI_API_KEY'
           value: '@Microsoft.KeyVault(SecretUri=${kvSecretGtiApiKey.properties.secretUri})'
         }
@@ -643,11 +659,8 @@ resource rsAlertsFunctionApp 'Microsoft.Web/sites@2023-12-01' = if (enableRsAler
           value: rsAlertsGtiProject
         }
         {
-          // RS Alerts delivers via a Teams incoming webhook (Workflows/Power
-          // Automate) rather than the Bot Framework Connector API — no Azure
-          // AD credentials or bot-team-membership needed for delivery.
-          name: 'RS_ALERTS_WEBHOOK_URL'
-          value: rsAlertsWebhookUrl
+          name: 'TEAMS_CHANNEL_ID'
+          value: rsAlertsTeamsChannelId
         }
         {
           name: 'RS_ALERTS_SCHEDULE'
