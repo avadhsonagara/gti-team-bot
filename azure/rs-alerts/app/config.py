@@ -44,7 +44,6 @@ class Settings(BaseSettings):
     # ── Google Threat Intelligence (GTI) Alerts API ──────────────────────────
     gti_api_key: str = ""
     gti_rsa_project: str = ""
-    backfill_days: int = 7
     page_size: int = 1000
 
     # ── Alert filters (comma-separated levels, empty = no filter on that field) ──

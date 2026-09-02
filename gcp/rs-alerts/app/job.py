@@ -3,7 +3,7 @@ Core RS Alerts job: fetch incremental GTI alerts and deliver them to Teams.
 
 Flow:
   1. Load the cursor (last seen ``audit.update_time``) from Firestore.
-       - First run / no state -> backfill from ``BACKFILL_DAYS`` ago.
+       - First run / no state -> fetch the entire alert history (no lower bound).
   2. Ensure the bot's Teams app is installed in the target team (Microsoft
      Graph auto-install — only possible when TEAMS_CHANNEL_ID is the full
      channel link, since that's what carries the team id).
@@ -16,7 +16,6 @@ Flow:
      after every successful send.
 """
 import logging
-from datetime import datetime, timedelta, timezone
 
 from app.config import Settings
 from app.graph_client import ensure_app_installed
@@ -62,14 +61,11 @@ def run_job(settings: Settings) -> dict:
             "a member of the target team for delivery to succeed."
         )
 
-    backfill_days = max(1, min(settings.backfill_days, 7))
-
     cursor = read_cursor(settings)
     if cursor:
         logger.info("Resuming from Firestore cursor: %s", cursor)
     else:
-        cursor = (datetime.now(timezone.utc) - timedelta(days=backfill_days)).strftime("%Y-%m-%dT%H:%M:%SZ")
-        logger.info("No prior Firestore cursor found — backfilling from %s (%d days)", cursor, backfill_days)
+        logger.info("No prior Firestore cursor found — fetching entire alert history")
 
     filter_str = build_filter(cursor, settings)
     logger.info("Alert filter: %s", filter_str)

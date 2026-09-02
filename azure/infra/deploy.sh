@@ -77,9 +77,6 @@ if [ "$ENABLE_RS_ALERTS" = "true" ]; then
   if [ -n "${RSA_SCHEDULE_TIMEZONE:-}" ]; then
     EXTRA_PARAMS+=(--parameters "rsAlertsScheduleTimezone=$RSA_SCHEDULE_TIMEZONE")
   fi
-  if [ -n "${RSA_BACKFILL_DAYS:-}" ]; then
-    EXTRA_PARAMS+=(--parameters "rsAlertsBackfillDays=$RSA_BACKFILL_DAYS")
-  fi
   if [ -n "${RSA_PAGE_SIZE:-}" ]; then
     EXTRA_PARAMS+=(--parameters "rsAlertsPageSize=$RSA_PAGE_SIZE")
   fi

@@ -41,7 +41,6 @@ object instead (Azure Functions Core Tools doesn't read `.env`).
 | `MANAGED_IDENTITY_CLIENT_ID` | one of these two | Bot's managed identity client ID (Azure deployments) |
 | `CLIENT_ID` / `CLIENT_SECRET` / `TENANT_ID` | one of these two | Classic app registration credentials (local dev) |
 | `RS_ALERTS_SCHEDULE` | ❌ | NCRONTAB schedule. Default: every 15 minutes (`0 */15 * * * *`) |
-| `BACKFILL_DAYS` | ❌ | Days to backfill on first run. Default: `7` |
 | `FILTER_*` | ❌ | Severity/priority/relevance/confidence filters — see `.env.example` |
 
 The bot must already be **installed in the target Teams channel**, otherwise the Bot

@@ -130,12 +130,6 @@ variable "rsa_schedule_timezone" {
   default     = "Etc/UTC"
 }
 
-variable "rsa_backfill_days" {
-  description = "Days of GTI alert history to backfill on RS Alerts' first run (1-7)."
-  type        = number
-  default     = 7
-}
-
 variable "rsa_page_size" {
   description = "Page size for GTI Alerts API pagination."
   type        = number

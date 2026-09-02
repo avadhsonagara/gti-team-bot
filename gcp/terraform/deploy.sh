@@ -16,7 +16,6 @@
 #   export RSA_SCHEDULE="*/3 * * * *"
 #   export RSA_SCHEDULE_TIMEZONE="Etc/UTC"
 #   export RSA_FUNCTION_NAME="gti-alerts-fetch"
-#   export RSA_BACKFILL_DAYS=7
 #   export RSA_PAGE_SIZE=1000
 #   export RSA_FUNCTION_MEMORY="256Mi"
 #   export RSA_FUNCTION_TIMEOUT_SECONDS=540
@@ -82,9 +81,6 @@ if [ "$ENABLE_RS_ALERTS" = "true" ]; then
   fi
   if [ -n "${RSA_FUNCTION_NAME:-}" ]; then
     TF_VARS+=(-var="rsa_function_name=$RSA_FUNCTION_NAME")
-  fi
-  if [ -n "${RSA_BACKFILL_DAYS:-}" ]; then
-    TF_VARS+=(-var="rsa_backfill_days=$RSA_BACKFILL_DAYS")
   fi
   if [ -n "${RSA_PAGE_SIZE:-}" ]; then
     TF_VARS+=(-var="rsa_page_size=$RSA_PAGE_SIZE")

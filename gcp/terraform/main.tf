@@ -491,7 +491,6 @@ resource "google_cloudfunctions2_function" "rs_alerts" {
       TENANT_ID                   = data.azuread_client_config.current.tenant_id
       TEAMS_CHANNEL_ID            = var.rs_alerts_teams_channel_id
       GTI_RSA_PROJECT             = var.rsa_gti_project
-      BACKFILL_DAYS               = tostring(var.rsa_backfill_days)
       PAGE_SIZE                   = tostring(var.rsa_page_size)
       FILTER_SEVERITY_LEVEL       = var.rsa_filter_severity_level
       FILTER_PRIORITY_LEVEL       = var.rsa_filter_priority_level

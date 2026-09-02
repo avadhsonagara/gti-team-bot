@@ -162,11 +162,6 @@ param rsAlertsSchedule string = '0 */3 * * * *'
 @description('Timezone for the RS Alerts schedule.')
 param rsAlertsScheduleTimezone string = 'Etc/UTC'
 
-@description('Days of GTI alert history to backfill on RS Alerts\' first run (max 7).')
-@minValue(1)
-@maxValue(7)
-param rsAlertsBackfillDays int = 7
-
 @description('Page size for the GTI Alerts API.')
 param rsAlertsPageSize string = '1000'
 
@@ -665,10 +660,6 @@ resource rsAlertsFunctionApp 'Microsoft.Web/sites@2023-12-01' = if (enableRsAler
         {
           name: 'RS_ALERTS_SCHEDULE'
           value: rsAlertsSchedule
-        }
-        {
-          name: 'BACKFILL_DAYS'
-          value: string(rsAlertsBackfillDays)
         }
         {
           name: 'PAGE_SIZE'

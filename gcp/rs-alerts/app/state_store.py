@@ -38,8 +38,8 @@ def read_cursor(settings: Settings) -> str | None:
     Only a genuinely absent document is treated as "no prior cursor" (first
     run). Any other failure (permission error, network issue, outage) is
     left to propagate and abort the run, rather than being silently treated
-    as a fresh start — which would re-backfill and re-send every alert in
-    the backfill window as a duplicate flood.
+    as a fresh start — which would re-fetch and re-send the entire alert
+    history as a duplicate flood.
     """
     client = _get_firestore_client(settings)
     doc_ref = client.collection(settings.firestore_state_collection).document(

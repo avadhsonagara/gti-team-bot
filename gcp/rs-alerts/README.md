@@ -26,7 +26,6 @@ RS Alerts is a background worker that polls the **Google Threat Intelligence (GT
 | `CLIENT_SECRET` | Microsoft App Secret (Client Secret) from Entra ID App Registration | _Required_ |
 | `TENANT_ID` | Microsoft Entra Tenant ID | _Required_ |
 
-| `BACKFILL_DAYS` | Number of days of alert history to fetch on first run (1-7) | `7` |
 | `PAGE_SIZE` | Page size for GTI Alerts API pagination | `1000` |
 | `FILTER_SEVERITY_LEVEL` | Allowed severities (comma-separated: `LOW,MEDIUM,HIGH`) | `MEDIUM,HIGH` |
 | `FILTER_PRIORITY_LEVEL` | Allowed priorities (comma-separated: `LOW,MEDIUM,HIGH,CRITICAL`) | `MEDIUM,HIGH,CRITICAL` |
