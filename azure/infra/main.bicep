@@ -82,8 +82,8 @@ param outputFormatInstructions string = ''
 // Bot identity & secrets
 // ---------------------------------------------------------------------------
 
-@description('Name of the Azure Bot resource.')
-param botName string = '${functionAppName}-bot'
+@description('Name of the Azure Bot resource. Defaults to the same name as functionAppName.')
+param botName string = functionAppName
 
 @description('Microsoft Entra tenant ID for the Azure Bot registration. Defaults to the deployment\'s own tenant.')
 param tenantId string = subscription().tenantId

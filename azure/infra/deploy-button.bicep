@@ -21,6 +21,14 @@
 @description('Name of the Function App to create.')
 param functionAppName string = 'gti-team-bot'
 
+@description('Name of the Application Insights resource.')
+param appInsightsName string = '${functionAppName}-insights'
+
+@description('Globally-unique Storage Account name (3-24 lowercase alphanumeric characters).')
+@minLength(3)
+@maxLength(24)
+param storageAccountName string = toLower('${take(replace(functionAppName, '-', ''), 11)}${uniqueString(resourceGroup().id, functionAppName)}')
+
 @description('Google Threat Intelligence Agentic API key. Stored as a Key Vault secret, never as a plaintext app setting.')
 @secure()
 param gtiApiKey string
@@ -48,6 +56,9 @@ param outputFormatInstructions string = ''
 ])
 param addRsAlerts string = 'No'
 
+@description('Name of the RS Alerts Function App. Only used when "Add RS Alerts to this Team" is Yes.')
+param rsAlertsFunctionAppName string = '${functionAppName}-rs-alerts'
+
 @description('The Teams channel RS Alerts posts GTI alerts into. Paste the FULL channel link (right-click the channel -> Get link to channel) — the full link is required so the bot\'s Teams app can be auto-installed into the team via Microsoft Graph. A bare ID (19:xxx@thread.tacv2) still works for delivery, but skips auto-install. Required when "Add RS Alerts to this Team" is Yes.')
 param rsAlertsChannelIdOrChannelLink string = ''
 
@@ -74,11 +85,15 @@ module main 'main.bicep' = {
   name: 'gti-team-bot-main'
   params: {
     functionAppName: functionAppName
+    botName: functionAppName
+    appInsightsName: appInsightsName
+    storageAccountName: storageAccountName
     gtiApiKey: gtiApiKey
     instanceMemoryMB: instanceMemoryMB
     maximumInstanceCount: maximumInstanceCount
     outputFormatInstructions: outputFormatInstructions
     enableRsAlerts: addRsAlerts == 'Yes'
+    rsAlertsFunctionAppName: rsAlertsFunctionAppName
     rsAlertsTeamsChannelId: rsAlertsChannelIdOrChannelLink
     rsAlertsGtiProject: rsAlertsGtiProject
     rsAlertsFilterSeverityLevel: rsAlertsFilterSeverityLevel

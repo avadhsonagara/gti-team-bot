@@ -20,6 +20,12 @@ variable "bot_name" {
   default     = "gti-team-bot"
 }
 
+variable "storage_bucket_name" {
+  description = "Globally-unique GCS bucket name for source code and manifests. Empty = derive from project_id/bot_name plus a random suffix."
+  type        = string
+  default     = ""
+}
+
 variable "python_runtime" {
   description = "Python worker runtime version for Cloud Run functions."
   type        = string

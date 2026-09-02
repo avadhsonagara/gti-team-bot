@@ -1,6 +1,6 @@
 # GTI Teams Bot (Agentic) — Azure Functions
 
-[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Favadhsonagara%2Fgti-team-bot%2Fmain%2Fazure%2Finfra%2Fazuredeploy-button.json)
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Favadhsonagara%2Fgti-team-bot%2Fgraph-url-based%2Fazure%2Finfra%2Fazuredeploy-button.json)
 
 Click the button above to provision the Azure Bot, Flex Consumption Function App, Storage Account,
 Key Vault, and Application Insights instance in your own Azure subscription, and upload the Teams

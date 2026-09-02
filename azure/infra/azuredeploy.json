@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.46.1.21595",
-      "templateHash": "2504408460740208085"
+      "templateHash": "14609129757409080659"
     }
   },
   "parameters": {
@@ -102,9 +102,9 @@
     },
     "botName": {
       "type": "string",
-      "defaultValue": "[format('{0}-bot', parameters('functionAppName'))]",
+      "defaultValue": "[parameters('functionAppName')]",
       "metadata": {
-        "description": "Name of the Azure Bot resource."
+        "description": "Name of the Azure Bot resource. Defaults to the same name as functionAppName."
       }
     },
     "tenantId": {

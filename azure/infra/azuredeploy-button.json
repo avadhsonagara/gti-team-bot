@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.46.1.21595",
-      "templateHash": "11932330934701603807"
+      "templateHash": "15022909661868740804"
     }
   },
   "parameters": {
@@ -14,6 +14,22 @@
       "defaultValue": "gti-team-bot",
       "metadata": {
         "description": "Name of the Function App to create."
+      }
+    },
+    "appInsightsName": {
+      "type": "string",
+      "defaultValue": "[format('{0}-insights', parameters('functionAppName'))]",
+      "metadata": {
+        "description": "Name of the Application Insights resource."
+      }
+    },
+    "storageAccountName": {
+      "type": "string",
+      "defaultValue": "[toLower(format('{0}{1}', take(replace(parameters('functionAppName'), '-', ''), 11), uniqueString(resourceGroup().id, parameters('functionAppName'))))]",
+      "minLength": 3,
+      "maxLength": 24,
+      "metadata": {
+        "description": "Globally-unique Storage Account name (3-24 lowercase alphanumeric characters)."
       }
     },
     "gtiApiKey": {
@@ -59,6 +75,13 @@
       ],
       "metadata": {
         "description": "Add RS Alerts to this Team: provisions a second, background Function App that polls Google Threat Intelligence alerts and posts them into a Teams channel. Set to \"Yes\" to also fill in the two fields below."
+      }
+    },
+    "rsAlertsFunctionAppName": {
+      "type": "string",
+      "defaultValue": "[format('{0}-rs-alerts', parameters('functionAppName'))]",
+      "metadata": {
+        "description": "Name of the RS Alerts Function App. Only used when \"Add RS Alerts to this Team\" is Yes."
       }
     },
     "rsAlertsChannelIdOrChannelLink": {
@@ -118,6 +141,15 @@
           "functionAppName": {
             "value": "[parameters('functionAppName')]"
           },
+          "botName": {
+            "value": "[parameters('functionAppName')]"
+          },
+          "appInsightsName": {
+            "value": "[parameters('appInsightsName')]"
+          },
+          "storageAccountName": {
+            "value": "[parameters('storageAccountName')]"
+          },
           "gtiApiKey": {
             "value": "[parameters('gtiApiKey')]"
           },
@@ -132,6 +164,9 @@
           },
           "enableRsAlerts": {
             "value": "[equals(parameters('addRsAlerts'), 'Yes')]"
+          },
+          "rsAlertsFunctionAppName": {
+            "value": "[parameters('rsAlertsFunctionAppName')]"
           },
           "rsAlertsTeamsChannelId": {
             "value": "[parameters('rsAlertsChannelIdOrChannelLink')]"
@@ -159,7 +194,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.46.1.21595",
-              "templateHash": "2504408460740208085"
+              "templateHash": "14609129757409080659"
             }
           },
           "parameters": {
@@ -256,9 +291,9 @@
             },
             "botName": {
               "type": "string",
-              "defaultValue": "[format('{0}-bot', parameters('functionAppName'))]",
+              "defaultValue": "[parameters('functionAppName')]",
               "metadata": {
-                "description": "Name of the Azure Bot resource."
+                "description": "Name of the Azure Bot resource. Defaults to the same name as functionAppName."
               }
             },
             "tenantId": {

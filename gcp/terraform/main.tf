@@ -97,6 +97,8 @@ locals {
     "logging.googleapis.com",
     "cloudtrace.googleapis.com",
   ]
+
+  storage_bucket_name = var.storage_bucket_name != "" ? var.storage_bucket_name : "${var.project_id}-${var.bot_name}-storage-${random_id.suffix.hex}"
 }
 
 resource "google_project_service" "apis" {
@@ -110,7 +112,7 @@ resource "google_project_service" "apis" {
 # Google Cloud Storage (GCS) Bucket for Source Code and Manifests
 # -----------------------------------------------------------------------------
 resource "google_storage_bucket" "source_bucket" {
-  name                        = "${var.project_id}-${var.bot_name}-storage-${random_id.suffix.hex}"
+  name                        = local.storage_bucket_name
   location                    = var.region
   force_destroy               = true
   uniform_bucket_level_access = true
