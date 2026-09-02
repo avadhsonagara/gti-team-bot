@@ -21,14 +21,6 @@
 @description('Name of the Function App to create.')
 param functionAppName string = 'gti-team-bot'
 
-@description('Name of the Application Insights resource.')
-param appInsightsName string = '${functionAppName}-insights'
-
-@description('Globally-unique Storage Account name (3-24 lowercase alphanumeric characters).')
-@minLength(3)
-@maxLength(24)
-param storageAccountName string = toLower('${take(replace(functionAppName, '-', ''), 11)}${uniqueString(resourceGroup().id, functionAppName)}')
-
 @description('Google Threat Intelligence Agentic API key. Stored as a Key Vault secret, never as a plaintext app setting.')
 @secure()
 param gtiApiKey string
@@ -86,8 +78,6 @@ module main 'main.bicep' = {
   params: {
     functionAppName: functionAppName
     botName: functionAppName
-    appInsightsName: appInsightsName
-    storageAccountName: storageAccountName
     gtiApiKey: gtiApiKey
     instanceMemoryMB: instanceMemoryMB
     maximumInstanceCount: maximumInstanceCount

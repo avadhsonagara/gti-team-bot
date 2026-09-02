@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.46.1.21595",
-      "templateHash": "15022909661868740804"
+      "templateHash": "3621240276254300185"
     }
   },
   "parameters": {
@@ -14,22 +14,6 @@
       "defaultValue": "gti-team-bot",
       "metadata": {
         "description": "Name of the Function App to create."
-      }
-    },
-    "appInsightsName": {
-      "type": "string",
-      "defaultValue": "[format('{0}-insights', parameters('functionAppName'))]",
-      "metadata": {
-        "description": "Name of the Application Insights resource."
-      }
-    },
-    "storageAccountName": {
-      "type": "string",
-      "defaultValue": "[toLower(format('{0}{1}', take(replace(parameters('functionAppName'), '-', ''), 11), uniqueString(resourceGroup().id, parameters('functionAppName'))))]",
-      "minLength": 3,
-      "maxLength": 24,
-      "metadata": {
-        "description": "Globally-unique Storage Account name (3-24 lowercase alphanumeric characters)."
       }
     },
     "gtiApiKey": {
@@ -143,12 +127,6 @@
           },
           "botName": {
             "value": "[parameters('functionAppName')]"
-          },
-          "appInsightsName": {
-            "value": "[parameters('appInsightsName')]"
-          },
-          "storageAccountName": {
-            "value": "[parameters('storageAccountName')]"
           },
           "gtiApiKey": {
             "value": "[parameters('gtiApiKey')]"
