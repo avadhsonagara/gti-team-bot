@@ -11,6 +11,7 @@ __pycache__
 htmlcov
 *.md
 !README.md
+!prompt.md
 local.settings.json
 test_agentic_bot.py
 .env

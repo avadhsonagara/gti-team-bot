@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.46.1.21595",
-      "templateHash": "13288335541959503343"
+      "templateHash": "2504408460740208085"
     }
   },
   "parameters": {
@@ -97,7 +97,7 @@
       "type": "string",
       "defaultValue": "",
       "metadata": {
-        "description": "Optional formatting instructions applied to every bot response (e.g. \"Show severity as bold text instead of emoji\"). Seeds a JSON config blob (bot-config/output-format.json) in the Function App's own storage account on first read — after that the blob is the source of truth and this value is ignored. Leave empty to use the built-in formatting from app/prompt.md."
+        "description": "Optional formatting instructions applied to every bot response (e.g. \"Show severity as bold text instead of emoji\"). Seeds a JSON config blob (bot-config/output-format.json) in the Function App's own storage account on first read — after that the blob is the source of truth and this value is ignored. Leave empty to use the built-in formatting from app/gti/prompt.md."
       }
     },
     "botName": {
@@ -243,28 +243,28 @@
     },
     "rsAlertsFilterSeverityLevel": {
       "type": "string",
-      "defaultValue": "",
+      "defaultValue": "MEDIUM,HIGH",
       "metadata": {
         "description": "Filter: Severity level (comma-separated LOW/MEDIUM/HIGH). Empty = no filter on this field."
       }
     },
     "rsAlertsFilterPriorityLevel": {
       "type": "string",
-      "defaultValue": "",
+      "defaultValue": "MEDIUM,HIGH,CRITICAL",
       "metadata": {
         "description": "Filter: Priority level (comma-separated LOW/MEDIUM/HIGH/CRITICAL). Empty = no filter on this field."
       }
     },
     "rsAlertsFilterRelevanceLevel": {
       "type": "string",
-      "defaultValue": "",
+      "defaultValue": "MEDIUM,HIGH",
       "metadata": {
         "description": "Filter: Relevance level (comma-separated LOW/MEDIUM/HIGH). Empty = no filter on this field."
       }
     },
     "rsAlertsFilterRelevanceConfidence": {
       "type": "string",
-      "defaultValue": "",
+      "defaultValue": "MEDIUM,HIGH",
       "metadata": {
         "description": "Filter: Relevance confidence (comma-separated LOW/MEDIUM/HIGH). Empty = no filter on this field."
       }

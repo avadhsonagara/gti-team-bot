@@ -489,7 +489,7 @@ resource "google_cloudfunctions2_function" "rs_alerts" {
       GCP_PROJECT_ID              = var.project_id
       CLIENT_ID                   = azuread_application.bot_app.client_id
       TENANT_ID                   = data.azuread_client_config.current.tenant_id
-      TEAMS_CHANNEL_ID            = var.rs_alerts_teams_channel_id
+      TEAMS_CHANNEL_ID            = var.rs_alerts_teams_channel_id_or_link
       GTI_RSA_PROJECT             = var.rsa_gti_project
       PAGE_SIZE                   = tostring(var.rsa_page_size)
       FILTER_SEVERITY_LEVEL       = var.rsa_filter_severity_level

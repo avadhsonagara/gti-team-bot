@@ -5,7 +5,7 @@
 #   cp terraform.tfvars.example terraform.tfvars
 # =============================================================================
 
-project_id = "gtimsteamaiintegration-3898"
+project_id = "provide_your_project_id"
 region     = "us-central1"
 bot_name   = "gti-team-bot"
 
@@ -19,8 +19,8 @@ output_format_instructions = ""
 # ── Optional: RS Alerts (Background GTI Alerts -> Teams) ─────────────────────
 # Pass the FULL channel link (not a bare ID) so the bot's Teams app can be
 # auto-installed into the team via Microsoft Graph.
-enable_rs_alerts           = false
-rs_alerts_teams_channel_id = "19:exampleChannelId@thread.tacv2" # channel that receives alert messages
+enable_rs_alerts                   = false
+rs_alerts_teams_channel_id_or_link = "https://teams.microsoft.com/l/channel/19%3aexampleChannelId%40thread.tacv2/my-channel?groupId=00000000-0000-0000-0000-000000000000&tenantId=00000000-0000-0000-0000-000000000000"
 
 # GTI project ID for RS Alerts, from the Alerts URL (...&project=projects/<id>).
 # This is the GTI-side project being queried for alerts — it is NOT
@@ -37,8 +37,8 @@ rsa_gti_project = "YOUR_GTI_PROJECT_ID"
 # rsa_function_timeout_seconds = 540
 
 # Optional RSA alert filters (comma-separated, OR'd within a field, AND'd
-# across fields). Default is empty for all four = no filtering at all,
-# every alert is delivered regardless of severity/priority/relevance.
+# across fields). Defaults shown filter out LOW noise; set a field to ""
+# to disable filtering on that dimension (every alert passes).
 # rsa_filter_severity_level       = "MEDIUM,HIGH"            # valid: LOW, MEDIUM, HIGH
 # rsa_filter_priority_level       = "MEDIUM,HIGH,CRITICAL"   # valid: LOW, MEDIUM, HIGH, CRITICAL
 # rsa_filter_relevance_level      = "MEDIUM,HIGH"            # valid: LOW, MEDIUM, HIGH

@@ -75,7 +75,7 @@ param maximumInstanceCount int = 100
 @description('Non-secret application settings merged onto the Function App (e.g. GTI_API_BASE_URL).')
 param appSettings object = {}
 
-@description('Optional formatting instructions applied to every bot response (e.g. "Show severity as bold text instead of emoji"). Seeds a JSON config blob (bot-config/output-format.json) in the Function App\'s own storage account on first read — after that the blob is the source of truth and this value is ignored. Leave empty to use the built-in formatting from app/prompt.md.')
+@description('Optional formatting instructions applied to every bot response (e.g. "Show severity as bold text instead of emoji"). Seeds a JSON config blob (bot-config/output-format.json) in the Function App\'s own storage account on first read — after that the blob is the source of truth and this value is ignored. Leave empty to use the built-in formatting from app/gti/prompt.md.')
 param outputFormatInstructions string = ''
 
 // ---------------------------------------------------------------------------
@@ -179,16 +179,16 @@ param rsAlertsInstanceMemoryMB int = 512
 param rsAlertsMaximumInstanceCount int = 40
 
 @description('Filter: Severity level (comma-separated LOW/MEDIUM/HIGH). Empty = no filter on this field.')
-param rsAlertsFilterSeverityLevel string = ''
+param rsAlertsFilterSeverityLevel string = 'MEDIUM,HIGH'
 
 @description('Filter: Priority level (comma-separated LOW/MEDIUM/HIGH/CRITICAL). Empty = no filter on this field.')
-param rsAlertsFilterPriorityLevel string = ''
+param rsAlertsFilterPriorityLevel string = 'MEDIUM,HIGH,CRITICAL'
 
 @description('Filter: Relevance level (comma-separated LOW/MEDIUM/HIGH). Empty = no filter on this field.')
-param rsAlertsFilterRelevanceLevel string = ''
+param rsAlertsFilterRelevanceLevel string = 'MEDIUM,HIGH'
 
 @description('Filter: Relevance confidence (comma-separated LOW/MEDIUM/HIGH). Empty = no filter on this field.')
-param rsAlertsFilterRelevanceConfidence string = ''
+param rsAlertsFilterRelevanceConfidence string = 'MEDIUM,HIGH'
 
 @description('Additional non-secret application settings merged onto the RS Alerts Function App (e.g. FILTER_SEVERITY_LEVEL).')
 param rsAlertsAppSettings object = {}

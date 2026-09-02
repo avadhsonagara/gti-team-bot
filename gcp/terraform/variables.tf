@@ -99,7 +99,7 @@ variable "enable_rs_alerts" {
   default     = false
 }
 
-variable "rs_alerts_teams_channel_id" {
+variable "rs_alerts_teams_channel_id_or_link" {
   description = "Teams channel link or ID (19:...@thread.tacv2) that RS Alerts posts GTI alerts into. Pass the FULL channel link (not a bare ID) so the bot's Teams app can be auto-installed into the team via Microsoft Graph. Required when enable_rs_alerts is true."
   type        = string
   default     = ""
@@ -152,25 +152,25 @@ variable "rsa_function_timeout_seconds" {
 variable "rsa_filter_severity_level" {
   description = "Allowed alert severities (comma-separated: LOW,MEDIUM,HIGH). Empty = no filter on this field."
   type        = string
-  default     = ""
+  default     = "MEDIUM,HIGH"
 }
 
 variable "rsa_filter_priority_level" {
   description = "Allowed alert priorities (comma-separated: LOW,MEDIUM,HIGH,CRITICAL). Empty = no filter on this field."
   type        = string
-  default     = ""
+  default     = "MEDIUM,HIGH,CRITICAL"
 }
 
 variable "rsa_filter_relevance_level" {
   description = "Allowed alert relevance levels (comma-separated: LOW,MEDIUM,HIGH). Empty = no filter on this field."
   type        = string
-  default     = ""
+  default     = "MEDIUM,HIGH"
 }
 
 variable "rsa_filter_relevance_confidence" {
   description = "Allowed alert relevance confidences (comma-separated: LOW,MEDIUM,HIGH). Empty = no filter on this field."
   type        = string
-  default     = ""
+  default     = "MEDIUM,HIGH"
 }
 
 variable "firestore_state_collection" {

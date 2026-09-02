@@ -70,7 +70,7 @@ TF_VARS=(
 if [ "$ENABLE_RS_ALERTS" = "true" ]; then
   TF_VARS+=(
     -var="enable_rs_alerts=true"
-    -var="rs_alerts_teams_channel_id=$RS_ALERTS_TEAMS_CHANNEL_ID"
+    -var="rs_alerts_teams_channel_id_or_link=$RS_ALERTS_TEAMS_CHANNEL_ID"
     -var="rsa_gti_project=$RSA_GTI_PROJECT"
   )
   if [ -n "${RSA_SCHEDULE:-}" ]; then

@@ -54,6 +54,18 @@ param rsAlertsChannelIdOrChannelLink string = ''
 @description('GTI project ID for RS Alerts, from the Alerts URL (...&project=projects/<id>). Required when "Add RS Alerts to this Team" is Yes.')
 param rsAlertsGtiProject string = ''
 
+@description('RS Alerts filter: Severity level (comma-separated LOW/MEDIUM/HIGH). Empty = no filter on this field.')
+param rsAlertsFilterSeverityLevel string = 'MEDIUM,HIGH'
+
+@description('RS Alerts filter: Priority level (comma-separated LOW/MEDIUM/HIGH/CRITICAL). Empty = no filter on this field.')
+param rsAlertsFilterPriorityLevel string = 'MEDIUM,HIGH,CRITICAL'
+
+@description('RS Alerts filter: Relevance level (comma-separated LOW/MEDIUM/HIGH). Empty = no filter on this field.')
+param rsAlertsFilterRelevanceLevel string = 'MEDIUM,HIGH'
+
+@description('RS Alerts filter: Relevance confidence (comma-separated LOW/MEDIUM/HIGH). Empty = no filter on this field.')
+param rsAlertsFilterRelevanceConfidence string = 'MEDIUM,HIGH'
+
 // ---------------------------------------------------------------------------
 // Delegate everything else to main.bicep's own defaults
 // ---------------------------------------------------------------------------
@@ -69,6 +81,10 @@ module main 'main.bicep' = {
     enableRsAlerts: addRsAlerts == 'Yes'
     rsAlertsTeamsChannelId: rsAlertsChannelIdOrChannelLink
     rsAlertsGtiProject: rsAlertsGtiProject
+    rsAlertsFilterSeverityLevel: rsAlertsFilterSeverityLevel
+    rsAlertsFilterPriorityLevel: rsAlertsFilterPriorityLevel
+    rsAlertsFilterRelevanceLevel: rsAlertsFilterRelevanceLevel
+    rsAlertsFilterRelevanceConfidence: rsAlertsFilterRelevanceConfidence
   }
 }
 

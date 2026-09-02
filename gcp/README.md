@@ -48,7 +48,7 @@ gcp/
 │   │   ├── logging_config.py     # GCP Cloud Logging structured JSON formatter
 │   │   ├── observability.py      # Cloud Trace header correlation
 │   │   ├── output_format_store.py# Firestore persistence for output formatting instructions
-│   │   ├── prompt.md             # Threat intelligence system prompt
+│   │   ├── gti/prompt.md         # Threat intelligence system prompt
 │   │   ├── gti/client.py         # Async client for GTI Agentic Sessions API
 │   │   ├── teams/                # Teams SDK App, handlers, and Adaptive Card builders
 │   │   └── utils/                # Message deliverer, card parser, and prompt formatters
