@@ -12,6 +12,12 @@ bot_name   = "gti-team-bot"
 # Optional override (default is derived from bot_name/project_id plus a random suffix)
 # storage_bucket_name = "your-project-id-gti-team-bot-storage-xxxx"  # must be globally unique
 
+# Optional: reuse an EXISTING Azure resource group for the Bot Service instead
+# of creating a new one. Required if your Azure identity's access is scoped
+# to a specific resource group rather than the whole subscription (creating a
+# new resource group needs subscription-level permission).
+# azure_resource_group_name = "your-existing-resource-group"
+
 
 # Google Threat Intelligence API Key
 gti_api_key = "YOUR_GTI_VIRUSTOTAL_API_KEY"

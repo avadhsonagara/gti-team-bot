@@ -564,15 +564,29 @@ resource "google_cloud_scheduler_job" "rs_alerts_schedule" {
 # -----------------------------------------------------------------------------
 # Azure Bot Service & Teams Channel
 # -----------------------------------------------------------------------------
+# If azure_resource_group_name is set, reuse that EXISTING resource group
+# (the deploying identity only needs access scoped to it) instead of creating
+# a new one — creating a resource group requires subscription-level
+# permission, which this identity may not have.
+data "azurerm_resource_group" "existing_bot_rg" {
+  count = var.azure_resource_group_name != "" ? 1 : 0
+  name  = var.azure_resource_group_name
+}
+
 resource "azurerm_resource_group" "bot_rg" {
+  count    = var.azure_resource_group_name == "" ? 1 : 0
   name     = "${var.bot_name}-rg"
   location = "eastus"
   tags     = var.labels
 }
 
+locals {
+  bot_resource_group_name = var.azure_resource_group_name != "" ? data.azurerm_resource_group.existing_bot_rg[0].name : azurerm_resource_group.bot_rg[0].name
+}
+
 resource "azurerm_bot_service_azure_bot" "bot" {
   name                = var.bot_name
-  resource_group_name = azurerm_resource_group.bot_rg.name
+  resource_group_name = local.bot_resource_group_name
   location            = "global"
   sku                 = "F0"
   microsoft_app_id    = azuread_application.bot_app.client_id
@@ -583,6 +597,6 @@ resource "azurerm_bot_service_azure_bot" "bot" {
 resource "azurerm_bot_channel_ms_teams" "teams" {
   bot_name            = azurerm_bot_service_azure_bot.bot.name
   location            = azurerm_bot_service_azure_bot.bot.location
-  resource_group_name = azurerm_resource_group.bot_rg.name
+  resource_group_name = local.bot_resource_group_name
 }
 

@@ -26,6 +26,12 @@ variable "storage_bucket_name" {
   default     = ""
 }
 
+variable "azure_resource_group_name" {
+  description = "Name of an EXISTING Azure resource group to deploy the Bot Service into. Leave empty to create a new resource group named '<bot_name>-rg' — creating a resource group requires subscription-level permission, which the deploying identity may not have if its access is scoped to a single existing resource group."
+  type        = string
+  default     = ""
+}
+
 variable "python_runtime" {
   description = "Python worker runtime version for Cloud Run functions."
   type        = string
