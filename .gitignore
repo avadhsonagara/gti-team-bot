@@ -1,6 +1,32 @@
 # =============================================================================
-# Python
+# Root .gitignore — Google Threat Intelligence (GTI) Teams Bot & RS Alerts
 # =============================================================================
+
+# ── Environment & Secrets ───────────────────────────────────────────────────
+# Never commit credentials, API keys, or active environment files
+.env
+.env.*
+!.env.example
+*.env
+
+# Azure Functions local configuration & secrets
+local.settings.json
+local.settings.*.json
+!local.settings.json.example
+appsettings.json
+appsettings.*.json
+
+# Certificates, private keys, and keystores
+*.pem
+*.key
+*.cer
+*.crt
+*.pfx
+*.p12
+*.secret
+*.token
+
+# ── Python ──────────────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *$py.class
@@ -24,11 +50,6 @@ share/python-wheels/
 *.egg
 MANIFEST
 
-# Environment Variables
-.env
-.env.*
-!.env.example
-
 # Virtual Environments
 venv/
 .venv/
@@ -38,54 +59,75 @@ ENV/
 env.bak/
 venv.bak/
 
-# =============================================================================
-# Terraform
-# =============================================================================
-# Local .terraform directories
-**/.terraform/*
+# Testing, Linting & Coverage
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+nosetests.xml
+coverage.xml
+*.cover
 
-# .tfstate files
+# ── Azure Functions Core Tools ──────────────────────────────────────────────
+.python_packages/
+bin/
+obj/
+
+# ── Terraform ───────────────────────────────────────────────────────────────
+# Local .terraform directories and cached provider plugins
+**/.terraform/*
+.terraform/
+.terraform.lock.hcl
+
+# State files & backups
 *.tfstate
 *.tfstate.*
+*.tfstate.backup
 
-# Crash log files
-crash.log
-crash.*.log
+# Plan files (contain unencrypted secrets, configurations, and state diffs)
+*.tfplan
+*tfplan*
+tfplan
 
-# Exclude all .tfvars files, which are likely to contain sensitive data, such as
-# password, private keys, and other secrets. These should not be part of version 
-# control as they are data points which are potentially sensitive and subject 
-# to change depending on the environment.
+# Variable definition files (contain deployment secrets)
 *.tfvars
 *.tfvars.json
+!*.tfvars.example
 
-# Ignore override files as they are usually used to override resources locally and so
-# are not checked in
+# Crash and execution logs
+crash.log
+crash.*.log
+*.log
+
+# Local override files
 override.tf
 override.tf.json
 *_override.tf
 *_override.tf.json
 
-# Ignore CLI configuration files
+# CLI configuration
 .terraformrc
 terraform.rc
 
-# =============================================================================
-# Azure / Bicep
-# =============================================================================
+# ── Azure / Bicep ───────────────────────────────────────────────────────────
 *.bicepparam
+!*.bicepparam.example
 
-# =============================================================================
-# Build & Package Files
-# =============================================================================
+# ── Archives & Compressed Packages ──────────────────────────────────────────
+# Generated zip packages from local testing or deployment packaging
 *.zip
 *.tar.gz
 *.tgz
 *.rar
 
-# =============================================================================
-# OS & IDE
-# =============================================================================
+# ── Temporary & Scratch Files ───────────────────────────────────────────────
+scratch/
+tmp/
+*.tmp
+
+# ── OS & Editor Metadata ────────────────────────────────────────────────────
 .DS_Store
 .DS_Store?
 ._*
@@ -97,3 +139,4 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+*~
