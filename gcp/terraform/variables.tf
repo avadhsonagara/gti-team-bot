@@ -38,11 +38,6 @@ variable "azure_resource_group_name" {
   default     = ""
 }
 
-variable "python_runtime" {
-  description = "Python worker runtime version for Cloud Run functions."
-  type        = string
-  default     = "python311"
-}
 
 variable "memory" {
   description = "Memory allocated to the gti-bot Cloud Run function (e.g. 512Mi, 1Gi, 2Gi)."
@@ -59,7 +54,13 @@ variable "timeout_seconds" {
 variable "max_instances" {
   description = "Maximum scale-out instance count for the gti-bot function."
   type        = number
-  default     = 100
+  default     = 1
+}
+
+variable "concurrency" {
+  description = "Maximum concurrent requests per instance for the gti-bot function."
+  type        = number
+  default     = 10
 }
 
 variable "min_instances" {

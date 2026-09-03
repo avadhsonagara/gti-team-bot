@@ -35,3 +35,6 @@ orjson>=3.9
 # Persists the configured output-format instructions as a JSON blob in the
 # Function App's own storage account (app/output_format_store.py).
 azure-storage-blob>=12.19.0
+
+# JWT decoding and key verification for Bot Framework security validation
+pyjwt>=2.8.0

@@ -397,7 +397,7 @@ resource "google_cloudfunctions2_function" "gti_bot" {
   labels      = var.labels
 
   build_config {
-    runtime     = var.python_runtime
+    runtime     = "python311"
     entry_point = "gti_bot_http"
     source {
       storage_source {
@@ -408,10 +408,11 @@ resource "google_cloudfunctions2_function" "gti_bot" {
   }
 
   service_config {
-    max_instance_count             = var.max_instances
-    min_instance_count             = var.min_instances
-    available_memory               = var.memory
-    timeout_seconds                = var.timeout_seconds
+    max_instance_count               = var.max_instances
+    min_instance_count               = var.min_instances
+    max_instance_request_concurrency = var.concurrency
+    available_memory                 = var.memory
+    timeout_seconds                  = var.timeout_seconds
     service_account_email          = google_service_account.bot_sa.email
     ingress_settings               = "ALLOW_ALL"
     all_traffic_on_latest_revision = true
@@ -468,7 +469,7 @@ resource "google_cloudfunctions2_function" "rs_alerts" {
   labels      = var.labels
 
   build_config {
-    runtime     = var.python_runtime
+    runtime     = "python311"
     entry_point = "rs_alerts_http"
     source {
       storage_source {

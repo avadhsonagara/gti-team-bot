@@ -40,3 +40,6 @@ uvicorn>=0.29.0
 
 # WSGI utilities — Response object returned from gti_bot_http
 werkzeug>=3.0.0
+
+# JWT decoding and key verification for Bot Framework security validation
+pyjwt>=2.8.0
