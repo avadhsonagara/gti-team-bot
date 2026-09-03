@@ -582,16 +582,19 @@ resource "azurerm_resource_group" "bot_rg" {
 
 locals {
   bot_resource_group_name = var.azure_resource_group_name != "" ? data.azurerm_resource_group.existing_bot_rg[0].name : azurerm_resource_group.bot_rg[0].name
+  azure_bot_name          = var.azure_bot_name != "" ? var.azure_bot_name : "${var.bot_name}-${random_id.suffix.hex}"
 }
 
 resource "azurerm_bot_service_azure_bot" "bot" {
-  name                = var.bot_name
-  resource_group_name = local.bot_resource_group_name
-  location            = "global"
-  sku                 = "F0"
-  microsoft_app_id    = azuread_application.bot_app.client_id
-  endpoint            = "${google_cloudfunctions2_function.gti_bot.service_config[0].uri}/api/messages"
-  tags                = var.labels
+  name                    = local.azure_bot_name
+  resource_group_name     = local.bot_resource_group_name
+  location                = "global"
+  sku                     = "F0"
+  microsoft_app_id        = azuread_application.bot_app.client_id
+  microsoft_app_type      = "SingleTenant"
+  microsoft_app_tenant_id = data.azurerm_client_config.current.tenant_id
+  endpoint                = "${google_cloudfunctions2_function.gti_bot.service_config[0].uri}/api/messages"
+  tags                    = var.labels
 }
 
 resource "azurerm_bot_channel_ms_teams" "teams" {
