@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     # ── Google Threat Intelligence (GTI) Agentic API ────────────────────────────
     gti_api_key: str = ""
     gti_api_base_url: str = "https://www.virustotal.com/api/v3"
+    gti_max_rpm: int = 5
+    gti_rate_limit_window_seconds: float = 60.0
 
     # ── Google Cloud Platform / Firestore Persistence ─────────────────────────
     gcp_project_id: str = Field(

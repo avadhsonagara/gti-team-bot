@@ -9,6 +9,8 @@ Directly connects to the VirusTotal / GTI Agentic Sessions API:
 """
 import asyncio
 import logging
+import random
+import time
 from typing import Any
 
 import httpx
@@ -48,6 +50,50 @@ class GTITimeoutError(GTIError):
     """Raised when the request to the GTI Agentic API times out."""
 
 
+# ── In-Memory Rate Limiter (Token/Sliding Window) ─────────────────────────────
+
+class AsyncRateLimiter:
+    """
+    Sliding-window in-memory rate limiter to enforce fair-use request caps (e.g. 5 RPM).
+    Smooths bursts of concurrent user queries and avoids hitting HTTP 429.
+    """
+
+    def __init__(self, max_requests: int = 5, window_seconds: float = 60.0) -> None:
+        self.max_requests = max(1, max_requests)
+        self.window_seconds = max(1.0, window_seconds)
+        self._timestamps: list[float] = []
+        self._lock: asyncio.Lock | None = None
+
+    def _get_lock(self) -> asyncio.Lock:
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+        return self._lock
+
+    async def acquire(self) -> None:
+        """Wait until a request slot within the sliding window becomes available."""
+        lock = self._get_lock()
+        while True:
+            async with lock:
+                now = time.time()
+                # Prune timestamps older than window_seconds
+                self._timestamps = [t for t in self._timestamps if now - t < self.window_seconds]
+                if len(self._timestamps) < self.max_requests:
+                    self._timestamps.append(now)
+                    return
+                # Window is full: calculate wait time until oldest timestamp rolls off
+                oldest = self._timestamps[0]
+                wait_seconds = max(0.2, (oldest + self.window_seconds) - now + 0.1)
+
+            logger.info(
+                "[GTI-RATE-LIMIT] 5 req/min threshold reached (%d/%d in %.0fs). Waiting %.1fs for quota window to free a slot...",
+                len(self._timestamps),
+                self.max_requests,
+                self.window_seconds,
+                wait_seconds,
+            )
+            await asyncio.sleep(wait_seconds)
+
+
 # ── GTI Agentic API Client ───────────────────────────────────────────────────
 
 class GTIAgenticClient:
@@ -60,13 +106,21 @@ class GTIAgenticClient:
         timeout: float | None = None,
         max_retries: int | None = None,
         retry_delay: float | None = None,
+        rate_limit_retry_delay: float | None = None,
+        max_rpm: int | None = None,
+        rate_limit_window: float | None = None,
     ) -> None:
         self.api_key = api_key or settings.gti_api_key
         self.base_url = (base_url or settings.gti_api_base_url).rstrip("/")
         self.timeout = timeout if timeout is not None else 240.0
-        self.max_retries = max_retries if max_retries is not None else 2
+        self.max_retries = max_retries if max_retries is not None else 3
         self.retry_delay = retry_delay if retry_delay is not None else 2.0
+        self.rate_limit_retry_delay = rate_limit_retry_delay if rate_limit_retry_delay is not None else 5.0
         self._client: httpx.AsyncClient | None = None
+        self.rate_limiter = AsyncRateLimiter(
+            max_requests=max_rpm if max_rpm is not None else settings.gti_max_rpm,
+            window_seconds=rate_limit_window if rate_limit_window is not None else settings.gti_rate_limit_window_seconds,
+        )
 
     async def _get_client(self) -> httpx.AsyncClient:
         """Return or lazily initialize the shared httpx.AsyncClient."""
@@ -141,7 +195,8 @@ class GTIAgenticClient:
         data: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """
-        Execute an HTTP request against the GTI Agentic API with exponential backoff.
+        Execute an HTTP request against the GTI Agentic API with rate limiting
+        and exponential backoff for transient failures and 429 rate limits.
         """
         if not self.api_key:
             raise GTIAuthenticationError(
@@ -153,6 +208,9 @@ class GTIAgenticClient:
 
         last_exc: Exception | None = None
         for attempt in range(self.max_retries + 1):
+            # 1. Enforce fair-use rate limiting (max 5 requests / 60 seconds) before firing
+            await self.rate_limiter.acquire()
+
             try:
                 logger.info(
                     "[GTI] %s %s (attempt %d/%d)",
@@ -177,13 +235,30 @@ class GTIAgenticClient:
                     raise GTISessionNotFoundError(f"Session not found or expired ({response.status_code}).")
 
                 if response.status_code == 429:
-                    logger.error("[GTI] Rate limit / quota exceeded (%d): %s", response.status_code, response.text)
-                    raise GTIRateLimitError("GTI API rate limit or quota exceeded.")
+                    logger.warning("[GTI] Rate limit / quota exceeded (429): %s", response.text)
+                    if attempt < self.max_retries:
+                        # Check Retry-After header or use 10s, 20s, 30s backoff schedule (+ jitter)
+                        retry_after = response.headers.get("Retry-After")
+                        if retry_after and retry_after.strip().isdigit():
+                            backoff = float(retry_after.strip()) + random.uniform(0.5, 1.5)
+                        else:
+                            # 10s, 20s, 30s backoff schedule
+                            delays = [10.0, 20.0, 30.0]
+                            base_delay = delays[min(attempt, len(delays) - 1)]
+                            backoff = base_delay + random.uniform(0.5, 2.0)
+
+                        logger.warning(
+                            "[GTI] 429 Rate Limit backoff: waiting %.1fs before retry (attempt %d/%d)...",
+                            backoff, attempt + 1, self.max_retries,
+                        )
+                        await asyncio.sleep(backoff)
+                        continue
+                    raise GTIRateLimitError("GTI API rate limit or quota exceeded after retries.")
 
                 if response.status_code in (500, 502, 503, 504):
                     logger.warning("[GTI] Transient server error (%d): %s", response.status_code, response.text)
                     if attempt < self.max_retries:
-                        delay = self.retry_delay * (2 ** attempt)
+                        delay = (self.retry_delay * (2 ** attempt)) + random.uniform(0.1, 0.5)
                         logger.info("[GTI] Retrying in %.1fs...", delay)
                         await asyncio.sleep(delay)
                         continue
@@ -201,13 +276,13 @@ class GTIAgenticClient:
                 logger.warning("[GTI] Connection/timeout error: %s", exc)
                 last_exc = exc
                 if attempt < self.max_retries:
-                    delay = self.retry_delay * (2 ** attempt)
+                    delay = (self.retry_delay * (2 ** attempt)) + random.uniform(0.1, 0.5)
                     logger.info("[GTI] Retrying network error in %.1fs...", delay)
                     await asyncio.sleep(delay)
                     continue
                 raise GTITimeoutError(f"GTI request timed out or network failed: {exc}") from exc
 
-            except (GTIAuthenticationError, GTISessionNotFoundError, GTIRateLimitError, GTIBadRequestError):
+            except (GTIAuthenticationError, GTISessionNotFoundError, GTIBadRequestError):
                 # Don't retry client-side / permanent errors
                 raise
 
@@ -215,7 +290,7 @@ class GTIAgenticClient:
                 logger.warning("[GTI] Unexpected error: %s", exc)
                 last_exc = exc
                 if attempt < self.max_retries:
-                    delay = self.retry_delay * (2 ** attempt)
+                    delay = (self.retry_delay * (2 ** attempt)) + random.uniform(0.1, 0.5)
                     await asyncio.sleep(delay)
                     continue
                 raise GTIServiceError(f"GTI request failed: {exc}") from exc

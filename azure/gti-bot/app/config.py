@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     # API key authenticated via the x-apikey header
     gti_api_key: str = ""
     gti_api_base_url: str = "https://www.virustotal.com/api/v3"
+    gti_max_rpm: int = 5
+    gti_rate_limit_window_seconds: float = 60.0
 
     # ── Output format instructions ───────────────────────────────────────────
     # Deploy-time default (main.bicep's outputFormatInstructions param), used
