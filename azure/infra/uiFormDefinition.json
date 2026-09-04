@@ -27,8 +27,7 @@
               "constraints": {
                 "required": true,
                 "regex": "",
-                "validationMessage": "",
-                "validations": []
+                "validationMessage": ""
               },
               "visible": true
             },
@@ -44,8 +43,7 @@
                   { "label": "Flex Consumption", "value": "FlexConsumption" },
                   { "label": "Consumption", "value": "Consumption" },
                   { "label": "Premium", "value": "Premium" }
-                ],
-                "validations": []
+                ]
               },
               "visible": true
             },
@@ -61,22 +59,20 @@
                   { "label": "512", "value": 512 },
                   { "label": "2048", "value": 2048 },
                   { "label": "4096", "value": 4096 }
-                ],
-                "validations": []
+                ]
               },
               "visible": "[equals(steps('basics').hostingPlanType, 'FlexConsumption')]"
             },
             {
               "name": "maximumInstanceCount",
-              "type": "Microsoft.Common.Slider",
+              "type": "Microsoft.Common.TextBox",
               "label": "Maximum Instance Count",
-              "subLabel": "instances",
-              "toolTip": "Maximum scale-out instance count for the Flex Consumption plan.",
-              "min": 40,
-              "max": 1000,
-              "defaultValue": 100,
+              "toolTip": "Maximum scale-out instance count for the Flex Consumption plan. Must be between 40 and 1000.",
+              "defaultValue": "100",
               "constraints": {
-                "required": true
+                "required": true,
+                "regex": "^([4-9][0-9]|[1-9][0-9]{2}|1000)$",
+                "validationMessage": "Enter a whole number between 40 and 1000."
               },
               "visible": "[equals(steps('basics').hostingPlanType, 'FlexConsumption')]"
             },
@@ -89,11 +85,10 @@
               "constraints": {
                 "required": true,
                 "allowedValues": [
-                  { "label": "EP1", "value": "EP1" },
-                  { "label": "EP2", "value": "EP2" },
-                  { "label": "EP3", "value": "EP3" }
-                ],
-                "validations": []
+                  { "label": "EP1 (1 Core, 3.5 GB)", "value": "EP1" },
+                  { "label": "EP2 (2 Cores, 7 GB)", "value": "EP2" },
+                  { "label": "EP3 (4 Cores, 14 GB)", "value": "EP3" }
+                ]
               },
               "visible": "[equals(steps('basics').hostingPlanType, 'Premium')]"
             },
@@ -121,22 +116,20 @@
               "constraints": {
                 "required": false,
                 "regex": "",
-                "validationMessage": "",
-                "validations": []
+                "validationMessage": ""
               },
               "visible": true
             },
             {
               "name": "threadContextMessageCount",
-              "type": "Microsoft.Common.Slider",
+              "type": "Microsoft.Common.TextBox",
               "label": "Thread Context Message Count",
-              "subLabel": "messages",
-              "toolTip": "Number of most-recent channel-thread messages to fetch as context for each query. No effect outside channels.",
-              "min": 1,
-              "max": 50,
-              "defaultValue": 5,
+              "toolTip": "Number of most-recent channel-thread messages to fetch as context for each query. No effect outside channels. Must be between 1 and 50.",
+              "defaultValue": "5",
               "constraints": {
-                "required": true
+                "required": true,
+                "regex": "^([1-9]|[1-4][0-9]|50)$",
+                "validationMessage": "Enter a whole number between 1 and 50."
               },
               "visible": true
             }
@@ -157,8 +150,7 @@
                 "allowedValues": [
                   { "label": "No", "value": "No" },
                   { "label": "Yes", "value": "Yes" }
-                ],
-                "validations": []
+                ]
               },
               "visible": true
             },
@@ -166,13 +158,12 @@
               "name": "rsAlertsFunctionAppName",
               "type": "Microsoft.Common.TextBox",
               "label": "RS Alerts Function App Name",
-              "toolTip": "Name of the RS Alerts Function App. Leave empty to default to \"<Function App Name>-rs-alerts\".",
+              "toolTip": "Name of the RS Alerts Function App.",
               "defaultValue": "",
               "constraints": {
-                "required": false,
+                "required": true,
                 "regex": "",
-                "validationMessage": "",
-                "validations": []
+                "validationMessage": ""
               },
               "visible": "[equals(steps('rsAlerts').addRsAlerts, 'Yes')]"
             },
@@ -188,8 +179,7 @@
                   { "label": "Flex Consumption", "value": "FlexConsumption" },
                   { "label": "Consumption", "value": "Consumption" },
                   { "label": "Premium", "value": "Premium" }
-                ],
-                "validations": []
+                ]
               },
               "visible": "[equals(steps('rsAlerts').addRsAlerts, 'Yes')]"
             },
@@ -205,8 +195,7 @@
                   { "label": "512", "value": 512 },
                   { "label": "2048", "value": 2048 },
                   { "label": "4096", "value": 4096 }
-                ],
-                "validations": []
+                ]
               },
               "visible": "[and(equals(steps('rsAlerts').addRsAlerts, 'Yes'), equals(steps('rsAlerts').rsAlertsHostingPlanType, 'FlexConsumption'))]"
             },
@@ -219,11 +208,10 @@
               "constraints": {
                 "required": true,
                 "allowedValues": [
-                  { "label": "EP1", "value": "EP1" },
-                  { "label": "EP2", "value": "EP2" },
-                  { "label": "EP3", "value": "EP3" }
-                ],
-                "validations": []
+                  { "label": "EP1 (1 Core, 3.5 GB)", "value": "EP1" },
+                  { "label": "EP2 (2 Cores, 7 GB)", "value": "EP2" },
+                  { "label": "EP3 (4 Cores, 14 GB)", "value": "EP3" }
+                ]
               },
               "visible": "[and(equals(steps('rsAlerts').addRsAlerts, 'Yes'), equals(steps('rsAlerts').rsAlertsHostingPlanType, 'Premium'))]"
             },
@@ -231,13 +219,12 @@
               "name": "rsAlertsChannelIdOrChannelLink",
               "type": "Microsoft.Common.TextBox",
               "label": "RS Alerts Teams Channel Link",
-              "toolTip": "Paste the FULL channel link (right-click the channel -> Get link to channel) — the full link is required so the bot's Teams app can be auto-installed into the team via Microsoft Graph. Required when \"Add RS Alerts to this Team\" is Yes.",
+              "toolTip": "Paste the FULL channel link (right-click the channel -> Get link to channel) — the full link is required so the bot's Teams app can be auto-installed into the team via Microsoft Graph.",
               "defaultValue": "",
               "constraints": {
-                "required": false,
+                "required": true,
                 "regex": "",
-                "validationMessage": "",
-                "validations": []
+                "validationMessage": ""
               },
               "visible": "[equals(steps('rsAlerts').addRsAlerts, 'Yes')]"
             },
@@ -245,13 +232,12 @@
               "name": "rsAlertsGtiProject",
               "type": "Microsoft.Common.TextBox",
               "label": "RS Alerts GTI Project",
-              "toolTip": "GTI project ID for RS Alerts, from the Alerts URL (...&project=projects/<id>). Required when \"Add RS Alerts to this Team\" is Yes.",
+              "toolTip": "GTI project ID for RS Alerts, from the Alerts URL (...&project=projects/<id>).",
               "defaultValue": "",
               "constraints": {
-                "required": false,
+                "required": true,
                 "regex": "",
-                "validationMessage": "",
-                "validations": []
+                "validationMessage": ""
               },
               "visible": "[equals(steps('rsAlerts').addRsAlerts, 'Yes')]"
             },
@@ -264,8 +250,7 @@
               "constraints": {
                 "required": false,
                 "regex": "",
-                "validationMessage": "",
-                "validations": []
+                "validationMessage": ""
               },
               "visible": "[equals(steps('rsAlerts').addRsAlerts, 'Yes')]"
             },
@@ -278,8 +263,7 @@
               "constraints": {
                 "required": false,
                 "regex": "",
-                "validationMessage": "",
-                "validations": []
+                "validationMessage": ""
               },
               "visible": "[equals(steps('rsAlerts').addRsAlerts, 'Yes')]"
             },
@@ -292,8 +276,7 @@
               "constraints": {
                 "required": false,
                 "regex": "",
-                "validationMessage": "",
-                "validations": []
+                "validationMessage": ""
               },
               "visible": "[equals(steps('rsAlerts').addRsAlerts, 'Yes')]"
             },
@@ -306,8 +289,7 @@
               "constraints": {
                 "required": false,
                 "regex": "",
-                "validationMessage": "",
-                "validations": []
+                "validationMessage": ""
               },
               "visible": "[equals(steps('rsAlerts').addRsAlerts, 'Yes')]"
             }
@@ -325,11 +307,11 @@
         "instanceMemoryMB": "[steps('basics').instanceMemoryMB]",
         "premiumSku": "[steps('basics').premiumSku]",
         "gtiApiKey": "[steps('basics').gtiApiKey]",
-        "maximumInstanceCount": "[steps('basics').maximumInstanceCount]",
+        "maximumInstanceCount": "[int(steps('basics').maximumInstanceCount)]",
         "outputFormatInstructions": "[steps('basics').outputFormatInstructions]",
-        "threadContextMessageCount": "[steps('basics').threadContextMessageCount]",
+        "threadContextMessageCount": "[int(steps('basics').threadContextMessageCount)]",
         "addRsAlerts": "[steps('rsAlerts').addRsAlerts]",
-        "rsAlertsFunctionAppName": "[if(empty(steps('rsAlerts').rsAlertsFunctionAppName), concat(steps('basics').functionAppName, '-rs-alerts'), steps('rsAlerts').rsAlertsFunctionAppName)]",
+        "rsAlertsFunctionAppName": "[steps('rsAlerts').rsAlertsFunctionAppName]",
         "rsAlertsHostingPlanType": "[steps('rsAlerts').rsAlertsHostingPlanType]",
         "rsAlertsInstanceMemoryMB": "[steps('rsAlerts').rsAlertsInstanceMemoryMB]",
         "rsAlertsPremiumSku": "[steps('rsAlerts').rsAlertsPremiumSku]",
