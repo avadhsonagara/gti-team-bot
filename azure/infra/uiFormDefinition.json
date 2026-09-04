@@ -36,9 +36,9 @@
               "type": "Microsoft.Common.DropDown",
               "label": "Hosting Plan",
               "toolTip": "Flex Consumption: serverless, scale-to-zero, pay-per-execution. Consumption: classic serverless. Premium: pre-warmed instances (no cold starts), VNET support.",
-              "defaultValue": "FlexConsumption",
+              "defaultValue": "Consumption",
               "constraints": {
-                "required": true,
+                "required": false,
                 "allowedValues": [
                   { "label": "Flex Consumption", "value": "FlexConsumption" },
                   { "label": "Consumption", "value": "Consumption" },
@@ -127,7 +127,7 @@
               "toolTip": "Number of most-recent channel-thread messages to fetch as context for each query. No effect outside channels. Must be between 1 and 50.",
               "defaultValue": "5",
               "constraints": {
-                "required": true,
+                "required": false,
                 "regex": "^([1-9]|[1-4][0-9]|50)$",
                 "validationMessage": "Enter a whole number between 1 and 50."
               },
@@ -144,9 +144,9 @@
               "type": "Microsoft.Common.DropDown",
               "label": "Add RS Alerts to this Team",
               "toolTip": "Provisions a second, background Function App that polls Google Threat Intelligence alerts and posts them into a Teams channel. Set to \"Yes\" to also fill in the fields below.",
-              "defaultValue": "No",
+              "defaultValue": "Yes",
               "constraints": {
-                "required": true,
+                "required": false,
                 "allowedValues": [
                   { "label": "No", "value": "No" },
                   { "label": "Yes", "value": "Yes" }
@@ -172,7 +172,7 @@
               "type": "Microsoft.Common.DropDown",
               "label": "RS Alerts Hosting Plan",
               "toolTip": "Hosting plan for the RS Alerts Function App.",
-              "defaultValue": "FlexConsumption",
+              "defaultValue": "Consumption",
               "constraints": {
                 "required": true,
                 "allowedValues": [
@@ -208,9 +208,9 @@
               "constraints": {
                 "required": true,
                 "allowedValues": [
-                  { "label": "EP1 (1 Core, 3.5 GB)", "value": "EP1" },
-                  { "label": "EP2 (2 Cores, 7 GB)", "value": "EP2" },
-                  { "label": "EP3 (4 Cores, 14 GB)", "value": "EP3" }
+                  { "label": "EP1 (1 Core CPU, 3.5 GB RAM)", "value": "EP1" },
+                  { "label": "EP2 (2 Cores CPU, 7 GB RAM)", "value": "EP2" },
+                  { "label": "EP3 (4 Cores CPU, 14 GB RAM)", "value": "EP3" }
                 ]
               },
               "visible": "[and(equals(steps('rsAlerts').addRsAlerts, 'Yes'), equals(steps('rsAlerts').rsAlertsHostingPlanType, 'Premium'))]"
