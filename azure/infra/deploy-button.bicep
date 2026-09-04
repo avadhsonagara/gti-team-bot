@@ -21,11 +21,27 @@
 @description('Name of the Function App to create.')
 param functionAppName string = 'gti-team-bot'
 
+@description('Hosting plan for the Function App. FlexConsumption (default): serverless, scale-to-zero, pay-per-execution. Consumption: classic serverless plan. Premium: pre-warmed instances (no cold starts), VNET support.')
+@allowed([
+  'FlexConsumption'
+  'Consumption'
+  'Premium'
+])
+param hostingPlanType string = 'FlexConsumption'
+
+@description('Premium plan SKU. Only used when hostingPlanType is Premium.')
+@allowed([
+  'EP1'
+  'EP2'
+  'EP3'
+])
+param premiumSku string = 'EP1'
+
 @description('Google Threat Intelligence Agentic API key. Stored as a Key Vault secret, never as a plaintext app setting.')
 @secure()
 param gtiApiKey string
 
-@description('Per-instance memory (MB) for the Flex Consumption plan.')
+@description('Per-instance memory (MB) for the Flex Consumption plan. Ignored on Consumption or Premium.')
 @allowed([
   512
   2048
@@ -33,7 +49,7 @@ param gtiApiKey string
 ])
 param instanceMemoryMB int = 2048
 
-@description('Maximum scale-out instance count for the Flex Consumption plan.')
+@description('Maximum scale-out instance count for the Flex Consumption plan. Ignored on Consumption or Premium.')
 @minValue(40)
 @maxValue(1000)
 param maximumInstanceCount int = 100
@@ -46,7 +62,7 @@ param outputFormatInstructions string = ''
 @maxValue(50)
 param threadContextMessageCount int = 5
 
-@description('Add RS Alerts to this Team: provisions a second, background Function App that polls Google Threat Intelligence alerts and posts them into a Teams channel. Set to "Yes" to also fill in the two fields below.')
+@description('Add RS Alerts to this Team: provisions a second, background Function App that polls Google Threat Intelligence alerts and posts them into a Teams channel. Set to "Yes" to also fill in the fields below.')
 @allowed([
   'No'
   'Yes'
@@ -55,6 +71,22 @@ param addRsAlerts string = 'No'
 
 @description('Name of the RS Alerts Function App. Only used when "Add RS Alerts to this Team" is Yes.')
 param rsAlertsFunctionAppName string = '${functionAppName}-rs-alerts'
+
+@description('Hosting plan for the RS Alerts Function App. Only used when "Add RS Alerts to this Team" is Yes.')
+@allowed([
+  'FlexConsumption'
+  'Consumption'
+  'Premium'
+])
+param rsAlertsHostingPlanType string = 'FlexConsumption'
+
+@description('Premium plan SKU for RS Alerts. Only used when rsAlertsHostingPlanType is Premium.')
+@allowed([
+  'EP1'
+  'EP2'
+  'EP3'
+])
+param rsAlertsPremiumSku string = 'EP1'
 
 @description('The Teams channel RS Alerts posts GTI alerts into. Paste the FULL channel link (right-click the channel -> Get link to channel) — the full link is required so the bot\'s Teams app can be auto-installed into the team via Microsoft Graph. A bare ID (19:xxx@thread.tacv2) still works for delivery, but skips auto-install. Required when "Add RS Alerts to this Team" is Yes.')
 param rsAlertsChannelIdOrChannelLink string = ''
@@ -83,6 +115,8 @@ module main 'main.bicep' = {
   params: {
     functionAppName: functionAppName
     botName: functionAppName
+    hostingPlanType: hostingPlanType
+    premiumSku: premiumSku
     gtiApiKey: gtiApiKey
     instanceMemoryMB: instanceMemoryMB
     maximumInstanceCount: maximumInstanceCount
@@ -90,6 +124,8 @@ module main 'main.bicep' = {
     threadContextMessageCount: threadContextMessageCount
     enableRsAlerts: addRsAlerts == 'Yes'
     rsAlertsFunctionAppName: rsAlertsFunctionAppName
+    rsAlertsHostingPlanType: rsAlertsHostingPlanType
+    rsAlertsPremiumSku: rsAlertsPremiumSku
     rsAlertsTeamsChannelId: rsAlertsChannelIdOrChannelLink
     rsAlertsGtiProject: rsAlertsGtiProject
     rsAlertsFilterSeverityLevel: rsAlertsFilterSeverityLevel
@@ -105,9 +141,11 @@ module main 'main.bicep' = {
 
 output functionAppName string = main.outputs.functionAppName
 output functionAppMessagingEndpoint string = main.outputs.functionAppMessagingEndpoint
+output hostingPlanType string = main.outputs.hostingPlanType
 output botName string = main.outputs.botName
 output botAppId string = main.outputs.botAppId
 output keyVaultName string = main.outputs.keyVaultName
 output manifestBlobUrl string = main.outputs.manifestBlobUrl
 output rsAlertsEnabled bool = main.outputs.rsAlertsEnabled
 output rsAlertsFunctionAppName string = main.outputs.rsAlertsFunctionAppName
+output rsAlertsHostingPlanType string = main.outputs.rsAlertsHostingPlanType

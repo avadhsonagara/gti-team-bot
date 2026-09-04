@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.46.1.21595",
-      "templateHash": "3550473077654131513"
+      "templateHash": "2036280684421734644"
     }
   },
   "parameters": {
@@ -14,6 +14,30 @@
       "defaultValue": "gti-team-bot",
       "metadata": {
         "description": "Name of the Function App to create."
+      }
+    },
+    "hostingPlanType": {
+      "type": "string",
+      "defaultValue": "FlexConsumption",
+      "allowedValues": [
+        "FlexConsumption",
+        "Consumption",
+        "Premium"
+      ],
+      "metadata": {
+        "description": "Hosting plan for the Function App. FlexConsumption (default): serverless, scale-to-zero, pay-per-execution. Consumption: classic serverless plan. Premium: pre-warmed instances (no cold starts), VNET support."
+      }
+    },
+    "premiumSku": {
+      "type": "string",
+      "defaultValue": "EP1",
+      "allowedValues": [
+        "EP1",
+        "EP2",
+        "EP3"
+      ],
+      "metadata": {
+        "description": "Premium plan SKU. Only used when hostingPlanType is Premium."
       }
     },
     "gtiApiKey": {
@@ -31,7 +55,7 @@
         4096
       ],
       "metadata": {
-        "description": "Per-instance memory (MB) for the Flex Consumption plan."
+        "description": "Per-instance memory (MB) for the Flex Consumption plan. Ignored on Consumption or Premium."
       }
     },
     "maximumInstanceCount": {
@@ -40,7 +64,7 @@
       "minValue": 40,
       "maxValue": 1000,
       "metadata": {
-        "description": "Maximum scale-out instance count for the Flex Consumption plan."
+        "description": "Maximum scale-out instance count for the Flex Consumption plan. Ignored on Consumption or Premium."
       }
     },
     "outputFormatInstructions": {
@@ -67,7 +91,7 @@
         "Yes"
       ],
       "metadata": {
-        "description": "Add RS Alerts to this Team: provisions a second, background Function App that polls Google Threat Intelligence alerts and posts them into a Teams channel. Set to \"Yes\" to also fill in the two fields below."
+        "description": "Add RS Alerts to this Team: provisions a second, background Function App that polls Google Threat Intelligence alerts and posts them into a Teams channel. Set to \"Yes\" to also fill in the fields below."
       }
     },
     "rsAlertsFunctionAppName": {
@@ -75,6 +99,30 @@
       "defaultValue": "[format('{0}-rs-alerts', parameters('functionAppName'))]",
       "metadata": {
         "description": "Name of the RS Alerts Function App. Only used when \"Add RS Alerts to this Team\" is Yes."
+      }
+    },
+    "rsAlertsHostingPlanType": {
+      "type": "string",
+      "defaultValue": "FlexConsumption",
+      "allowedValues": [
+        "FlexConsumption",
+        "Consumption",
+        "Premium"
+      ],
+      "metadata": {
+        "description": "Hosting plan for the RS Alerts Function App. Only used when \"Add RS Alerts to this Team\" is Yes."
+      }
+    },
+    "rsAlertsPremiumSku": {
+      "type": "string",
+      "defaultValue": "EP1",
+      "allowedValues": [
+        "EP1",
+        "EP2",
+        "EP3"
+      ],
+      "metadata": {
+        "description": "Premium plan SKU for RS Alerts. Only used when rsAlertsHostingPlanType is Premium."
       }
     },
     "rsAlertsChannelIdOrChannelLink": {
@@ -137,6 +185,12 @@
           "botName": {
             "value": "[parameters('functionAppName')]"
           },
+          "hostingPlanType": {
+            "value": "[parameters('hostingPlanType')]"
+          },
+          "premiumSku": {
+            "value": "[parameters('premiumSku')]"
+          },
           "gtiApiKey": {
             "value": "[parameters('gtiApiKey')]"
           },
@@ -157,6 +211,12 @@
           },
           "rsAlertsFunctionAppName": {
             "value": "[parameters('rsAlertsFunctionAppName')]"
+          },
+          "rsAlertsHostingPlanType": {
+            "value": "[parameters('rsAlertsHostingPlanType')]"
+          },
+          "rsAlertsPremiumSku": {
+            "value": "[parameters('rsAlertsPremiumSku')]"
           },
           "rsAlertsTeamsChannelId": {
             "value": "[parameters('rsAlertsChannelIdOrChannelLink')]"
@@ -1062,6 +1122,10 @@
       "type": "string",
       "value": "[reference(resourceId('Microsoft.Resources/deployments', 'gti-team-bot-main'), '2025-04-01').outputs.functionAppMessagingEndpoint.value]"
     },
+    "hostingPlanType": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'gti-team-bot-main'), '2025-04-01').outputs.hostingPlanType.value]"
+    },
     "botName": {
       "type": "string",
       "value": "[reference(resourceId('Microsoft.Resources/deployments', 'gti-team-bot-main'), '2025-04-01').outputs.botName.value]"
@@ -1085,6 +1149,10 @@
     "rsAlertsFunctionAppName": {
       "type": "string",
       "value": "[reference(resourceId('Microsoft.Resources/deployments', 'gti-team-bot-main'), '2025-04-01').outputs.rsAlertsFunctionAppName.value]"
+    },
+    "rsAlertsHostingPlanType": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'gti-team-bot-main'), '2025-04-01').outputs.rsAlertsHostingPlanType.value]"
     }
   }
 }

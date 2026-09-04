@@ -5,9 +5,10 @@
 Click the button above to provision the Azure Bot, Flex Consumption Function App, Storage Account,
 Key Vault, and Application Insights instance in your own Azure subscription, and upload the Teams
 app manifest package to blob storage — no local tools required, and **no app registration to
-create by hand**. The form asks for exactly four things: a Function App name, your `GTI_API_KEY`,
-and instance memory/scale settings. Everything else (region, storage account naming, App Insights,
-Python version, the manifest package location, etc.) is pre-wired with sensible defaults — this
+create by hand**. The form lets you configure the Function App name, hosting plan
+(Flex Consumption, Consumption, or Premium), your `GTI_API_KEY`, and instance memory/scale
+settings. Everything else (region, storage account naming, App Insights, Python version,
+the manifest package location, etc.) is pre-wired with sensible defaults — this
 simplified form is [infra/deploy-button.bicep](infra/deploy-button.bicep), a thin wrapper around
 the full [infra/main.bicep](infra/main.bicep) template.
 
