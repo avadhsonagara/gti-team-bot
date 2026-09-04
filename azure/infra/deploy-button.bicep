@@ -21,21 +21,15 @@
 @description('Name of the Function App to create.')
 param functionAppName string = 'gti-team-bot'
 
-@description('Hosting plan for the Function App. FlexConsumption (default): serverless, scale-to-zero, pay-per-execution. Consumption: classic serverless plan. Premium: pre-warmed instances (no cold starts), VNET support.')
+@description('Hosting plan for the Function App. FlexConsumption (default): serverless, scale-to-zero, pay-per-execution. Consumption: classic serverless. Premium-EP1 / EP2 / EP3: pre-warmed instances, no cold starts, VNET support.')
 @allowed([
   'FlexConsumption'
   'Consumption'
-  'Premium'
+  'Premium-EP1'
+  'Premium-EP2'
+  'Premium-EP3'
 ])
-param hostingPlanType string = 'FlexConsumption'
-
-@description('Premium plan SKU. Only used when hostingPlanType is Premium.')
-@allowed([
-  'EP1'
-  'EP2'
-  'EP3'
-])
-param premiumSku string = 'EP1'
+param hostingPlan string = 'FlexConsumption'
 
 @description('Google Threat Intelligence Agentic API key. Stored as a Key Vault secret, never as a plaintext app setting.')
 @secure()
@@ -76,17 +70,11 @@ param rsAlertsFunctionAppName string = '${functionAppName}-rs-alerts'
 @allowed([
   'FlexConsumption'
   'Consumption'
-  'Premium'
+  'Premium-EP1'
+  'Premium-EP2'
+  'Premium-EP3'
 ])
-param rsAlertsHostingPlanType string = 'FlexConsumption'
-
-@description('Premium plan SKU for RS Alerts. Only used when rsAlertsHostingPlanType is Premium.')
-@allowed([
-  'EP1'
-  'EP2'
-  'EP3'
-])
-param rsAlertsPremiumSku string = 'EP1'
+param rsAlertsHostingPlan string = 'FlexConsumption'
 
 @description('The Teams channel RS Alerts posts GTI alerts into. Paste the FULL channel link (right-click the channel -> Get link to channel) — the full link is required so the bot\'s Teams app can be auto-installed into the team via Microsoft Graph. A bare ID (19:xxx@thread.tacv2) still works for delivery, but skips auto-install. Required when "Add RS Alerts to this Team" is Yes.')
 param rsAlertsChannelIdOrChannelLink string = ''
@@ -105,6 +93,16 @@ param rsAlertsFilterRelevanceLevel string = 'MEDIUM,HIGH'
 
 @description('RS Alerts filter: Relevance confidence (comma-separated LOW/MEDIUM/HIGH). Empty = no filter on this field.')
 param rsAlertsFilterRelevanceConfidence string = 'MEDIUM,HIGH'
+
+// ---------------------------------------------------------------------------
+// Variables — resolve plan type and SKU from combined dropdown
+// ---------------------------------------------------------------------------
+
+var hostingPlanType = startsWith(hostingPlan, 'Premium') ? 'Premium' : (hostingPlan == 'Consumption' ? 'Consumption' : 'FlexConsumption')
+var premiumSku = hostingPlan == 'Premium-EP2' ? 'EP2' : (hostingPlan == 'Premium-EP3' ? 'EP3' : 'EP1')
+
+var rsAlertsHostingPlanType = startsWith(rsAlertsHostingPlan, 'Premium') ? 'Premium' : (rsAlertsHostingPlan == 'Consumption' ? 'Consumption' : 'FlexConsumption')
+var rsAlertsPremiumSku = rsAlertsHostingPlan == 'Premium-EP2' ? 'EP2' : (rsAlertsHostingPlan == 'Premium-EP3' ? 'EP3' : 'EP1')
 
 // ---------------------------------------------------------------------------
 // Delegate everything else to main.bicep's own defaults
@@ -141,6 +139,7 @@ module main 'main.bicep' = {
 
 output functionAppName string = main.outputs.functionAppName
 output functionAppMessagingEndpoint string = main.outputs.functionAppMessagingEndpoint
+output hostingPlan string = hostingPlan
 output hostingPlanType string = main.outputs.hostingPlanType
 output botName string = main.outputs.botName
 output botAppId string = main.outputs.botAppId
@@ -148,4 +147,5 @@ output keyVaultName string = main.outputs.keyVaultName
 output manifestBlobUrl string = main.outputs.manifestBlobUrl
 output rsAlertsEnabled bool = main.outputs.rsAlertsEnabled
 output rsAlertsFunctionAppName string = main.outputs.rsAlertsFunctionAppName
+output rsAlertsHostingPlan string = rsAlertsHostingPlan
 output rsAlertsHostingPlanType string = main.outputs.rsAlertsHostingPlanType
