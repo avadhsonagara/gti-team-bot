@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.46.1.21595",
-      "templateHash": "609034884100316984"
+      "templateHash": "17428704010162412617"
     }
   },
   "parameters": {
@@ -16,20 +16,40 @@
         "description": "Name of the Function App to create."
       }
     },
-    "hostingPlan": {
+    "hostingPlanType": {
       "type": "string",
-      "defaultValue": "FlexConsumption-2048MB",
+      "defaultValue": "FlexConsumption",
       "allowedValues": [
-        "FlexConsumption-2048MB",
-        "FlexConsumption-512MB",
-        "FlexConsumption-4096MB",
+        "FlexConsumption",
         "Consumption",
-        "Premium-EP1",
-        "Premium-EP2",
-        "Premium-EP3"
+        "Premium"
       ],
       "metadata": {
-        "description": "Hosting plan for the Function App. FlexConsumption (2048 MB default): serverless, scale-to-zero, pay-per-execution. Consumption: classic serverless. Premium-EP1 / EP2 / EP3: pre-warmed instances, no cold starts, VNET support."
+        "description": "Hosting plan for the Function App. FlexConsumption (default): serverless, scale-to-zero, pay-per-execution. Consumption: classic serverless. Premium: pre-warmed instances (no cold starts), VNET support."
+      }
+    },
+    "instanceMemoryMB": {
+      "type": "int",
+      "defaultValue": 2048,
+      "allowedValues": [
+        512,
+        2048,
+        4096
+      ],
+      "metadata": {
+        "description": "Function Instance Memory MB: per-instance memory for Flex Consumption. (Only applies when Hosting Plan is FlexConsumption; ignored for Consumption or Premium)."
+      }
+    },
+    "premiumSku": {
+      "type": "string",
+      "defaultValue": "EP1",
+      "allowedValues": [
+        "EP1",
+        "EP2",
+        "EP3"
+      ],
+      "metadata": {
+        "description": "Premium Plan SKU: compute tier for Premium plan. (Only applies when Hosting Plan is Premium; ignored for FlexConsumption or Consumption)."
       }
     },
     "gtiApiKey": {
@@ -44,7 +64,7 @@
       "minValue": 40,
       "maxValue": 1000,
       "metadata": {
-        "description": "Maximum scale-out instance count for the Flex Consumption plan. Ignored on Consumption or Premium."
+        "description": "Maximum scale-out instance count for the Flex Consumption plan. (Ignored for Consumption or Premium)."
       }
     },
     "outputFormatInstructions": {
@@ -81,20 +101,40 @@
         "description": "Name of the RS Alerts Function App. Only used when \"Add RS Alerts to this Team\" is Yes."
       }
     },
-    "rsAlertsHostingPlan": {
+    "rsAlertsHostingPlanType": {
       "type": "string",
-      "defaultValue": "FlexConsumption-512MB",
+      "defaultValue": "FlexConsumption",
       "allowedValues": [
-        "FlexConsumption-512MB",
-        "FlexConsumption-2048MB",
-        "FlexConsumption-4096MB",
+        "FlexConsumption",
         "Consumption",
-        "Premium-EP1",
-        "Premium-EP2",
-        "Premium-EP3"
+        "Premium"
       ],
       "metadata": {
         "description": "Hosting plan for the RS Alerts Function App. Only used when \"Add RS Alerts to this Team\" is Yes."
+      }
+    },
+    "rsAlertsInstanceMemoryMB": {
+      "type": "int",
+      "defaultValue": 512,
+      "allowedValues": [
+        512,
+        2048,
+        4096
+      ],
+      "metadata": {
+        "description": "Per-instance memory (MB) for RS Alerts Flex Consumption plan. (Only applies when RS Alerts Hosting Plan is FlexConsumption)."
+      }
+    },
+    "rsAlertsPremiumSku": {
+      "type": "string",
+      "defaultValue": "EP1",
+      "allowedValues": [
+        "EP1",
+        "EP2",
+        "EP3"
+      ],
+      "metadata": {
+        "description": "Premium plan SKU for RS Alerts. (Only applies when RS Alerts Hosting Plan is Premium)."
       }
     },
     "rsAlertsChannelIdOrChannelLink": {
@@ -140,14 +180,6 @@
       }
     }
   },
-  "variables": {
-    "hostingPlanType": "[if(startsWith(parameters('hostingPlan'), 'Premium'), 'Premium', if(equals(parameters('hostingPlan'), 'Consumption'), 'Consumption', 'FlexConsumption'))]",
-    "premiumSku": "[if(equals(parameters('hostingPlan'), 'Premium-EP2'), 'EP2', if(equals(parameters('hostingPlan'), 'Premium-EP3'), 'EP3', 'EP1'))]",
-    "instanceMemoryMB": "[if(equals(parameters('hostingPlan'), 'FlexConsumption-512MB'), 512, if(equals(parameters('hostingPlan'), 'FlexConsumption-4096MB'), 4096, 2048))]",
-    "rsAlertsHostingPlanType": "[if(startsWith(parameters('rsAlertsHostingPlan'), 'Premium'), 'Premium', if(equals(parameters('rsAlertsHostingPlan'), 'Consumption'), 'Consumption', 'FlexConsumption'))]",
-    "rsAlertsPremiumSku": "[if(equals(parameters('rsAlertsHostingPlan'), 'Premium-EP2'), 'EP2', if(equals(parameters('rsAlertsHostingPlan'), 'Premium-EP3'), 'EP3', 'EP1'))]",
-    "rsAlertsInstanceMemoryMB": "[if(equals(parameters('rsAlertsHostingPlan'), 'FlexConsumption-2048MB'), 2048, if(equals(parameters('rsAlertsHostingPlan'), 'FlexConsumption-4096MB'), 4096, 512))]"
-  },
   "resources": [
     {
       "type": "Microsoft.Resources/deployments",
@@ -166,16 +198,16 @@
             "value": "[parameters('functionAppName')]"
           },
           "hostingPlanType": {
-            "value": "[variables('hostingPlanType')]"
+            "value": "[parameters('hostingPlanType')]"
+          },
+          "instanceMemoryMB": {
+            "value": "[parameters('instanceMemoryMB')]"
           },
           "premiumSku": {
-            "value": "[variables('premiumSku')]"
+            "value": "[parameters('premiumSku')]"
           },
           "gtiApiKey": {
             "value": "[parameters('gtiApiKey')]"
-          },
-          "instanceMemoryMB": {
-            "value": "[variables('instanceMemoryMB')]"
           },
           "maximumInstanceCount": {
             "value": "[parameters('maximumInstanceCount')]"
@@ -193,13 +225,13 @@
             "value": "[parameters('rsAlertsFunctionAppName')]"
           },
           "rsAlertsHostingPlanType": {
-            "value": "[variables('rsAlertsHostingPlanType')]"
-          },
-          "rsAlertsPremiumSku": {
-            "value": "[variables('rsAlertsPremiumSku')]"
+            "value": "[parameters('rsAlertsHostingPlanType')]"
           },
           "rsAlertsInstanceMemoryMB": {
-            "value": "[variables('rsAlertsInstanceMemoryMB')]"
+            "value": "[parameters('rsAlertsInstanceMemoryMB')]"
+          },
+          "rsAlertsPremiumSku": {
+            "value": "[parameters('rsAlertsPremiumSku')]"
           },
           "rsAlertsTeamsChannelId": {
             "value": "[parameters('rsAlertsChannelIdOrChannelLink')]"
@@ -1105,10 +1137,6 @@
       "type": "string",
       "value": "[reference(resourceId('Microsoft.Resources/deployments', 'gti-team-bot-main'), '2025-04-01').outputs.functionAppMessagingEndpoint.value]"
     },
-    "hostingPlan": {
-      "type": "string",
-      "value": "[parameters('hostingPlan')]"
-    },
     "hostingPlanType": {
       "type": "string",
       "value": "[reference(resourceId('Microsoft.Resources/deployments', 'gti-team-bot-main'), '2025-04-01').outputs.hostingPlanType.value]"
@@ -1136,10 +1164,6 @@
     "rsAlertsFunctionAppName": {
       "type": "string",
       "value": "[reference(resourceId('Microsoft.Resources/deployments', 'gti-team-bot-main'), '2025-04-01').outputs.rsAlertsFunctionAppName.value]"
-    },
-    "rsAlertsHostingPlan": {
-      "type": "string",
-      "value": "[parameters('rsAlertsHostingPlan')]"
     },
     "rsAlertsHostingPlanType": {
       "type": "string",

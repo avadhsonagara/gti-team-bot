@@ -21,23 +21,35 @@
 @description('Name of the Function App to create.')
 param functionAppName string = 'gti-team-bot'
 
-@description('Hosting plan for the Function App. FlexConsumption (2048 MB default): serverless, scale-to-zero, pay-per-execution. Consumption: classic serverless. Premium-EP1 / EP2 / EP3: pre-warmed instances, no cold starts, VNET support.')
+@description('Hosting plan for the Function App. FlexConsumption (default): serverless, scale-to-zero, pay-per-execution. Consumption: classic serverless. Premium: pre-warmed instances (no cold starts), VNET support.')
 @allowed([
-  'FlexConsumption-2048MB'
-  'FlexConsumption-512MB'
-  'FlexConsumption-4096MB'
+  'FlexConsumption'
   'Consumption'
-  'Premium-EP1'
-  'Premium-EP2'
-  'Premium-EP3'
+  'Premium'
 ])
-param hostingPlan string = 'FlexConsumption-2048MB'
+param hostingPlanType string = 'FlexConsumption'
+
+@description('Function Instance Memory MB: per-instance memory for Flex Consumption. (Only applies when Hosting Plan is FlexConsumption; ignored for Consumption or Premium).')
+@allowed([
+  512
+  2048
+  4096
+])
+param instanceMemoryMB int = 2048
+
+@description('Premium Plan SKU: compute tier for Premium plan. (Only applies when Hosting Plan is Premium; ignored for FlexConsumption or Consumption).')
+@allowed([
+  'EP1'
+  'EP2'
+  'EP3'
+])
+param premiumSku string = 'EP1'
 
 @description('Google Threat Intelligence Agentic API key. Stored as a Key Vault secret, never as a plaintext app setting.')
 @secure()
 param gtiApiKey string
 
-@description('Maximum scale-out instance count for the Flex Consumption plan. Ignored on Consumption or Premium.')
+@description('Maximum scale-out instance count for the Flex Consumption plan. (Ignored for Consumption or Premium).')
 @minValue(40)
 @maxValue(1000)
 param maximumInstanceCount int = 100
@@ -62,15 +74,27 @@ param rsAlertsFunctionAppName string = '${functionAppName}-rs-alerts'
 
 @description('Hosting plan for the RS Alerts Function App. Only used when "Add RS Alerts to this Team" is Yes.')
 @allowed([
-  'FlexConsumption-512MB'
-  'FlexConsumption-2048MB'
-  'FlexConsumption-4096MB'
+  'FlexConsumption'
   'Consumption'
-  'Premium-EP1'
-  'Premium-EP2'
-  'Premium-EP3'
+  'Premium'
 ])
-param rsAlertsHostingPlan string = 'FlexConsumption-512MB'
+param rsAlertsHostingPlanType string = 'FlexConsumption'
+
+@description('Per-instance memory (MB) for RS Alerts Flex Consumption plan. (Only applies when RS Alerts Hosting Plan is FlexConsumption).')
+@allowed([
+  512
+  2048
+  4096
+])
+param rsAlertsInstanceMemoryMB int = 512
+
+@description('Premium plan SKU for RS Alerts. (Only applies when RS Alerts Hosting Plan is Premium).')
+@allowed([
+  'EP1'
+  'EP2'
+  'EP3'
+])
+param rsAlertsPremiumSku string = 'EP1'
 
 @description('The Teams channel RS Alerts posts GTI alerts into. Paste the FULL channel link (right-click the channel -> Get link to channel) — the full link is required so the bot\'s Teams app can be auto-installed into the team via Microsoft Graph. A bare ID (19:xxx@thread.tacv2) still works for delivery, but skips auto-install. Required when "Add RS Alerts to this Team" is Yes.')
 param rsAlertsChannelIdOrChannelLink string = ''
@@ -91,18 +115,6 @@ param rsAlertsFilterRelevanceLevel string = 'MEDIUM,HIGH'
 param rsAlertsFilterRelevanceConfidence string = 'MEDIUM,HIGH'
 
 // ---------------------------------------------------------------------------
-// Variables — resolve plan type, SKU, and memory from combined dropdown
-// ---------------------------------------------------------------------------
-
-var hostingPlanType = startsWith(hostingPlan, 'Premium') ? 'Premium' : (hostingPlan == 'Consumption' ? 'Consumption' : 'FlexConsumption')
-var premiumSku = hostingPlan == 'Premium-EP2' ? 'EP2' : (hostingPlan == 'Premium-EP3' ? 'EP3' : 'EP1')
-var instanceMemoryMB = hostingPlan == 'FlexConsumption-512MB' ? 512 : (hostingPlan == 'FlexConsumption-4096MB' ? 4096 : 2048)
-
-var rsAlertsHostingPlanType = startsWith(rsAlertsHostingPlan, 'Premium') ? 'Premium' : (rsAlertsHostingPlan == 'Consumption' ? 'Consumption' : 'FlexConsumption')
-var rsAlertsPremiumSku = rsAlertsHostingPlan == 'Premium-EP2' ? 'EP2' : (rsAlertsHostingPlan == 'Premium-EP3' ? 'EP3' : 'EP1')
-var rsAlertsInstanceMemoryMB = rsAlertsHostingPlan == 'FlexConsumption-2048MB' ? 2048 : (rsAlertsHostingPlan == 'FlexConsumption-4096MB' ? 4096 : 512)
-
-// ---------------------------------------------------------------------------
 // Delegate everything else to main.bicep's own defaults
 // ---------------------------------------------------------------------------
 
@@ -112,17 +124,17 @@ module main 'main.bicep' = {
     functionAppName: functionAppName
     botName: functionAppName
     hostingPlanType: hostingPlanType
+    instanceMemoryMB: instanceMemoryMB
     premiumSku: premiumSku
     gtiApiKey: gtiApiKey
-    instanceMemoryMB: instanceMemoryMB
     maximumInstanceCount: maximumInstanceCount
     outputFormatInstructions: outputFormatInstructions
     threadContextMessageCount: threadContextMessageCount
     enableRsAlerts: addRsAlerts == 'Yes'
     rsAlertsFunctionAppName: rsAlertsFunctionAppName
     rsAlertsHostingPlanType: rsAlertsHostingPlanType
-    rsAlertsPremiumSku: rsAlertsPremiumSku
     rsAlertsInstanceMemoryMB: rsAlertsInstanceMemoryMB
+    rsAlertsPremiumSku: rsAlertsPremiumSku
     rsAlertsTeamsChannelId: rsAlertsChannelIdOrChannelLink
     rsAlertsGtiProject: rsAlertsGtiProject
     rsAlertsFilterSeverityLevel: rsAlertsFilterSeverityLevel
@@ -138,7 +150,6 @@ module main 'main.bicep' = {
 
 output functionAppName string = main.outputs.functionAppName
 output functionAppMessagingEndpoint string = main.outputs.functionAppMessagingEndpoint
-output hostingPlan string = hostingPlan
 output hostingPlanType string = main.outputs.hostingPlanType
 output botName string = main.outputs.botName
 output botAppId string = main.outputs.botAppId
@@ -146,5 +157,4 @@ output keyVaultName string = main.outputs.keyVaultName
 output manifestBlobUrl string = main.outputs.manifestBlobUrl
 output rsAlertsEnabled bool = main.outputs.rsAlertsEnabled
 output rsAlertsFunctionAppName string = main.outputs.rsAlertsFunctionAppName
-output rsAlertsHostingPlan string = rsAlertsHostingPlan
 output rsAlertsHostingPlanType string = main.outputs.rsAlertsHostingPlanType
