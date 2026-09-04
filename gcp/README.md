@@ -74,8 +74,7 @@ gcp/
     ├── main.tf                   # APIs, GCS, Firestore, Secrets, Cloud Run functions, IAM, Scheduler
     ├── variables.tf              # Input variables with validation & defaults
     ├── outputs.tf                # Function URLs, messaging endpoints, GCS URLs
-    ├── terraform.tfvars.example  # Example variable values
-    └── deploy.sh                 # One-click deployment script
+    └── terraform.tfvars.example  # Example variable values
 ```
 
 ---
@@ -122,26 +121,11 @@ curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
 - Terraform `v1.5.0+` installed.
 - Google Threat Intelligence (VirusTotal) API key.
 
-### Automated Deployment with `deploy.sh`
-
-```bash
-cd /home/devuser/gti-team-bot-agentic-azure/gcp/infra
-
-export GTI_API_KEY="your-gti-api-key"
-
-# Optional: Enable RS Alerts background job
-export ENABLE_RS_ALERTS=true
-export RS_ALERTS_TEAMS_CHANNEL_ID="19:yourChannelId@thread.tacv2"
-
-# Run deployment
-./deploy.sh gtimsteamaiintegration-3898 us-central1 gti-team-bot
-```
-
-### Manual Deployment with Terraform
+### Deployment with Terraform
 
 1. Create a `terraform.tfvars` file:
    ```bash
-   cd /home/devuser/gti-team-bot-agentic-azure/gcp/infra
+   cd /home/devuser/gti-team-bot-agentic-azure/gcp/terraform
    cp terraform.tfvars.example terraform.tfvars
    ```
 

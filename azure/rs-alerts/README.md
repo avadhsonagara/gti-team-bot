@@ -10,7 +10,8 @@ GTI List Alerts API ──► rs_alerts_timer (Timer Trigger) ──► Bot Fram
 ```
 
 This is provisioned as an **optional** part of the main deployment: the "Deploy to Azure"
-button and `infra/deploy.sh` expose an `enableRsAlerts` toggle. When enabled, the template
+button and a direct `az deployment group create` against `infra/main.bicep` both expose an
+`enableRsAlerts` toggle. When enabled, the template
 provisions a second, dedicated Function App (`<functionAppName>-rs-alerts`) alongside the
 main bot, sharing its Azure Bot identity, Key Vault secret, and storage account — see
 [`../infra/main.bicep`](../infra/main.bicep).
@@ -65,10 +66,12 @@ curl "http://localhost:7071/api/trigger"
 ## Deploying
 
 Infra is provisioned by `../infra/main.bicep` when `enableRsAlerts=true` (see the repo-level
-[Deploy to Azure button](../../README.md) and [`../infra/deploy.sh`](../infra/deploy.sh)).
-That provisions the Function App, its storage container, and wires up the shared managed
-identity / Key Vault secret — it does not push application code. Publish this folder's code
-separately:
+[Deploy to Azure button](../../README.md), or deploy the template directly with
+`az deployment group create --template-file ../infra/main.bicep --parameters
+../infra/main.parameters.json --parameters enableRsAlerts=true
+rsAlertsTeamsChannelId=<link> rsAlertsGtiProject=<id>`). That provisions the Function App, its
+storage container, and wires up the shared managed identity / Key Vault secret — it does not
+push application code. Publish this folder's code separately:
 
 ```bash
 func azure functionapp publish <functionAppName>-rs-alerts --python

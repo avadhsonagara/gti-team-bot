@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.46.1.21595",
-      "templateHash": "3944021793832137501"
+      "templateHash": "3550473077654131513"
     }
   },
   "parameters": {
@@ -184,7 +184,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.46.1.21595",
-              "templateHash": "66490600009013678"
+              "templateHash": "8044610410549129194"
             }
           },
           "parameters": {
@@ -221,14 +221,38 @@
               "type": "string",
               "defaultValue": "[format('{0}-plan', parameters('functionAppName'))]",
               "metadata": {
-                "description": "Name of the Flex Consumption App Service Plan to use."
+                "description": "Name of the App Service Plan to use."
               }
             },
             "createAppServicePlan": {
               "type": "bool",
               "defaultValue": true,
               "metadata": {
-                "description": "Set to false to reuse an existing App Service Plan named appServicePlanName in this resource group, instead of creating a new one. A Function App cannot be moved between Flex Consumption plans in-place, so this must be false when redeploying onto an app that already exists on a different plan."
+                "description": "Set to false to reuse an existing App Service Plan named appServicePlanName in this resource group, instead of creating a new one. A Function App cannot be moved between plans of different types in-place, so this must be false when redeploying onto an app that already exists on a different plan."
+              }
+            },
+            "hostingPlanType": {
+              "type": "string",
+              "defaultValue": "FlexConsumption",
+              "allowedValues": [
+                "FlexConsumption",
+                "Consumption",
+                "Premium"
+              ],
+              "metadata": {
+                "description": "Hosting plan for the Function App. FlexConsumption (default): serverless, scale-to-zero, pay-per-execution — what this template originally shipped with. Consumption (Y1): the older/cheaper classic serverless plan, with more Linux/Python limitations. Premium (EP1/EP2/EP3, see premiumSku): pre-warmed instances (no cold starts), VNET support, at a fixed baseline cost even when idle."
+              }
+            },
+            "premiumSku": {
+              "type": "string",
+              "defaultValue": "EP1",
+              "allowedValues": [
+                "EP1",
+                "EP2",
+                "EP3"
+              ],
+              "metadata": {
+                "description": "Premium plan SKU. Only used when hostingPlanType is Premium."
               }
             },
             "pythonVersion": {
@@ -370,7 +394,31 @@
               "type": "string",
               "defaultValue": "[format('{0}-plan', parameters('rsAlertsFunctionAppName'))]",
               "metadata": {
-                "description": "Name of the RS Alerts Flex Consumption App Service Plan. Only used when enableRsAlerts is true."
+                "description": "Name of the RS Alerts App Service Plan. Only used when enableRsAlerts is true."
+              }
+            },
+            "rsAlertsHostingPlanType": {
+              "type": "string",
+              "defaultValue": "FlexConsumption",
+              "allowedValues": [
+                "FlexConsumption",
+                "Consumption",
+                "Premium"
+              ],
+              "metadata": {
+                "description": "Hosting plan for the RS Alerts Function App. Only used when enableRsAlerts is true — see hostingPlanType above for what each option means."
+              }
+            },
+            "rsAlertsPremiumSku": {
+              "type": "string",
+              "defaultValue": "EP1",
+              "allowedValues": [
+                "EP1",
+                "EP2",
+                "EP3"
+              ],
+              "metadata": {
+                "description": "Premium plan SKU for RS Alerts. Only used when rsAlertsHostingPlanType is Premium."
               }
             },
             "rsAlertsTeamsChannelId": {
@@ -486,7 +534,27 @@
             ],
             "deploymentContainerName": "[format('app-package-{0}', toLower(parameters('functionAppName')))]",
             "rsAlertsDeploymentContainerName": "[format('app-package-{0}', toLower(parameters('rsAlertsFunctionAppName')))]",
-            "rsAlertsStateContainerName": "rs-alerts-state"
+            "rsAlertsStateContainerName": "rs-alerts-state",
+            "planSkuName": "[if(equals(parameters('hostingPlanType'), 'FlexConsumption'), 'FC1', if(equals(parameters('hostingPlanType'), 'Premium'), parameters('premiumSku'), 'Y1'))]",
+            "planSkuTier": "[if(equals(parameters('hostingPlanType'), 'FlexConsumption'), 'FlexConsumption', if(equals(parameters('hostingPlanType'), 'Premium'), 'ElasticPremium', 'Dynamic'))]",
+            "planKind": "[if(equals(parameters('hostingPlanType'), 'Premium'), 'elastic', 'functionapp')]",
+            "rsAlertsPlanSkuName": "[if(equals(parameters('rsAlertsHostingPlanType'), 'FlexConsumption'), 'FC1', if(equals(parameters('rsAlertsHostingPlanType'), 'Premium'), parameters('rsAlertsPremiumSku'), 'Y1'))]",
+            "rsAlertsPlanSkuTier": "[if(equals(parameters('rsAlertsHostingPlanType'), 'FlexConsumption'), 'FlexConsumption', if(equals(parameters('rsAlertsHostingPlanType'), 'Premium'), 'ElasticPremium', 'Dynamic'))]",
+            "rsAlertsPlanKind": "[if(equals(parameters('rsAlertsHostingPlanType'), 'Premium'), 'elastic', 'functionapp')]",
+            "classicPlanAppSettings": [
+              {
+                "name": "FUNCTIONS_EXTENSION_VERSION",
+                "value": "~4"
+              },
+              {
+                "name": "FUNCTIONS_WORKER_RUNTIME",
+                "value": "python"
+              },
+              {
+                "name": "WEBSITE_RUN_FROM_PACKAGE",
+                "value": "1"
+              }
+            ]
           },
           "resources": [
             {
@@ -629,16 +697,17 @@
               "name": "[parameters('appServicePlanName')]",
               "location": "[parameters('location')]",
               "tags": "[parameters('tags')]",
-              "kind": "functionapp",
+              "kind": "[variables('planKind')]",
               "sku": {
-                "name": "FC1",
-                "tier": "FlexConsumption"
+                "name": "[variables('planSkuName')]",
+                "tier": "[variables('planSkuTier')]"
               },
               "properties": {
                 "reserved": true
               }
             },
             {
+              "condition": "[equals(parameters('hostingPlanType'), 'FlexConsumption')]",
               "type": "Microsoft.Web/sites",
               "apiVersion": "2023-12-01",
               "name": "[parameters('functionAppName')]",
@@ -656,7 +725,7 @@
                 "httpsOnly": true,
                 "keyVaultReferenceIdentity": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('functionAppName')))]",
                 "siteConfig": {
-                  "appSettings": "[concat(createArray(createObject('name', 'AzureWebJobsStorage', 'value', format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix={2}', parameters('storageAccountName'), listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').keys[0].value, environment().suffixes.storage)), createObject('name', 'DEPLOYMENT_STORAGE_CONNECTION_STRING', 'value', format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix={2}', parameters('storageAccountName'), listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').keys[0].value, environment().suffixes.storage)), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference(resourceId('Microsoft.Insights/components', parameters('appInsightsName')), '2020-02-02').ConnectionString), createObject('name', 'CLIENT_ID', 'value', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('functionAppName'))), '2023-01-31').clientId), createObject('name', 'TENANT_ID', 'value', parameters('tenantId')), createObject('name', 'MANAGED_IDENTITY_CLIENT_ID', 'value', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('functionAppName'))), '2023-01-31').clientId), createObject('name', 'GTI_API_KEY', 'value', format('@Microsoft.KeyVault(SecretUri={0})', reference(resourceId('Microsoft.KeyVault/vaults/secrets', parameters('keyVaultName'), 'GtiApiKey'), '2023-07-01').secretUri)), createObject('name', 'OUTPUT_FORMAT_INSTRUCTIONS', 'value', parameters('outputFormatInstructions')), createObject('name', 'THREAD_CONTEXT_MESSAGE_COUNT', 'value', string(parameters('threadContextMessageCount')))), variables('customAppSettingsArray'))]"
+                  "appSettings": "[concat(createArray(createObject('name', 'AzureWebJobsStorage', 'value', format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix={2}', parameters('storageAccountName'), listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').keys[0].value, environment().suffixes.storage)), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference(resourceId('Microsoft.Insights/components', parameters('appInsightsName')), '2020-02-02').ConnectionString), createObject('name', 'CLIENT_ID', 'value', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('functionAppName'))), '2023-01-31').clientId), createObject('name', 'TENANT_ID', 'value', parameters('tenantId')), createObject('name', 'MANAGED_IDENTITY_CLIENT_ID', 'value', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('functionAppName'))), '2023-01-31').clientId), createObject('name', 'GTI_API_KEY', 'value', format('@Microsoft.KeyVault(SecretUri={0})', reference(resourceId('Microsoft.KeyVault/vaults/secrets', parameters('keyVaultName'), 'GtiApiKey'), '2023-07-01').secretUri)), createObject('name', 'OUTPUT_FORMAT_INSTRUCTIONS', 'value', parameters('outputFormatInstructions')), createObject('name', 'THREAD_CONTEXT_MESSAGE_COUNT', 'value', string(parameters('threadContextMessageCount')))), createArray(createObject('name', 'DEPLOYMENT_STORAGE_CONNECTION_STRING', 'value', format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix={2}', parameters('storageAccountName'), listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').keys[0].value, environment().suffixes.storage))), variables('customAppSettingsArray'))]"
                 },
                 "functionAppConfig": {
                   "deployment": {
@@ -684,6 +753,38 @@
                 "[resourceId('Microsoft.Web/serverfarms', parameters('appServicePlanName'))]",
                 "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('functionAppName')))]",
                 "[resourceId('Microsoft.Storage/storageAccounts/blobServices/containers', parameters('storageAccountName'), 'default', variables('deploymentContainerName'))]",
+                "[resourceId('Microsoft.KeyVault/vaults/secrets', parameters('keyVaultName'), 'GtiApiKey')]",
+                "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
+              ]
+            },
+            {
+              "condition": "[not(equals(parameters('hostingPlanType'), 'FlexConsumption'))]",
+              "type": "Microsoft.Web/sites",
+              "apiVersion": "2023-12-01",
+              "name": "[parameters('functionAppName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "kind": "functionapp,linux",
+              "identity": {
+                "type": "UserAssigned",
+                "userAssignedIdentities": {
+                  "[format('{0}', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('functionAppName'))))]": {}
+                }
+              },
+              "properties": {
+                "serverFarmId": "[if(parameters('createAppServicePlan'), resourceId('Microsoft.Web/serverfarms', parameters('appServicePlanName')), resourceId('Microsoft.Web/serverfarms', parameters('appServicePlanName')))]",
+                "httpsOnly": true,
+                "keyVaultReferenceIdentity": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('functionAppName')))]",
+                "siteConfig": {
+                  "linuxFxVersion": "[format('PYTHON|{0}', parameters('pythonVersion'))]",
+                  "alwaysOn": "[equals(parameters('hostingPlanType'), 'Premium')]",
+                  "appSettings": "[concat(createArray(createObject('name', 'AzureWebJobsStorage', 'value', format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix={2}', parameters('storageAccountName'), listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').keys[0].value, environment().suffixes.storage)), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference(resourceId('Microsoft.Insights/components', parameters('appInsightsName')), '2020-02-02').ConnectionString), createObject('name', 'CLIENT_ID', 'value', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('functionAppName'))), '2023-01-31').clientId), createObject('name', 'TENANT_ID', 'value', parameters('tenantId')), createObject('name', 'MANAGED_IDENTITY_CLIENT_ID', 'value', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('functionAppName'))), '2023-01-31').clientId), createObject('name', 'GTI_API_KEY', 'value', format('@Microsoft.KeyVault(SecretUri={0})', reference(resourceId('Microsoft.KeyVault/vaults/secrets', parameters('keyVaultName'), 'GtiApiKey'), '2023-07-01').secretUri)), createObject('name', 'OUTPUT_FORMAT_INSTRUCTIONS', 'value', parameters('outputFormatInstructions')), createObject('name', 'THREAD_CONTEXT_MESSAGE_COUNT', 'value', string(parameters('threadContextMessageCount')))), variables('classicPlanAppSettings'), variables('customAppSettingsArray'))]"
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Insights/components', parameters('appInsightsName'))]",
+                "[resourceId('Microsoft.Web/serverfarms', parameters('appServicePlanName'))]",
+                "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('functionAppName')))]",
                 "[resourceId('Microsoft.KeyVault/vaults/secrets', parameters('keyVaultName'), 'GtiApiKey')]",
                 "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
               ]
@@ -756,7 +857,7 @@
               "kind": "azurebot",
               "properties": {
                 "displayName": "[parameters('botName')]",
-                "endpoint": "[format('https://{0}/api/messages', reference(resourceId('Microsoft.Web/sites', parameters('functionAppName')), '2023-12-01').defaultHostName)]",
+                "endpoint": "[format('https://{0}/api/messages', if(equals(parameters('hostingPlanType'), 'FlexConsumption'), reference(resourceId('Microsoft.Web/sites', parameters('functionAppName')), '2023-12-01').defaultHostName, reference(resourceId('Microsoft.Web/sites', parameters('functionAppName')), '2023-12-01').defaultHostName))]",
                 "msaAppId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('functionAppName'))), '2023-01-31').clientId]",
                 "msaAppType": "UserAssignedMSI",
                 "msaAppTenantId": "[parameters('tenantId')]",
@@ -764,6 +865,7 @@
               },
               "dependsOn": [
                 "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('functionAppName')))]",
+                "[resourceId('Microsoft.Web/sites', parameters('functionAppName'))]",
                 "[resourceId('Microsoft.Web/sites', parameters('functionAppName'))]"
               ]
             },
@@ -786,17 +888,17 @@
               "name": "[parameters('rsAlertsAppServicePlanName')]",
               "location": "[parameters('location')]",
               "tags": "[parameters('tags')]",
-              "kind": "functionapp",
+              "kind": "[variables('rsAlertsPlanKind')]",
               "sku": {
-                "name": "FC1",
-                "tier": "FlexConsumption"
+                "name": "[variables('rsAlertsPlanSkuName')]",
+                "tier": "[variables('rsAlertsPlanSkuTier')]"
               },
               "properties": {
                 "reserved": true
               }
             },
             {
-              "condition": "[parameters('enableRsAlerts')]",
+              "condition": "[and(parameters('enableRsAlerts'), equals(parameters('rsAlertsHostingPlanType'), 'FlexConsumption'))]",
               "type": "Microsoft.Web/sites",
               "apiVersion": "2023-12-01",
               "name": "[parameters('rsAlertsFunctionAppName')]",
@@ -814,7 +916,7 @@
                 "httpsOnly": true,
                 "keyVaultReferenceIdentity": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('functionAppName')))]",
                 "siteConfig": {
-                  "appSettings": "[concat(createArray(createObject('name', 'AzureWebJobsStorage', 'value', format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix={2}', parameters('storageAccountName'), listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').keys[0].value, environment().suffixes.storage)), createObject('name', 'DEPLOYMENT_STORAGE_CONNECTION_STRING', 'value', format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix={2}', parameters('storageAccountName'), listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').keys[0].value, environment().suffixes.storage)), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference(resourceId('Microsoft.Insights/components', parameters('appInsightsName')), '2020-02-02').ConnectionString), createObject('name', 'CLIENT_ID', 'value', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('functionAppName'))), '2023-01-31').clientId), createObject('name', 'TENANT_ID', 'value', parameters('tenantId')), createObject('name', 'MANAGED_IDENTITY_CLIENT_ID', 'value', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('functionAppName'))), '2023-01-31').clientId), createObject('name', 'GTI_API_KEY', 'value', format('@Microsoft.KeyVault(SecretUri={0})', reference(resourceId('Microsoft.KeyVault/vaults/secrets', parameters('keyVaultName'), 'GtiApiKey'), '2023-07-01').secretUri)), createObject('name', 'GTI_RSA_PROJECT', 'value', parameters('rsAlertsGtiProject')), createObject('name', 'TEAMS_CHANNEL_ID', 'value', parameters('rsAlertsTeamsChannelId')), createObject('name', 'RS_ALERTS_SCHEDULE', 'value', parameters('rsAlertsSchedule')), createObject('name', 'PAGE_SIZE', 'value', parameters('rsAlertsPageSize')), createObject('name', 'WEBSITE_TIME_ZONE', 'value', parameters('rsAlertsScheduleTimezone')), createObject('name', 'FILTER_SEVERITY_LEVEL', 'value', parameters('rsAlertsFilterSeverityLevel')), createObject('name', 'FILTER_PRIORITY_LEVEL', 'value', parameters('rsAlertsFilterPriorityLevel')), createObject('name', 'FILTER_RELEVANCE_LEVEL', 'value', parameters('rsAlertsFilterRelevanceLevel')), createObject('name', 'FILTER_RELEVANCE_CONFIDENCE', 'value', parameters('rsAlertsFilterRelevanceConfidence')), createObject('name', 'STATE_CONTAINER_NAME', 'value', variables('rsAlertsStateContainerName'))), variables('rsAlertsCustomAppSettingsArray'))]"
+                  "appSettings": "[concat(createArray(createObject('name', 'AzureWebJobsStorage', 'value', format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix={2}', parameters('storageAccountName'), listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').keys[0].value, environment().suffixes.storage)), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference(resourceId('Microsoft.Insights/components', parameters('appInsightsName')), '2020-02-02').ConnectionString), createObject('name', 'CLIENT_ID', 'value', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('functionAppName'))), '2023-01-31').clientId), createObject('name', 'TENANT_ID', 'value', parameters('tenantId')), createObject('name', 'MANAGED_IDENTITY_CLIENT_ID', 'value', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('functionAppName'))), '2023-01-31').clientId), createObject('name', 'GTI_API_KEY', 'value', format('@Microsoft.KeyVault(SecretUri={0})', reference(resourceId('Microsoft.KeyVault/vaults/secrets', parameters('keyVaultName'), 'GtiApiKey'), '2023-07-01').secretUri)), createObject('name', 'GTI_RSA_PROJECT', 'value', parameters('rsAlertsGtiProject')), createObject('name', 'TEAMS_CHANNEL_ID', 'value', parameters('rsAlertsTeamsChannelId')), createObject('name', 'RS_ALERTS_SCHEDULE', 'value', parameters('rsAlertsSchedule')), createObject('name', 'PAGE_SIZE', 'value', parameters('rsAlertsPageSize')), createObject('name', 'WEBSITE_TIME_ZONE', 'value', parameters('rsAlertsScheduleTimezone')), createObject('name', 'FILTER_SEVERITY_LEVEL', 'value', parameters('rsAlertsFilterSeverityLevel')), createObject('name', 'FILTER_PRIORITY_LEVEL', 'value', parameters('rsAlertsFilterPriorityLevel')), createObject('name', 'FILTER_RELEVANCE_LEVEL', 'value', parameters('rsAlertsFilterRelevanceLevel')), createObject('name', 'FILTER_RELEVANCE_CONFIDENCE', 'value', parameters('rsAlertsFilterRelevanceConfidence')), createObject('name', 'STATE_CONTAINER_NAME', 'value', variables('rsAlertsStateContainerName'))), createArray(createObject('name', 'DEPLOYMENT_STORAGE_CONNECTION_STRING', 'value', format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix={2}', parameters('storageAccountName'), listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').keys[0].value, environment().suffixes.storage))), variables('rsAlertsCustomAppSettingsArray'))]"
                 },
                 "functionAppConfig": {
                   "deployment": {
@@ -851,6 +953,38 @@
                 "[resourceId('Microsoft.Storage/storageAccounts/blobServices/containers', parameters('storageAccountName'), 'default', variables('rsAlertsDeploymentContainerName'))]",
                 "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
               ]
+            },
+            {
+              "condition": "[and(parameters('enableRsAlerts'), not(equals(parameters('rsAlertsHostingPlanType'), 'FlexConsumption')))]",
+              "type": "Microsoft.Web/sites",
+              "apiVersion": "2023-12-01",
+              "name": "[parameters('rsAlertsFunctionAppName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "kind": "functionapp,linux",
+              "identity": {
+                "type": "UserAssigned",
+                "userAssignedIdentities": {
+                  "[format('{0}', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('functionAppName'))))]": {}
+                }
+              },
+              "properties": {
+                "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', parameters('rsAlertsAppServicePlanName'))]",
+                "httpsOnly": true,
+                "keyVaultReferenceIdentity": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('functionAppName')))]",
+                "siteConfig": {
+                  "linuxFxVersion": "[format('PYTHON|{0}', parameters('pythonVersion'))]",
+                  "alwaysOn": "[equals(parameters('rsAlertsHostingPlanType'), 'Premium')]",
+                  "appSettings": "[concat(createArray(createObject('name', 'AzureWebJobsStorage', 'value', format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix={2}', parameters('storageAccountName'), listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').keys[0].value, environment().suffixes.storage)), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference(resourceId('Microsoft.Insights/components', parameters('appInsightsName')), '2020-02-02').ConnectionString), createObject('name', 'CLIENT_ID', 'value', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('functionAppName'))), '2023-01-31').clientId), createObject('name', 'TENANT_ID', 'value', parameters('tenantId')), createObject('name', 'MANAGED_IDENTITY_CLIENT_ID', 'value', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('functionAppName'))), '2023-01-31').clientId), createObject('name', 'GTI_API_KEY', 'value', format('@Microsoft.KeyVault(SecretUri={0})', reference(resourceId('Microsoft.KeyVault/vaults/secrets', parameters('keyVaultName'), 'GtiApiKey'), '2023-07-01').secretUri)), createObject('name', 'GTI_RSA_PROJECT', 'value', parameters('rsAlertsGtiProject')), createObject('name', 'TEAMS_CHANNEL_ID', 'value', parameters('rsAlertsTeamsChannelId')), createObject('name', 'RS_ALERTS_SCHEDULE', 'value', parameters('rsAlertsSchedule')), createObject('name', 'PAGE_SIZE', 'value', parameters('rsAlertsPageSize')), createObject('name', 'WEBSITE_TIME_ZONE', 'value', parameters('rsAlertsScheduleTimezone')), createObject('name', 'FILTER_SEVERITY_LEVEL', 'value', parameters('rsAlertsFilterSeverityLevel')), createObject('name', 'FILTER_PRIORITY_LEVEL', 'value', parameters('rsAlertsFilterPriorityLevel')), createObject('name', 'FILTER_RELEVANCE_LEVEL', 'value', parameters('rsAlertsFilterRelevanceLevel')), createObject('name', 'FILTER_RELEVANCE_CONFIDENCE', 'value', parameters('rsAlertsFilterRelevanceConfidence')), createObject('name', 'STATE_CONTAINER_NAME', 'value', variables('rsAlertsStateContainerName'))), variables('classicPlanAppSettings'), variables('rsAlertsCustomAppSettingsArray'))]"
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Insights/components', parameters('appInsightsName'))]",
+                "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('functionAppName')))]",
+                "[resourceId('Microsoft.KeyVault/vaults/secrets', parameters('keyVaultName'), 'GtiApiKey')]",
+                "[resourceId('Microsoft.Web/serverfarms', parameters('rsAlertsAppServicePlanName'))]",
+                "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
+              ]
             }
           ],
           "outputs": {
@@ -860,11 +994,15 @@
             },
             "functionAppDefaultHostName": {
               "type": "string",
-              "value": "[reference(resourceId('Microsoft.Web/sites', parameters('functionAppName')), '2023-12-01').defaultHostName]"
+              "value": "[if(equals(parameters('hostingPlanType'), 'FlexConsumption'), reference(resourceId('Microsoft.Web/sites', parameters('functionAppName')), '2023-12-01').defaultHostName, reference(resourceId('Microsoft.Web/sites', parameters('functionAppName')), '2023-12-01').defaultHostName)]"
             },
             "functionAppMessagingEndpoint": {
               "type": "string",
-              "value": "[format('https://{0}/api/messages', reference(resourceId('Microsoft.Web/sites', parameters('functionAppName')), '2023-12-01').defaultHostName)]"
+              "value": "[format('https://{0}/api/messages', if(equals(parameters('hostingPlanType'), 'FlexConsumption'), reference(resourceId('Microsoft.Web/sites', parameters('functionAppName')), '2023-12-01').defaultHostName, reference(resourceId('Microsoft.Web/sites', parameters('functionAppName')), '2023-12-01').defaultHostName))]"
+            },
+            "hostingPlanType": {
+              "type": "string",
+              "value": "[parameters('hostingPlanType')]"
             },
             "storageAccountName": {
               "type": "string",
@@ -904,7 +1042,11 @@
             },
             "rsAlertsFunctionAppDefaultHostName": {
               "type": "string",
-              "value": "[if(parameters('enableRsAlerts'), reference(resourceId('Microsoft.Web/sites', parameters('rsAlertsFunctionAppName')), '2023-12-01').defaultHostName, '')]"
+              "value": "[if(not(parameters('enableRsAlerts')), '', if(equals(parameters('rsAlertsHostingPlanType'), 'FlexConsumption'), reference(resourceId('Microsoft.Web/sites', parameters('rsAlertsFunctionAppName')), '2023-12-01').defaultHostName, reference(resourceId('Microsoft.Web/sites', parameters('rsAlertsFunctionAppName')), '2023-12-01').defaultHostName))]"
+            },
+            "rsAlertsHostingPlanType": {
+              "type": "string",
+              "value": "[if(parameters('enableRsAlerts'), parameters('rsAlertsHostingPlanType'), '')]"
             }
           }
         }

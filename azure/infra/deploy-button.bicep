@@ -11,7 +11,7 @@
 // naming, Python version, manifest location, etc.), which keeps its own
 // defaults. CLI users who need full control — reusing an existing storage
 // account or App Service Plan, custom naming, etc. — should deploy
-// main.bicep directly via deploy.sh instead.
+// main.bicep directly via `az deployment group create` instead.
 // =============================================================================
 
 // ---------------------------------------------------------------------------

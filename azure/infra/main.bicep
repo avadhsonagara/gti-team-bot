@@ -18,8 +18,9 @@
 //   - infra/deploy-button.bicep: a thin wrapper exposing only functionAppName /
 //     gtiApiKey / instanceMemoryMB / maximumInstanceCount, used by the
 //     "Deploy to Azure" button in the README.
-//   - infra/deploy.sh: full CLI control over every parameter below (custom
-//     naming, reusing an existing storage account or App Service Plan, etc.).
+//   - `az deployment group create --template-file infra/main.bicep`: full CLI
+//     control over every parameter below (custom naming, reusing an existing
+//     storage account or App Service Plan, etc.).
 // =============================================================================
 
 // ---------------------------------------------------------------------------
@@ -44,11 +45,27 @@ param tags object = {}
 @maxLength(24)
 param storageAccountName string = toLower('${take(replace(functionAppName, '-', ''), 11)}${uniqueString(resourceGroup().id, functionAppName)}')
 
-@description('Name of the Flex Consumption App Service Plan to use.')
+@description('Name of the App Service Plan to use.')
 param appServicePlanName string = '${functionAppName}-plan'
 
-@description('Set to false to reuse an existing App Service Plan named appServicePlanName in this resource group, instead of creating a new one. A Function App cannot be moved between Flex Consumption plans in-place, so this must be false when redeploying onto an app that already exists on a different plan.')
+@description('Set to false to reuse an existing App Service Plan named appServicePlanName in this resource group, instead of creating a new one. A Function App cannot be moved between plans of different types in-place, so this must be false when redeploying onto an app that already exists on a different plan.')
 param createAppServicePlan bool = true
+
+@description('Hosting plan for the Function App. FlexConsumption (default): serverless, scale-to-zero, pay-per-execution — what this template originally shipped with. Consumption (Y1): the older/cheaper classic serverless plan, with more Linux/Python limitations. Premium (EP1/EP2/EP3, see premiumSku): pre-warmed instances (no cold starts), VNET support, at a fixed baseline cost even when idle.')
+@allowed([
+  'FlexConsumption'
+  'Consumption'
+  'Premium'
+])
+param hostingPlanType string = 'FlexConsumption'
+
+@description('Premium plan SKU. Only used when hostingPlanType is Premium.')
+@allowed([
+  'EP1'
+  'EP2'
+  'EP3'
+])
+param premiumSku string = 'EP1'
 
 @description('Python worker runtime version for the Function App.')
 @allowed([
@@ -152,8 +169,24 @@ param enableRsAlerts bool = false
 @description('Name of the RS Alerts Function App. Only used when enableRsAlerts is true.')
 param rsAlertsFunctionAppName string = '${functionAppName}-rs-alerts'
 
-@description('Name of the RS Alerts Flex Consumption App Service Plan. Only used when enableRsAlerts is true.')
+@description('Name of the RS Alerts App Service Plan. Only used when enableRsAlerts is true.')
 param rsAlertsAppServicePlanName string = '${rsAlertsFunctionAppName}-plan'
+
+@description('Hosting plan for the RS Alerts Function App. Only used when enableRsAlerts is true — see hostingPlanType above for what each option means.')
+@allowed([
+  'FlexConsumption'
+  'Consumption'
+  'Premium'
+])
+param rsAlertsHostingPlanType string = 'FlexConsumption'
+
+@description('Premium plan SKU for RS Alerts. Only used when rsAlertsHostingPlanType is Premium.')
+@allowed([
+  'EP1'
+  'EP2'
+  'EP3'
+])
+param rsAlertsPremiumSku string = 'EP1'
 
 @description('Teams channel link or ID (19:xxx@thread.tacv2) that RS Alerts posts GTI alerts into. Required when enableRsAlerts is true.')
 param rsAlertsTeamsChannelId string = ''
@@ -219,6 +252,153 @@ var rsAlertsCustomAppSettingsArray = [for key in items(rsAlertsAppSettings): {
   name: key.key
   value: key.value
 }]
+
+// App Service Plan sku/tier/kind per hostingPlanType. The plan resource
+// shape itself (Microsoft.Web/serverfarms) doesn't change between plan
+// types, only these values — the Function App resource is what actually
+// needs a structurally different shape (functionAppConfig vs
+// siteConfig.linuxFxVersion), handled by the two separate resources below.
+var planSkuName = hostingPlanType == 'FlexConsumption' ? 'FC1' : (hostingPlanType == 'Premium' ? premiumSku : 'Y1')
+var planSkuTier = hostingPlanType == 'FlexConsumption' ? 'FlexConsumption' : (hostingPlanType == 'Premium' ? 'ElasticPremium' : 'Dynamic')
+var planKind = hostingPlanType == 'Premium' ? 'elastic' : 'functionapp'
+
+var rsAlertsPlanSkuName = rsAlertsHostingPlanType == 'FlexConsumption' ? 'FC1' : (rsAlertsHostingPlanType == 'Premium' ? rsAlertsPremiumSku : 'Y1')
+var rsAlertsPlanSkuTier = rsAlertsHostingPlanType == 'FlexConsumption' ? 'FlexConsumption' : (rsAlertsHostingPlanType == 'Premium' ? 'ElasticPremium' : 'Dynamic')
+var rsAlertsPlanKind = rsAlertsHostingPlanType == 'Premium' ? 'elastic' : 'functionapp'
+
+// App settings shared by both the Flex Consumption and classic
+// (Consumption/Premium) Function App resources below — each adds its own
+// plan-specific settings on top (deployment storage config for Flex;
+// FUNCTIONS_EXTENSION_VERSION/WORKER_RUNTIME/RUN_FROM_PACKAGE for classic).
+var mainAppSettingsBase = [
+  {
+    name: 'AzureWebJobsStorage'
+    value: storageConnectionString
+  }
+  {
+    name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
+    value: appInsights.properties.ConnectionString
+  }
+  {
+    // The Teams SDK (microsoft_teams.apps.App) reads CLIENT_ID +
+    // MANAGED_IDENTITY_CLIENT_ID together to authenticate via managed
+    // identity instead of a client secret — see app/teams/bot.py.
+    name: 'CLIENT_ID'
+    value: botIdentity.properties.clientId
+  }
+  {
+    name: 'TENANT_ID'
+    value: tenantId
+  }
+  {
+    name: 'MANAGED_IDENTITY_CLIENT_ID'
+    value: botIdentity.properties.clientId
+  }
+  {
+    name: 'GTI_API_KEY'
+    value: '@Microsoft.KeyVault(SecretUri=${kvSecretGtiApiKey.properties.secretUri})'
+  }
+  {
+    name: 'OUTPUT_FORMAT_INSTRUCTIONS'
+    value: outputFormatInstructions
+  }
+  {
+    // See app/teams/thread.py — requires botIdentity to be granted the
+    // Graph APPLICATION permission ChannelMessage.Read.All (see
+    // threadContextMessageCount's @description above for the admin-consent step).
+    name: 'THREAD_CONTEXT_MESSAGE_COUNT'
+    value: string(threadContextMessageCount)
+  }
+]
+
+// Settings only a classic (non-Flex) plan needs: Flex Consumption infers the
+// runtime from functionAppConfig.runtime and deploys via a blob container
+// (functionAppConfig.deployment) instead of WEBSITE_RUN_FROM_PACKAGE.
+var classicPlanAppSettings = [
+  {
+    name: 'FUNCTIONS_EXTENSION_VERSION'
+    value: '~4'
+  }
+  {
+    name: 'FUNCTIONS_WORKER_RUNTIME'
+    value: 'python'
+  }
+  {
+    name: 'WEBSITE_RUN_FROM_PACKAGE'
+    value: '1'
+  }
+]
+
+var rsAlertsAppSettingsBase = [
+  {
+    name: 'AzureWebJobsStorage'
+    value: storageConnectionString
+  }
+  {
+    name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
+    value: appInsights.properties.ConnectionString
+  }
+  {
+    // Same User-Assigned Managed Identity as the main bot — its client ID
+    // is also the Azure Bot's msaAppId, so RS Alerts authenticates to the
+    // Bot Framework Connector API (and Microsoft Graph, for Teams app
+    // auto-install) as the same bot (app/bot_auth.py, app/graph_client.py).
+    name: 'CLIENT_ID'
+    value: botIdentity.properties.clientId
+  }
+  {
+    name: 'TENANT_ID'
+    value: tenantId
+  }
+  {
+    name: 'MANAGED_IDENTITY_CLIENT_ID'
+    value: botIdentity.properties.clientId
+  }
+  {
+    name: 'GTI_API_KEY'
+    value: '@Microsoft.KeyVault(SecretUri=${kvSecretGtiApiKey.properties.secretUri})'
+  }
+  {
+    name: 'GTI_RSA_PROJECT'
+    value: rsAlertsGtiProject
+  }
+  {
+    name: 'TEAMS_CHANNEL_ID'
+    value: rsAlertsTeamsChannelId
+  }
+  {
+    name: 'RS_ALERTS_SCHEDULE'
+    value: rsAlertsSchedule
+  }
+  {
+    name: 'PAGE_SIZE'
+    value: rsAlertsPageSize
+  }
+  {
+    name: 'WEBSITE_TIME_ZONE'
+    value: rsAlertsScheduleTimezone
+  }
+  {
+    name: 'FILTER_SEVERITY_LEVEL'
+    value: rsAlertsFilterSeverityLevel
+  }
+  {
+    name: 'FILTER_PRIORITY_LEVEL'
+    value: rsAlertsFilterPriorityLevel
+  }
+  {
+    name: 'FILTER_RELEVANCE_LEVEL'
+    value: rsAlertsFilterRelevanceLevel
+  }
+  {
+    name: 'FILTER_RELEVANCE_CONFIDENCE'
+    value: rsAlertsFilterRelevanceConfidence
+  }
+  {
+    name: 'STATE_CONTAINER_NAME'
+    value: rsAlertsStateContainerName
+  }
+]
 
 // ---------------------------------------------------------------------------
 // Storage account (Function App deployment storage + Teams manifest blobs)
@@ -350,17 +530,17 @@ resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
 }
 
 // ---------------------------------------------------------------------------
-// App Service Plan (Flex Consumption)
+// App Service Plan
 // ---------------------------------------------------------------------------
 
 resource appServicePlan 'Microsoft.Web/serverfarms@2023-12-01' = if (createAppServicePlan) {
   name: appServicePlanName
   location: location
   tags: tags
-  kind: 'functionapp'
+  kind: planKind
   sku: {
-    name: 'FC1'
-    tier: 'FlexConsumption'
+    name: planSkuName
+    tier: planSkuTier
   }
   properties: {
     reserved: true
@@ -374,8 +554,13 @@ resource existingAppServicePlan 'Microsoft.Web/serverfarms@2023-12-01' existing 
 // ---------------------------------------------------------------------------
 // Function App
 // ---------------------------------------------------------------------------
+// Flex Consumption's deployment/scaling config (functionAppConfig) is a
+// structurally different shape from Consumption/Premium's
+// (siteConfig.linuxFxVersion + standard app settings) — mutually exclusive,
+// so these are two separate resources gated by hostingPlanType, not one
+// resource with conditional properties.
 
-resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
+resource functionApp 'Microsoft.Web/sites@2023-12-01' = if (hostingPlanType == 'FlexConsumption') {
   name: functionAppName
   location: location
   tags: tags
@@ -394,48 +579,10 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
     // or the @Microsoft.KeyVault(...) app setting below silently fails to resolve.
     keyVaultReferenceIdentity: botIdentity.id
     siteConfig: {
-      appSettings: concat([
-        {
-          name: 'AzureWebJobsStorage'
-          value: storageConnectionString
-        }
+      appSettings: concat(mainAppSettingsBase, [
         {
           name: 'DEPLOYMENT_STORAGE_CONNECTION_STRING'
           value: storageConnectionString
-        }
-        {
-          name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
-          value: appInsights.properties.ConnectionString
-        }
-        {
-          // The Teams SDK (microsoft_teams.apps.App) reads CLIENT_ID +
-          // MANAGED_IDENTITY_CLIENT_ID together to authenticate via managed
-          // identity instead of a client secret — see app/teams/bot.py.
-          name: 'CLIENT_ID'
-          value: botIdentity.properties.clientId
-        }
-        {
-          name: 'TENANT_ID'
-          value: tenantId
-        }
-        {
-          name: 'MANAGED_IDENTITY_CLIENT_ID'
-          value: botIdentity.properties.clientId
-        }
-        {
-          name: 'GTI_API_KEY'
-          value: '@Microsoft.KeyVault(SecretUri=${kvSecretGtiApiKey.properties.secretUri})'
-        }
-        {
-          name: 'OUTPUT_FORMAT_INSTRUCTIONS'
-          value: outputFormatInstructions
-        }
-        {
-          // See app/teams/thread.py — requires botIdentity to be granted the
-          // Graph APPLICATION permission ChannelMessage.Read.All (see
-          // threadContextMessageCount's @description above for the admin-consent step).
-          name: 'THREAD_CONTEXT_MESSAGE_COUNT'
-          value: string(threadContextMessageCount)
         }
       ], customAppSettingsArray)
     }
@@ -464,6 +611,36 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
     deploymentContainer
   ]
 }
+
+resource functionAppClassic 'Microsoft.Web/sites@2023-12-01' = if (hostingPlanType != 'FlexConsumption') {
+  name: functionAppName
+  location: location
+  tags: tags
+  kind: 'functionapp,linux'
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${botIdentity.id}': {}
+    }
+  }
+  properties: {
+    serverFarmId: createAppServicePlan ? appServicePlan.id : existingAppServicePlan.id
+    httpsOnly: true
+    keyVaultReferenceIdentity: botIdentity.id
+    siteConfig: {
+      linuxFxVersion: 'PYTHON|${pythonVersion}'
+      // Pre-warmed instances only exist on Premium — Consumption (Y1)
+      // doesn't support alwaysOn at all.
+      alwaysOn: hostingPlanType == 'Premium'
+      appSettings: concat(mainAppSettingsBase, classicPlanAppSettings, customAppSettingsArray)
+    }
+  }
+}
+
+// Whichever of the two Function App resources above actually got created,
+// for every reference below that only cares about the running app, not
+// which plan it's on.
+var mainFunctionAppHostName = hostingPlanType == 'FlexConsumption' ? functionApp.properties.defaultHostName : functionAppClassic!.properties.defaultHostName
 
 // ---------------------------------------------------------------------------
 // Teams manifest — build and upload
@@ -574,7 +751,7 @@ resource bot 'Microsoft.BotService/botServices@2022-09-15' = {
   kind: 'azurebot'
   properties: {
     displayName: botName
-    endpoint: 'https://${functionApp.properties.defaultHostName}/api/messages'
+    endpoint: 'https://${mainFunctionAppHostName}/api/messages'
     msaAppId: botIdentity.properties.clientId
     msaAppType: 'UserAssignedMSI'
     msaAppTenantId: tenantId
@@ -599,17 +776,17 @@ resource rsAlertsAppServicePlan 'Microsoft.Web/serverfarms@2023-12-01' = if (ena
   name: rsAlertsAppServicePlanName
   location: location
   tags: tags
-  kind: 'functionapp'
+  kind: rsAlertsPlanKind
   sku: {
-    name: 'FC1'
-    tier: 'FlexConsumption'
+    name: rsAlertsPlanSkuName
+    tier: rsAlertsPlanSkuTier
   }
   properties: {
     reserved: true
   }
 }
 
-resource rsAlertsFunctionApp 'Microsoft.Web/sites@2023-12-01' = if (enableRsAlerts) {
+resource rsAlertsFunctionApp 'Microsoft.Web/sites@2023-12-01' = if (enableRsAlerts && rsAlertsHostingPlanType == 'FlexConsumption') {
   name: rsAlertsFunctionAppName
   location: location
   tags: tags
@@ -627,79 +804,10 @@ resource rsAlertsFunctionApp 'Microsoft.Web/sites@2023-12-01' = if (enableRsAler
     // User-Assigned identity, so Key Vault references must name it explicitly.
     keyVaultReferenceIdentity: botIdentity.id
     siteConfig: {
-      appSettings: concat([
-        {
-          name: 'AzureWebJobsStorage'
-          value: storageConnectionString
-        }
+      appSettings: concat(rsAlertsAppSettingsBase, [
         {
           name: 'DEPLOYMENT_STORAGE_CONNECTION_STRING'
           value: storageConnectionString
-        }
-        {
-          name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
-          value: appInsights.properties.ConnectionString
-        }
-        {
-          // Same User-Assigned Managed Identity as the main bot — its client
-          // ID is also the Azure Bot's msaAppId, so RS Alerts authenticates
-          // to the Bot Framework Connector API (and Microsoft Graph, for
-          // Teams app auto-install) as the same bot (app/bot_auth.py,
-          // app/graph_client.py).
-          name: 'CLIENT_ID'
-          value: botIdentity.properties.clientId
-        }
-        {
-          name: 'TENANT_ID'
-          value: tenantId
-        }
-        {
-          name: 'MANAGED_IDENTITY_CLIENT_ID'
-          value: botIdentity.properties.clientId
-        }
-        {
-          name: 'GTI_API_KEY'
-          value: '@Microsoft.KeyVault(SecretUri=${kvSecretGtiApiKey.properties.secretUri})'
-        }
-        {
-          name: 'GTI_RSA_PROJECT'
-          value: rsAlertsGtiProject
-        }
-        {
-          name: 'TEAMS_CHANNEL_ID'
-          value: rsAlertsTeamsChannelId
-        }
-        {
-          name: 'RS_ALERTS_SCHEDULE'
-          value: rsAlertsSchedule
-        }
-        {
-          name: 'PAGE_SIZE'
-          value: rsAlertsPageSize
-        }
-        {
-          name: 'WEBSITE_TIME_ZONE'
-          value: rsAlertsScheduleTimezone
-        }
-        {
-          name: 'FILTER_SEVERITY_LEVEL'
-          value: rsAlertsFilterSeverityLevel
-        }
-        {
-          name: 'FILTER_PRIORITY_LEVEL'
-          value: rsAlertsFilterPriorityLevel
-        }
-        {
-          name: 'FILTER_RELEVANCE_LEVEL'
-          value: rsAlertsFilterRelevanceLevel
-        }
-        {
-          name: 'FILTER_RELEVANCE_CONFIDENCE'
-          value: rsAlertsFilterRelevanceConfidence
-        }
-        {
-          name: 'STATE_CONTAINER_NAME'
-          value: rsAlertsStateContainerName
         }
       ], rsAlertsCustomAppSettingsArray)
     }
@@ -739,13 +847,47 @@ resource rsAlertsFunctionApp 'Microsoft.Web/sites@2023-12-01' = if (enableRsAler
   ]
 }
 
+resource rsAlertsFunctionAppClassic 'Microsoft.Web/sites@2023-12-01' = if (enableRsAlerts && rsAlertsHostingPlanType != 'FlexConsumption') {
+  name: rsAlertsFunctionAppName
+  location: location
+  tags: tags
+  kind: 'functionapp,linux'
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${botIdentity.id}': {}
+    }
+  }
+  properties: {
+    serverFarmId: rsAlertsAppServicePlan.id
+    httpsOnly: true
+    keyVaultReferenceIdentity: botIdentity.id
+    siteConfig: {
+      linuxFxVersion: 'PYTHON|${pythonVersion}'
+      // Pre-warmed instances only exist on Premium — Consumption (Y1)
+      // doesn't support alwaysOn at all. Unlike Flex Consumption's
+      // alwaysReady hint above, a classic plan's timer trigger fires
+      // correctly on its own (Consumption's scale controller wakes the app
+      // for the schedule tick; Premium never scales to zero if alwaysOn).
+      alwaysOn: rsAlertsHostingPlanType == 'Premium'
+      appSettings: concat(rsAlertsAppSettingsBase, classicPlanAppSettings, rsAlertsCustomAppSettingsArray)
+    }
+  }
+}
+
+// Whichever of the two RS Alerts Function App resources above actually got
+// created (when enabled) — for the output below, mirroring
+// mainFunctionAppHostName's reasoning.
+var rsAlertsFunctionAppHostName = !enableRsAlerts ? '' : (rsAlertsHostingPlanType == 'FlexConsumption' ? rsAlertsFunctionApp!.properties.defaultHostName : rsAlertsFunctionAppClassic!.properties.defaultHostName)
+
 // ---------------------------------------------------------------------------
 // Outputs
 // ---------------------------------------------------------------------------
 
-output functionAppName string = functionApp.name
-output functionAppDefaultHostName string = functionApp.properties.defaultHostName
-output functionAppMessagingEndpoint string = 'https://${functionApp.properties.defaultHostName}/api/messages'
+output functionAppName string = functionAppName
+output functionAppDefaultHostName string = mainFunctionAppHostName
+output functionAppMessagingEndpoint string = 'https://${mainFunctionAppHostName}/api/messages'
+output hostingPlanType string = hostingPlanType
 output storageAccountName string = storageAccount.name
 output appInsightsName string = appInsights.name
 output keyVaultName string = keyVault.name
@@ -755,5 +897,6 @@ output manifestContainerUrl string = '${storageAccount.properties.primaryEndpoin
 output manifestBlobUrl string = '${storageAccount.properties.primaryEndpoints.blob}${manifestContainerName}/${manifestBlobName}'
 
 output rsAlertsEnabled bool = enableRsAlerts
-output rsAlertsFunctionAppName string = enableRsAlerts ? rsAlertsFunctionApp.name : ''
-output rsAlertsFunctionAppDefaultHostName string = enableRsAlerts ? rsAlertsFunctionApp!.properties.defaultHostName : ''
+output rsAlertsFunctionAppName string = enableRsAlerts ? rsAlertsFunctionAppName : ''
+output rsAlertsFunctionAppDefaultHostName string = rsAlertsFunctionAppHostName
+output rsAlertsHostingPlanType string = enableRsAlerts ? rsAlertsHostingPlanType : ''

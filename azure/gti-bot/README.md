@@ -14,8 +14,15 @@ the full [infra/main.bicep](infra/main.bicep) template.
 Region always defaults to the target resource group's own recorded location and isn't exposed on
 this form. Deploying into a resource group whose existing resources (from a prior deployment) live
 in a *different* region than the group's own location metadata reports will hit an
-`InvalidResourceLocation` conflict on same-named resources like the App Service Plan — use
-[infra/deploy.sh](infra/deploy.sh) instead if you need to override the region explicitly.
+`InvalidResourceLocation` conflict on same-named resources like the App Service Plan — deploy
+[infra/main.bicep](infra/main.bicep) directly instead if you need to override the region explicitly:
+```bash
+az deployment group create \
+  --resource-group <your-resource-group> \
+  --template-file infra/main.bicep \
+  --parameters infra/main.parameters.json \
+  --parameters functionAppName=<name> gtiApiKey=<key> location=<region>
+```
 
 There's no `CLIENT_ID` / `CLIENT_SECRET` to supply because the bot authenticates with a
 **User-Assigned Managed Identity** (Azure Bot's `UserAssignedMSI` app type) instead of a classic
@@ -30,8 +37,10 @@ The button provisions infrastructure only — after it completes, publish the ap
 per deployment (it's the managed identity's client ID, shown as the `botAppId` output) and won't
 match the one baked into `teams-app-manifest/manifest.json` in this repo — update `id` and
 `bots[].botId` in the manifest to the new `botAppId` and re-zip before sideloading it into Teams.
-See [infra/deploy.sh](infra/deploy.sh) for the full-control CLI equivalent (custom naming, reusing
-an existing storage account or App Service Plan, etc.).
+Use the `az deployment group create` command above for full-control custom naming — add
+`--parameters storageAccountName=<existing>` to reuse an existing storage account, or
+`--parameters appServicePlanName=<existing> createAppServicePlan=false` to reuse an existing App
+Service Plan (a Function App can't move between Flex Consumption plans in place).
 
 ---
 
