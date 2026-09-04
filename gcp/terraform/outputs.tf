@@ -3,18 +3,18 @@
 # =============================================================================
 
 output "gti_bot_name" {
-  description = "Name of the deployed gti-bot Cloud Run function."
-  value       = google_cloudfunctions2_function.gti_bot.name
+  description = "Name of the deployed gti-bot Cloud Run v2 service."
+  value       = google_cloud_run_v2_service.gti_bot.name
 }
 
 output "gti_bot_url" {
-  description = "Base URL of the gti-bot Cloud Run function."
-  value       = google_cloudfunctions2_function.gti_bot.service_config[0].uri
+  description = "Base URL of the gti-bot Cloud Run v2 service."
+  value       = google_cloud_run_v2_service.gti_bot.uri
 }
 
 output "gti_bot_messaging_endpoint" {
   description = "Microsoft Teams Bot messaging webhook endpoint to configure in the Microsoft Azure Bot / Bot Framework registration."
-  value       = "${google_cloudfunctions2_function.gti_bot.service_config[0].uri}/api/messages"
+  value       = "${google_cloud_run_v2_service.gti_bot.uri}/api/messages"
 }
 
 output "gcs_source_bucket" {
@@ -29,7 +29,7 @@ output "teams_manifest_zip_gcs_url" {
 
 output "firestore_database_id" {
   description = "ID of the Google Cloud Firestore database used for config and state storage."
-  value       = var.create_firestore_database ? google_firestore_database.database[0].name : "(default)"
+  value       = google_firestore_database.database.name
 }
 
 output "secret_gti_api_key_name" {

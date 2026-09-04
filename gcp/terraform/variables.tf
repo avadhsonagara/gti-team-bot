@@ -86,28 +86,21 @@ variable "gti_api_base_url" {
 
 # ── Firestore & Output Formatting ───────────────────────────────────────────
 
-variable "create_firestore_database" {
-  description = "Set to true to create the default Firestore database in Native mode if it does not already exist."
-  type        = bool
-  default     = true
-}
-
-variable "firestore_bot_config_collection" {
-  description = "Firestore collection used for storing bot configuration."
-  type        = string
-  default     = "bot-config"
-}
-
-variable "firestore_output_format_doc" {
-  description = "Firestore document ID used for custom output formatting instructions."
-  type        = string
-  default     = "output-format"
-}
-
 variable "output_format_instructions" {
   description = "Optional custom formatting instructions applied to every bot response (seeds the Firestore document on first read)."
   type        = string
   default     = ""
+}
+
+# ── Microsoft Graph (channel thread context) ─────────────────────────────────
+# Requires the bot's Entra app registration to be granted the Graph
+# APPLICATION permission ChannelMessage.Read.All with tenant-admin consent —
+# separate from the Bot Framework permissions it already has.
+
+variable "thread_context_message_count" {
+  description = "Number of most-recent channel-thread messages to fetch as context for each query."
+  type        = number
+  default     = 5
 }
 
 # ── RS Alerts (Background GTI Alerts -> Teams) ───────────────────────────────

@@ -41,11 +41,22 @@ class Settings(BaseSettings):
         )
     )
     firestore_database: str = "(default)"
-    firestore_bot_config_collection: str = "bot-config"
-    firestore_output_format_doc: str = "output-format"
+    # Bot config (output-format doc) and per-thread GTI session documents
+    # both live in this one collection — see app/output_format_store.py and
+    # app/gti/session_store.py.
+    firestore_bot_config_collection: str = "gti-bot-config"
+    firestore_output_format_doc: str = "gti-custom-output-format"
 
     # Deploy-time default used to seed the Firestore document on first read
     output_format_instructions: str = ""
+
+    # ── Microsoft Graph (channel thread context) ──────────────────────────────
+    # Requires the CLIENT_ID app registration to be granted the application
+    # permission ChannelMessage.Read.All with tenant-admin consent. Channel-only —
+    # Teams has no equivalent thread concept for personal/group chats.
+    thread_context_enabled: bool = True
+    thread_context_message_count: int = 5
+    thread_context_log_file: str = "thread_context.txt"
 
     # ── Server & Observability ────────────────────────────────────────────────
     port: int = 8080

@@ -41,6 +41,11 @@ param maximumInstanceCount int = 100
 @description('Optional formatting instructions applied to every bot response (e.g. "Show severity as bold text instead of emoji"). Stored as a JSON config blob in the Function App\'s own storage account. Leave empty to use the bot\'s built-in formatting.')
 param outputFormatInstructions string = ''
 
+@description('Number of most-recent channel-thread messages to fetch as context for each query (channel thread context via Microsoft Graph). Requires the bot\'s identity to be granted the Graph APPLICATION permission ChannelMessage.Read.All with tenant-admin consent — a manual one-time step. No effect outside channels.')
+@minValue(1)
+@maxValue(50)
+param threadContextMessageCount int = 5
+
 @description('Add RS Alerts to this Team: provisions a second, background Function App that polls Google Threat Intelligence alerts and posts them into a Teams channel. Set to "Yes" to also fill in the two fields below.')
 @allowed([
   'No'
@@ -82,6 +87,7 @@ module main 'main.bicep' = {
     instanceMemoryMB: instanceMemoryMB
     maximumInstanceCount: maximumInstanceCount
     outputFormatInstructions: outputFormatInstructions
+    threadContextMessageCount: threadContextMessageCount
     enableRsAlerts: addRsAlerts == 'Yes'
     rsAlertsFunctionAppName: rsAlertsFunctionAppName
     rsAlertsTeamsChannelId: rsAlertsChannelIdOrChannelLink

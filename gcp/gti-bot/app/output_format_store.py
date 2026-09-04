@@ -15,15 +15,15 @@ from app.config import Settings
 
 logger = logging.getLogger("gti-teams-bot")
 
-_firestore_client: Optional[firestore.Client] = None
+_firestore_client: Optional[firestore.AsyncClient] = None
 
 
-def _get_firestore_client(settings: Settings) -> Optional[firestore.Client]:
-    """Return or initialize the singleton Firestore client."""
+def _get_firestore_client(settings: Settings) -> Optional[firestore.AsyncClient]:
+    """Return or initialize the singleton async Firestore client."""
     global _firestore_client
     if _firestore_client is None:
         try:
-            _firestore_client = firestore.Client(
+            _firestore_client = firestore.AsyncClient(
                 project=settings.gcp_project_id or None,
                 database=settings.firestore_database or "(default)",
             )
@@ -33,7 +33,7 @@ def _get_firestore_client(settings: Settings) -> Optional[firestore.Client]:
     return _firestore_client
 
 
-def write_output_format(settings: Settings, format_text: str) -> None:
+async def write_output_format(settings: Settings, format_text: str) -> None:
     """Persist custom output-format instructions to Firestore."""
     client = _get_firestore_client(settings)
     if client is None:
@@ -43,7 +43,7 @@ def write_output_format(settings: Settings, format_text: str) -> None:
         doc_ref = client.collection(settings.firestore_bot_config_collection).document(
             settings.firestore_output_format_doc
         )
-        doc_ref.set({
+        await doc_ref.set({
             "output_format": format_text,
             "updated_at": firestore.SERVER_TIMESTAMP,
         }, merge=True)
@@ -52,7 +52,7 @@ def write_output_format(settings: Settings, format_text: str) -> None:
         logger.error("[CONFIG] Failed to write output format to Firestore: %s", exc)
 
 
-def get_output_format(settings: Settings) -> str:
+async def get_output_format(settings: Settings) -> str:
     """
     Return the current output-format instructions.
 
@@ -69,7 +69,7 @@ def get_output_format(settings: Settings) -> str:
         doc_ref = client.collection(settings.firestore_bot_config_collection).document(
             settings.firestore_output_format_doc
         )
-        doc = doc_ref.get()
+        doc = await doc_ref.get()
         if doc.exists:
             data = doc.to_dict() or {}
             saved_format = data.get("output_format", "")
@@ -78,7 +78,7 @@ def get_output_format(settings: Settings) -> str:
         # Document does not exist yet; seed from deploy-time default
         default = settings.output_format_instructions
         if default:
-            write_output_format(settings, default)
+            await write_output_format(settings, default)
         return default
 
     except Exception as exc:

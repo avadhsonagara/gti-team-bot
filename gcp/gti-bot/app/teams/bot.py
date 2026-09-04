@@ -24,12 +24,12 @@ def _patch_token_validator_for_async_jwks() -> None:
     JWKS signing key via a synchronous, blocking call
     (`self._jwks_client.get_signing_key_from_jwt`) with no `await`.
 
-    main.py's Cloud Functions entrypoint bridges each request onto one
-    persistent background event loop per worker (see _get_loop() there) —
-    a blocking call anywhere freezes that loop for ALL in-flight and future
-    requests (including unrelated routes) until it resolves or Cloud Run's
-    own request timeout kills it. This hits on every inbound Teams message,
-    since TokenValidator.for_service() validates every one.
+    This app runs on a single uvicorn worker with one event loop shared by
+    every concurrent request — a blocking call anywhere freezes that loop
+    for ALL in-flight and future requests (including unrelated routes)
+    until it resolves or Cloud Run's own request timeout kills it. This
+    hits on every inbound Teams message, since TokenValidator.for_service()
+    validates every one.
 
     Patch validate_token to offload just the blocking fetch to a thread
     via asyncio.to_thread, so a slow/stuck JWKS lookup can no longer wedge

@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.46.1.21595",
-      "templateHash": "3621240276254300185"
+      "templateHash": "3944021793832137501"
     }
   },
   "parameters": {
@@ -48,6 +48,15 @@
       "defaultValue": "",
       "metadata": {
         "description": "Optional formatting instructions applied to every bot response (e.g. \"Show severity as bold text instead of emoji\"). Stored as a JSON config blob in the Function App's own storage account. Leave empty to use the bot's built-in formatting."
+      }
+    },
+    "threadContextMessageCount": {
+      "type": "int",
+      "defaultValue": 5,
+      "minValue": 1,
+      "maxValue": 50,
+      "metadata": {
+        "description": "Number of most-recent channel-thread messages to fetch as context for each query (channel thread context via Microsoft Graph). Requires the bot's identity to be granted the Graph APPLICATION permission ChannelMessage.Read.All with tenant-admin consent — a manual one-time step. No effect outside channels."
       }
     },
     "addRsAlerts": {
@@ -140,6 +149,9 @@
           "outputFormatInstructions": {
             "value": "[parameters('outputFormatInstructions')]"
           },
+          "threadContextMessageCount": {
+            "value": "[parameters('threadContextMessageCount')]"
+          },
           "enableRsAlerts": {
             "value": "[equals(parameters('addRsAlerts'), 'Yes')]"
           },
@@ -172,7 +184,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.46.1.21595",
-              "templateHash": "14609129757409080659"
+              "templateHash": "66490600009013678"
             }
           },
           "parameters": {
@@ -265,6 +277,15 @@
               "defaultValue": "",
               "metadata": {
                 "description": "Optional formatting instructions applied to every bot response (e.g. \"Show severity as bold text instead of emoji\"). Seeds a JSON config blob (bot-config/output-format.json) in the Function App's own storage account on first read — after that the blob is the source of truth and this value is ignored. Leave empty to use the built-in formatting from app/gti/prompt.md."
+              }
+            },
+            "threadContextMessageCount": {
+              "type": "int",
+              "defaultValue": 5,
+              "minValue": 1,
+              "maxValue": 50,
+              "metadata": {
+                "description": "Number of most-recent channel-thread messages to fetch as context for each query (channel thread context via Microsoft Graph — see app/teams/thread.py). Requires the bot's identity to be granted the Graph APPLICATION permission ChannelMessage.Read.All with tenant-admin consent (separate from its existing Bot Framework permissions) — a manual one-time step, same as TeamsAppInstallation.ReadWriteForTeam.All for RS Alerts' auto-install feature. No effect outside channels (Teams has no thread concept for personal/group chats)."
               }
             },
             "botName": {
@@ -635,7 +656,7 @@
                 "httpsOnly": true,
                 "keyVaultReferenceIdentity": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('functionAppName')))]",
                 "siteConfig": {
-                  "appSettings": "[concat(createArray(createObject('name', 'AzureWebJobsStorage', 'value', format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix={2}', parameters('storageAccountName'), listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').keys[0].value, environment().suffixes.storage)), createObject('name', 'DEPLOYMENT_STORAGE_CONNECTION_STRING', 'value', format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix={2}', parameters('storageAccountName'), listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').keys[0].value, environment().suffixes.storage)), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference(resourceId('Microsoft.Insights/components', parameters('appInsightsName')), '2020-02-02').ConnectionString), createObject('name', 'CLIENT_ID', 'value', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('functionAppName'))), '2023-01-31').clientId), createObject('name', 'TENANT_ID', 'value', parameters('tenantId')), createObject('name', 'MANAGED_IDENTITY_CLIENT_ID', 'value', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('functionAppName'))), '2023-01-31').clientId), createObject('name', 'GTI_API_KEY', 'value', format('@Microsoft.KeyVault(SecretUri={0})', reference(resourceId('Microsoft.KeyVault/vaults/secrets', parameters('keyVaultName'), 'GtiApiKey'), '2023-07-01').secretUri)), createObject('name', 'OUTPUT_FORMAT_INSTRUCTIONS', 'value', parameters('outputFormatInstructions'))), variables('customAppSettingsArray'))]"
+                  "appSettings": "[concat(createArray(createObject('name', 'AzureWebJobsStorage', 'value', format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix={2}', parameters('storageAccountName'), listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').keys[0].value, environment().suffixes.storage)), createObject('name', 'DEPLOYMENT_STORAGE_CONNECTION_STRING', 'value', format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix={2}', parameters('storageAccountName'), listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').keys[0].value, environment().suffixes.storage)), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference(resourceId('Microsoft.Insights/components', parameters('appInsightsName')), '2020-02-02').ConnectionString), createObject('name', 'CLIENT_ID', 'value', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('functionAppName'))), '2023-01-31').clientId), createObject('name', 'TENANT_ID', 'value', parameters('tenantId')), createObject('name', 'MANAGED_IDENTITY_CLIENT_ID', 'value', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('functionAppName'))), '2023-01-31').clientId), createObject('name', 'GTI_API_KEY', 'value', format('@Microsoft.KeyVault(SecretUri={0})', reference(resourceId('Microsoft.KeyVault/vaults/secrets', parameters('keyVaultName'), 'GtiApiKey'), '2023-07-01').secretUri)), createObject('name', 'OUTPUT_FORMAT_INSTRUCTIONS', 'value', parameters('outputFormatInstructions')), createObject('name', 'THREAD_CONTEXT_MESSAGE_COUNT', 'value', string(parameters('threadContextMessageCount')))), variables('customAppSettingsArray'))]"
                 },
                 "functionAppConfig": {
                   "deployment": {

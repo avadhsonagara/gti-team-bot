@@ -18,8 +18,7 @@ _LIBRARY_TAG_PREFIXES = (
     ("google.auth", "[AUTH]"),
     ("google.api_core", "[GCP]"),
     ("google.cloud", "[GCP]"),
-    ("werkzeug", "[HTTP]"),
-    ("functions_framework", "[GCP-FN]"),
+    ("uvicorn", "[HTTP]"),
 )
 
 

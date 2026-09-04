@@ -148,11 +148,11 @@ data "archive_file" "gti_bot_zip" {
   ]
 }
 
-resource "google_storage_bucket_object" "gti_bot_source" {
-  name   = "source/gti-bot-${data.archive_file.gti_bot_zip.output_md5}.zip"
-  bucket = google_storage_bucket.source_bucket.name
-  source = data.archive_file.gti_bot_zip.output_path
-}
+# NOTE: no google_storage_bucket_object upload for gti-bot's zip here — it's
+# built straight from ${path.module}/../gti-bot (Dockerfile there) via
+# `gcloud builds submit` (see null_resource.gti_bot_image_build below); this
+# archive_file is kept only so its hash can key that build's image tag and
+# detect source changes.
 
 # -----------------------------------------------------------------------------
 # Package & Upload rs-alerts Source Code (if enabled)
@@ -255,7 +255,6 @@ resource "google_storage_bucket_object" "teams_manifest_zip" {
 # Google Cloud Firestore Database (Native Mode)
 # -----------------------------------------------------------------------------
 resource "google_firestore_database" "database" {
-  count                       = var.create_firestore_database ? 1 : 0
   project                     = var.project_id
   name                        = "(default)"
   location_id                 = var.region
@@ -388,58 +387,143 @@ resource "google_service_account" "scheduler_sa" {
 }
 
 # -----------------------------------------------------------------------------
-# Cloud Run function (2nd Gen) — gti-bot
+# gti-bot — Cloud Run v2 service, built from its own Dockerfile
 # -----------------------------------------------------------------------------
-resource "google_cloudfunctions2_function" "gti_bot" {
+# main.py serves the app directly via uvicorn (async-native, no WSGI/Cloud
+# Functions bridging layer — see gcp/gti-bot/main.py and Dockerfile), so this
+# deploys as a plain Cloud Run v2 service rather than a Cloud Function.
+#
+# Image is built and pushed straight to Docker Hub (public repo) with the
+# local, already-authenticated `docker` CLI — no Artifact Registry / Cloud
+# Build involved. Cloud Run pulls public images from any registry directly.
+#
+# Tagged :latest (a stable, mutable tag) rather than by source hash. Since
+# the image string itself never changes, Cloud Run's own resource attributes
+# give Terraform nothing to diff — gti_bot_source_hash is applied as a
+# revision template label below purely so its value changing is what tells
+# Terraform "redeploy," forcing a new revision (which always re-pulls
+# :latest fresh) whenever the source actually changes.
+locals {
+  gti_bot_image       = "docker.io/avadhsonagara/gti-team-bot:latest"
+  gti_bot_source_hash = data.archive_file.gti_bot_zip.output_md5
+}
+
+# Builds gti-bot's Dockerfile and pushes it to Docker Hub. Re-runs only when
+# the source actually changes (triggers on the source hash directly, since
+# the image tag itself no longer changes).
+resource "null_resource" "gti_bot_image_build" {
+  triggers = {
+    source_hash = local.gti_bot_source_hash
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      docker build -t ${local.gti_bot_image} ${abspath("${path.module}/../gti-bot")} && \
+      docker push ${local.gti_bot_image}
+    EOT
+  }
+}
+
+resource "google_cloud_run_v2_service" "gti_bot" {
   name        = var.bot_name
   location    = var.region
   description = "Google Threat Intelligence Teams Agentic Bot"
   labels      = var.labels
+  ingress     = "INGRESS_TRAFFIC_ALL"
 
-  build_config {
-    runtime     = "python311"
-    entry_point = "gti_bot_http"
-    source {
-      storage_source {
-        bucket = google_storage_bucket.source_bucket.name
-        object = google_storage_bucket_object.gti_bot_source.name
-      }
-    }
-  }
-
-  service_config {
-    max_instance_count               = var.max_instances
-    min_instance_count               = var.min_instances
+  template {
+    service_account                  = google_service_account.bot_sa.email
+    timeout                          = "${var.timeout_seconds}s"
     max_instance_request_concurrency = var.concurrency
-    available_memory                 = var.memory
-    timeout_seconds                  = var.timeout_seconds
-    service_account_email          = google_service_account.bot_sa.email
-    ingress_settings               = "ALLOW_ALL"
-    all_traffic_on_latest_revision = true
 
-    environment_variables = {
-      GCP_PROJECT_ID                  = var.project_id
-      CLIENT_ID                       = azuread_application.bot_app.client_id
-      TENANT_ID                       = data.azuread_client_config.current.tenant_id
-      GTI_API_BASE_URL                = var.gti_api_base_url
-      FIRESTORE_DATABASE              = "(default)"
-      FIRESTORE_BOT_CONFIG_COLLECTION = var.firestore_bot_config_collection
-      FIRESTORE_OUTPUT_FORMAT_DOC     = var.firestore_output_format_doc
-      OUTPUT_FORMAT_INSTRUCTIONS      = var.output_format_instructions
+    # :latest never changes as a string, so this label is what actually
+    # tells Terraform to cut a new revision when the source changes —
+    # otherwise `containers[0].image` looks identical on every apply and
+    # Cloud Run would keep serving whatever it already pulled.
+    labels = {
+      source-hash = "src-${substr(local.gti_bot_source_hash, 0, 20)}"
     }
 
-    secret_environment_variables {
-      key        = "GTI_API_KEY"
-      project_id = var.project_id
-      secret     = google_secret_manager_secret.gti_api_key.secret_id
-      version    = "latest"
+    scaling {
+      min_instance_count = var.min_instances
+      max_instance_count = var.max_instances
     }
 
-    secret_environment_variables {
-      key        = "CLIENT_SECRET"
-      project_id = var.project_id
-      secret     = google_secret_manager_secret.client_secret.secret_id
-      version    = "latest"
+    containers {
+      image = local.gti_bot_image
+
+      resources {
+        # Request-based CPU allocation (the Cloud Run default): CPU is only
+        # billed/scheduled while a request is in flight. Safe now that the
+        # app is genuinely async-native (uvicorn, no persistent background
+        # thread that needs to keep running between requests) — unlike the
+        # earlier a2wsgi/Cloud Functions bridge, nothing here depends on CPU
+        # being available outside of request processing.
+        cpu_idle          = true
+        startup_cpu_boost = true
+        limits = {
+          cpu    = "1"
+          memory = var.memory
+        }
+      }
+
+      env {
+        name  = "GCP_PROJECT_ID"
+        value = var.project_id
+      }
+      env {
+        name  = "CLIENT_ID"
+        value = azuread_application.bot_app.client_id
+      }
+      env {
+        name  = "TENANT_ID"
+        value = data.azuread_client_config.current.tenant_id
+      }
+      env {
+        name  = "GTI_API_BASE_URL"
+        value = var.gti_api_base_url
+      }
+      env {
+        name  = "FIRESTORE_DATABASE"
+        value = "(default)"
+      }
+      env {
+        # Bot config (output-format doc) and per-thread GTI session
+        # documents both live in this one Firestore collection — see
+        # app/gti/session_store.py and app/output_format_store.py.
+        name  = "FIRESTORE_BOT_CONFIG_COLLECTION"
+        value = "gti-bot-config"
+      }
+      env {
+        name  = "FIRESTORE_OUTPUT_FORMAT_DOC"
+        value = "gti-custom-output-format"
+      }
+      env {
+        name  = "OUTPUT_FORMAT_INSTRUCTIONS"
+        value = var.output_format_instructions
+      }
+      env {
+        name  = "THREAD_CONTEXT_MESSAGE_COUNT"
+        value = tostring(var.thread_context_message_count)
+      }
+      env {
+        name = "GTI_API_KEY"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.gti_api_key.secret_id
+            version = "latest"
+          }
+        }
+      }
+      env {
+        name = "CLIENT_SECRET"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.client_secret.secret_id
+            version = "latest"
+          }
+        }
+      }
     }
   }
 
@@ -447,13 +531,15 @@ resource "google_cloudfunctions2_function" "gti_bot" {
     google_project_service.apis,
     google_secret_manager_secret_version.gti_api_key_version,
     google_secret_manager_secret_version.client_secret_version,
+    null_resource.gti_bot_image_build,
   ]
 }
 
 # Public access for gti-bot (Teams Bot Framework verifies signatures in-app via FastAPIAdapter)
-resource "google_cloud_run_service_iam_member" "gti_bot_public" {
+resource "google_cloud_run_v2_service_iam_member" "gti_bot_public" {
+  project  = var.project_id
   location = var.region
-  service  = google_cloudfunctions2_function.gti_bot.name
+  name     = google_cloud_run_v2_service.gti_bot.name
   role     = "roles/run.invoker"
   member   = "allUsers"
 }
@@ -594,7 +680,7 @@ resource "azurerm_bot_service_azure_bot" "bot" {
   microsoft_app_id        = azuread_application.bot_app.client_id
   microsoft_app_type      = "SingleTenant"
   microsoft_app_tenant_id = data.azurerm_client_config.current.tenant_id
-  endpoint                = "${google_cloudfunctions2_function.gti_bot.service_config[0].uri}/api/messages"
+  endpoint                = "${google_cloud_run_v2_service.gti_bot.uri}/api/messages"
   tags                    = var.labels
 }
 

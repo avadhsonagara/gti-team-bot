@@ -78,6 +78,11 @@ param appSettings object = {}
 @description('Optional formatting instructions applied to every bot response (e.g. "Show severity as bold text instead of emoji"). Seeds a JSON config blob (bot-config/output-format.json) in the Function App\'s own storage account on first read — after that the blob is the source of truth and this value is ignored. Leave empty to use the built-in formatting from app/gti/prompt.md.')
 param outputFormatInstructions string = ''
 
+@description('Number of most-recent channel-thread messages to fetch as context for each query (channel thread context via Microsoft Graph — see app/teams/thread.py). Requires the bot\'s identity to be granted the Graph APPLICATION permission ChannelMessage.Read.All with tenant-admin consent (separate from its existing Bot Framework permissions) — a manual one-time step, same as TeamsAppInstallation.ReadWriteForTeam.All for RS Alerts\' auto-install feature. No effect outside channels (Teams has no thread concept for personal/group chats).')
+@minValue(1)
+@maxValue(50)
+param threadContextMessageCount int = 5
+
 // ---------------------------------------------------------------------------
 // Bot identity & secrets
 // ---------------------------------------------------------------------------
@@ -424,6 +429,13 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         {
           name: 'OUTPUT_FORMAT_INSTRUCTIONS'
           value: outputFormatInstructions
+        }
+        {
+          // See app/teams/thread.py — requires botIdentity to be granted the
+          // Graph APPLICATION permission ChannelMessage.Read.All (see
+          // threadContextMessageCount's @description above for the admin-consent step).
+          name: 'THREAD_CONTEXT_MESSAGE_COUNT'
+          value: string(threadContextMessageCount)
         }
       ], customAppSettingsArray)
     }

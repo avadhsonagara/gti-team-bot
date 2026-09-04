@@ -1,9 +1,6 @@
 # =============================================================================
-# GTI MS Teams Bot (Agentic) — GCP Cloud Run Functions Dependencies
+# GTI MS Teams Bot (Agentic) — GCP Cloud Run Dependencies
 # =============================================================================
-
-# Google Cloud Functions Framework — provides HTTP trigger support for Cloud Run functions
-functions-framework>=3.8.0
 
 # Microsoft Teams SDK — Bot Framework activity handling, FastAPI adapter,
 # Adaptive Card send/update.
@@ -34,12 +31,8 @@ python-dotenv>=1.0
 # Fast JSON parsing — ~2-5x faster than stdlib json for Adaptive Card responses
 orjson>=3.9
 
-# ASGI server for local development (python main.py); production is served
-# through functions_framework/gunicorn instead (see main.py's gti_bot_http)
+# ASGI server — serves the app directly, both locally and in the container
 uvicorn>=0.29.0
-
-# WSGI utilities — Response object returned from gti_bot_http
-werkzeug>=3.0.0
 
 # JWT decoding and key verification for Bot Framework security validation
 pyjwt>=2.8.0

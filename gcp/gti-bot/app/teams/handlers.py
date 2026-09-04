@@ -6,7 +6,6 @@ Every inbound Teams message is routed through handle_message():
   - Empty or whitespace-only messages -> usage hint.
   - Any query -> GTI Agentic Sessions API pipeline.
 """
-import asyncio
 import logging
 from datetime import datetime, timezone
 import re
@@ -23,6 +22,7 @@ from app.gti.client import (
     GTITimeoutError,
     gti_client,
 )
+from app.gti.session_store import get_session_id, set_session_id
 from app.observability import bind_request, clear_request
 from app.output_format_store import get_output_format
 from app.teams.cards import (
@@ -30,6 +30,7 @@ from app.teams.cards import (
     build_status_card,
     inject_quote_into_card,
 )
+from app.teams.thread import get_session_key, get_team_id, get_thread_context
 from app.utils.helpers import (
     EMPTY_QUERY_NOTICE,
     build_custom_format_section,
@@ -112,15 +113,21 @@ async def _handle_user_query(
 ) -> None:
     """
     Process a GTI query end-to-end:
-      1. Send loading placeholder
-      2. Retrieve or initialize GTI Agentic session
-      3. Execute synchronous query via GTI Agentic API
+      1. Fetch channel thread context (before posting anything of our own)
+      2. Send loading placeholder
+      3. Retrieve or continue the GTI Agentic session for this thread/conversation
       4. Format and deliver response as Adaptive Card
     """
     loading_activity_id: Optional[str] = None
     scope = _get_conversation_scope(ctx.activity)
-    quote_lines = [f"> {line}" for line in user_text.splitlines()] or ["> "]
-    quoted_query = "\n".join(quote_lines)
+    # Channel messages already show the original post inline (and, for thread
+    # replies, Teams renders the reply-to preview itself) — the quoted-query
+    # blockquote is only useful in personal/group chats, which have neither.
+    if scope == "channel":
+        quoted_query = ""
+    else:
+        quote_lines = [f"> {line}" for line in user_text.splitlines()] or ["> "]
+        quoted_query = "\n".join(quote_lines)
 
     try:
         preview = user_text[:80] + ("..." if len(user_text) > 80 else "")
@@ -128,23 +135,59 @@ async def _handle_user_query(
         logger.info("[EVENT] conversation=%s scope=%s", conversation_id, scope)
         logger.info("[EVENT] query=%r", preview)
 
-        # ── Step 1: Send placeholder message ──────────────────────────────────
+        # ── Step 1: Fetch channel thread context (before posting anything —
+        # otherwise our own placeholder reply gets read right back as "history") ──
+        thread_context = await get_thread_context(ctx.activity, scope)
+
+        # ── Step 2: Send placeholder message ──────────────────────────────────
         try:
-            placeholder_text = f"{quoted_query}\n\n⏳ Looking into that with Google Threat Intelligence…"
+            placeholder_text = (
+                f"{quoted_query}\n\n⏳ Looking into that with Google Threat Intelligence…"
+                if quoted_query
+                else "⏳ Looking into that with Google Threat Intelligence…"
+            )
             sent = await ctx.send(placeholder_text)
             loading_activity_id = getattr(sent, "id", None)
             logger.info("[PLACEHOLDER] Posted | id=%s", loading_activity_id)
         except Exception as exc:
             logger.warning("[PLACEHOLDER] Failed (%s) — will post fresh reply directly", exc)
 
-        # ── Step 2: Query GTI Agentic Sessions API (Stateless Query) ──────────
-        output_format = await asyncio.to_thread(get_output_format, settings)
-        initial_msg = _render_system_prompt(user_query=user_text, output_format=output_format)
-        logger.info("[AGENTIC] Dispatching query to GTI Agentic API for conversation=%s", conversation_id)
-        session_id, response_text, _ = await gti_client.create_session(message=initial_msg)
-        bind_request(session_id=session_id)
+        # ── Step 3: Query GTI Agentic Sessions API (create or continue session) ──
+        output_format = await get_output_format(settings)
+        if thread_context:
+            logger.info("[THREAD] Prepending channel thread context to query:\n%s", thread_context)
+            contextual_query = (
+                f"Recent messages in this Teams thread (oldest first):\n{thread_context}\n\n"
+                f"User query:\n{user_text}"
+            )
+        else:
+            contextual_query = user_text
+        initial_msg = _render_system_prompt(user_query=contextual_query, output_format=output_format)
 
-        # ── Step 3: Format & Deliver ──────────────────────────────────────────
+        # Session continuity only applies to channel threads (one GTI session
+        # per thread) — personal and group chats always start a fresh
+        # session per message; existing_session_id stays None there so
+        # send_message() always creates a new session instead of continuing one.
+        if scope == "channel":
+            session_key = get_session_key(ctx.activity, scope)
+            team_id = get_team_id(ctx.activity)
+            existing_session_id = await get_session_id(session_key)
+        else:
+            session_key = ""
+            team_id = ""
+            existing_session_id = None
+        logger.info(
+            "[AGENTIC] Dispatching query to GTI Agentic API | conversation=%s session_key=%s team_id=%s mode=%s",
+            conversation_id, session_key or "-", team_id or "-", "continue" if existing_session_id else "new",
+        )
+        session_id, response_text, _ = await gti_client.send_message(
+            message=initial_msg, session_id=existing_session_id,
+        )
+        bind_request(session_id=session_id)
+        if session_key:
+            await set_session_id(session_key, session_id, team_id or None)
+
+        # ── Step 4: Format & Deliver ──────────────────────────────────────────
         # Try parsing native Adaptive Card JSON from GTI Agent
         parsed_card, fallback_text = parse_adaptive_card(response_text)
         if parsed_card:

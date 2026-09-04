@@ -359,6 +359,27 @@ class GTIAgenticClient:
         logger.info("[GTI] Continued session id=%s | text_len=%d", session_id, len(text))
         return session_id, text, raw_data
 
+    async def send_message(
+        self,
+        message: str,
+        session_id: str | None = None,
+        files: list[tuple[str, bytes, str]] | None = None,
+    ) -> tuple[str, str, dict[str, Any]]:
+        """
+        Send a message to GTI, continuing `session_id` if given, otherwise
+        creating a new session. Falls back to creating a new session when the
+        given session_id is no longer valid (expired / not found on GTI's side).
+
+        Returns:
+            (session_id, response_markdown_text, raw_api_response_dict)
+        """
+        if session_id:
+            try:
+                return await self.post_session_message(session_id, message, files)
+            except GTISessionNotFoundError:
+                logger.warning("[GTI] Session %s not found/expired — creating a new session.", session_id)
+        return await self.create_session(message, files)
+
     async def get_session(self, session_id: str) -> dict[str, Any]:
         """
         Retrieve details and event history for an existing session.
