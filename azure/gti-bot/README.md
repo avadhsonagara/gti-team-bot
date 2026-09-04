@@ -1,16 +1,19 @@
 # GTI Teams Bot (Agentic) — Azure Functions
 
-[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Favadhsonagara%2Fgti-team-bot%2Fgraph-url-based%2Fazure%2Finfra%2Fazuredeploy-button.json)
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#view/Microsoft_Azure_CreateUIDef/CustomDeploymentBlade/uri/https%3A%2F%2Fraw.githubusercontent.com%2Favadhsonagara%2Fgti-team-bot%2Fgraph-url-based%2Fazure%2Finfra%2Fazuredeploy-button.json/uiFormDefinitionUri/https%3A%2F%2Fraw.githubusercontent.com%2Favadhsonagara%2Fgti-team-bot%2Fgraph-url-based%2Fazure%2Finfra%2FuiFormDefinition.json)
 
 Click the button above to provision the Azure Bot, Flex Consumption Function App, Storage Account,
 Key Vault, and Application Insights instance in your own Azure subscription, and upload the Teams
 app manifest package to blob storage — no local tools required, and **no app registration to
 create by hand**. The form lets you configure the Function App name, hosting plan
-(Flex Consumption, Consumption, or Premium), your `GTI_API_KEY`, memory, and scale
-settings. Everything else (region, storage account naming, App Insights, Python version,
-the manifest package location, etc.) is pre-wired with sensible defaults — this
-simplified form is [infra/deploy-button.bicep](infra/deploy-button.bicep), a thin wrapper around
-the full [infra/main.bicep](infra/main.bicep) template.
+(Flex Consumption, Consumption, or Premium), your `GTI_API_KEY`, and scale settings — pick
+Flex Consumption and a "Function Instance Memory MB" dropdown appears; pick Premium and a
+"Premium Plan SKU" (EP1/EP2/EP3) dropdown appears instead. Everything else (region, storage
+account naming, App Insights, Python version, the manifest package location, etc.) is pre-wired
+with sensible defaults — this simplified form is driven by
+[infra/uiFormDefinition.json](infra/uiFormDefinition.json) on top of
+[infra/deploy-button.bicep](infra/deploy-button.bicep), a thin wrapper around the full
+[infra/main.bicep](infra/main.bicep) template.
 
 Region always defaults to the target resource group's own recorded location and isn't exposed on
 this form. Deploying into a resource group whose existing resources (from a prior deployment) live

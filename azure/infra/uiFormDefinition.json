@@ -1,0 +1,345 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2021-09-09/uiFormDefinition.schema.json",
+  "view": {
+    "kind": "Form",
+    "properties": {
+      "title": "Deploy GTI Teams Bot (Agentic)",
+      "steps": [
+        {
+          "name": "basics",
+          "label": "Bot Configuration",
+          "elements": [
+            {
+              "name": "resourceScope",
+              "type": "Microsoft.Common.ResourceScope",
+              "location": {
+                "resourceTypes": [
+                  "microsoft.resources/resourcegroups"
+                ]
+              }
+            },
+            {
+              "name": "functionAppName",
+              "type": "Microsoft.Common.TextBox",
+              "label": "Function App Name",
+              "toolTip": "Name of the Function App to create.",
+              "defaultValue": "gti-team-bot",
+              "constraints": {
+                "required": true,
+                "regex": "",
+                "validationMessage": "",
+                "validations": []
+              },
+              "visible": true
+            },
+            {
+              "name": "hostingPlanType",
+              "type": "Microsoft.Common.DropDown",
+              "label": "Hosting Plan",
+              "toolTip": "Flex Consumption: serverless, scale-to-zero, pay-per-execution. Consumption: classic serverless. Premium: pre-warmed instances (no cold starts), VNET support.",
+              "defaultValue": "FlexConsumption",
+              "constraints": {
+                "required": true,
+                "allowedValues": [
+                  { "label": "Flex Consumption", "value": "FlexConsumption" },
+                  { "label": "Consumption", "value": "Consumption" },
+                  { "label": "Premium", "value": "Premium" }
+                ],
+                "validations": []
+              },
+              "visible": true
+            },
+            {
+              "name": "instanceMemoryMB",
+              "type": "Microsoft.Common.DropDown",
+              "label": "Function Instance Memory MB",
+              "toolTip": "Per-instance memory for the Flex Consumption plan.",
+              "defaultValue": 2048,
+              "constraints": {
+                "required": true,
+                "allowedValues": [
+                  { "label": "512", "value": 512 },
+                  { "label": "2048", "value": 2048 },
+                  { "label": "4096", "value": 4096 }
+                ],
+                "validations": []
+              },
+              "visible": "[equals(steps('basics').hostingPlanType, 'FlexConsumption')]"
+            },
+            {
+              "name": "maximumInstanceCount",
+              "type": "Microsoft.Common.Slider",
+              "label": "Maximum Instance Count",
+              "subLabel": "instances",
+              "toolTip": "Maximum scale-out instance count for the Flex Consumption plan.",
+              "min": 40,
+              "max": 1000,
+              "defaultValue": 100,
+              "constraints": {
+                "required": true
+              },
+              "visible": "[equals(steps('basics').hostingPlanType, 'FlexConsumption')]"
+            },
+            {
+              "name": "premiumSku",
+              "type": "Microsoft.Common.DropDown",
+              "label": "Premium Plan SKU",
+              "toolTip": "Compute tier for the Premium plan.",
+              "defaultValue": "EP1",
+              "constraints": {
+                "required": true,
+                "allowedValues": [
+                  { "label": "EP1", "value": "EP1" },
+                  { "label": "EP2", "value": "EP2" },
+                  { "label": "EP3", "value": "EP3" }
+                ],
+                "validations": []
+              },
+              "visible": "[equals(steps('basics').hostingPlanType, 'Premium')]"
+            },
+            {
+              "name": "gtiApiKey",
+              "type": "Microsoft.Common.PasswordBox",
+              "label": {
+                "password": "GTI API Key"
+              },
+              "toolTip": "Google Threat Intelligence Agentic API key. Stored as a Key Vault secret, never as a plaintext app setting.",
+              "constraints": {
+                "required": true
+              },
+              "options": {
+                "hideConfirmation": true
+              },
+              "visible": true
+            },
+            {
+              "name": "outputFormatInstructions",
+              "type": "Microsoft.Common.TextBox",
+              "label": "Output Format Instructions",
+              "toolTip": "Optional formatting instructions applied to every bot response (e.g. \"Show severity as bold text instead of emoji\"). Leave empty to use the bot's built-in formatting.",
+              "defaultValue": "",
+              "constraints": {
+                "required": false,
+                "regex": "",
+                "validationMessage": "",
+                "validations": []
+              },
+              "visible": true
+            },
+            {
+              "name": "threadContextMessageCount",
+              "type": "Microsoft.Common.Slider",
+              "label": "Thread Context Message Count",
+              "subLabel": "messages",
+              "toolTip": "Number of most-recent channel-thread messages to fetch as context for each query. No effect outside channels.",
+              "min": 1,
+              "max": 50,
+              "defaultValue": 5,
+              "constraints": {
+                "required": true
+              },
+              "visible": true
+            }
+          ]
+        },
+        {
+          "name": "rsAlerts",
+          "label": "RS Alerts (optional)",
+          "elements": [
+            {
+              "name": "addRsAlerts",
+              "type": "Microsoft.Common.DropDown",
+              "label": "Add RS Alerts to this Team",
+              "toolTip": "Provisions a second, background Function App that polls Google Threat Intelligence alerts and posts them into a Teams channel. Set to \"Yes\" to also fill in the fields below.",
+              "defaultValue": "No",
+              "constraints": {
+                "required": true,
+                "allowedValues": [
+                  { "label": "No", "value": "No" },
+                  { "label": "Yes", "value": "Yes" }
+                ],
+                "validations": []
+              },
+              "visible": true
+            },
+            {
+              "name": "rsAlertsFunctionAppName",
+              "type": "Microsoft.Common.TextBox",
+              "label": "RS Alerts Function App Name",
+              "toolTip": "Name of the RS Alerts Function App. Leave empty to default to \"<Function App Name>-rs-alerts\".",
+              "defaultValue": "",
+              "constraints": {
+                "required": false,
+                "regex": "",
+                "validationMessage": "",
+                "validations": []
+              },
+              "visible": "[equals(steps('rsAlerts').addRsAlerts, 'Yes')]"
+            },
+            {
+              "name": "rsAlertsHostingPlanType",
+              "type": "Microsoft.Common.DropDown",
+              "label": "RS Alerts Hosting Plan",
+              "toolTip": "Hosting plan for the RS Alerts Function App.",
+              "defaultValue": "FlexConsumption",
+              "constraints": {
+                "required": true,
+                "allowedValues": [
+                  { "label": "Flex Consumption", "value": "FlexConsumption" },
+                  { "label": "Consumption", "value": "Consumption" },
+                  { "label": "Premium", "value": "Premium" }
+                ],
+                "validations": []
+              },
+              "visible": "[equals(steps('rsAlerts').addRsAlerts, 'Yes')]"
+            },
+            {
+              "name": "rsAlertsInstanceMemoryMB",
+              "type": "Microsoft.Common.DropDown",
+              "label": "RS Alerts Function Instance Memory MB",
+              "toolTip": "Per-instance memory for the RS Alerts Flex Consumption plan.",
+              "defaultValue": 512,
+              "constraints": {
+                "required": true,
+                "allowedValues": [
+                  { "label": "512", "value": 512 },
+                  { "label": "2048", "value": 2048 },
+                  { "label": "4096", "value": 4096 }
+                ],
+                "validations": []
+              },
+              "visible": "[and(equals(steps('rsAlerts').addRsAlerts, 'Yes'), equals(steps('rsAlerts').rsAlertsHostingPlanType, 'FlexConsumption'))]"
+            },
+            {
+              "name": "rsAlertsPremiumSku",
+              "type": "Microsoft.Common.DropDown",
+              "label": "RS Alerts Premium Plan SKU",
+              "toolTip": "Compute tier for the RS Alerts Premium plan.",
+              "defaultValue": "EP1",
+              "constraints": {
+                "required": true,
+                "allowedValues": [
+                  { "label": "EP1", "value": "EP1" },
+                  { "label": "EP2", "value": "EP2" },
+                  { "label": "EP3", "value": "EP3" }
+                ],
+                "validations": []
+              },
+              "visible": "[and(equals(steps('rsAlerts').addRsAlerts, 'Yes'), equals(steps('rsAlerts').rsAlertsHostingPlanType, 'Premium'))]"
+            },
+            {
+              "name": "rsAlertsChannelIdOrChannelLink",
+              "type": "Microsoft.Common.TextBox",
+              "label": "RS Alerts Teams Channel Link",
+              "toolTip": "Paste the FULL channel link (right-click the channel -> Get link to channel) — the full link is required so the bot's Teams app can be auto-installed into the team via Microsoft Graph. Required when \"Add RS Alerts to this Team\" is Yes.",
+              "defaultValue": "",
+              "constraints": {
+                "required": false,
+                "regex": "",
+                "validationMessage": "",
+                "validations": []
+              },
+              "visible": "[equals(steps('rsAlerts').addRsAlerts, 'Yes')]"
+            },
+            {
+              "name": "rsAlertsGtiProject",
+              "type": "Microsoft.Common.TextBox",
+              "label": "RS Alerts GTI Project",
+              "toolTip": "GTI project ID for RS Alerts, from the Alerts URL (...&project=projects/<id>). Required when \"Add RS Alerts to this Team\" is Yes.",
+              "defaultValue": "",
+              "constraints": {
+                "required": false,
+                "regex": "",
+                "validationMessage": "",
+                "validations": []
+              },
+              "visible": "[equals(steps('rsAlerts').addRsAlerts, 'Yes')]"
+            },
+            {
+              "name": "rsAlertsFilterSeverityLevel",
+              "type": "Microsoft.Common.TextBox",
+              "label": "RS Alerts Filter: Severity Level",
+              "toolTip": "Comma-separated LOW/MEDIUM/HIGH. Empty = no filter on this field.",
+              "defaultValue": "MEDIUM,HIGH",
+              "constraints": {
+                "required": false,
+                "regex": "",
+                "validationMessage": "",
+                "validations": []
+              },
+              "visible": "[equals(steps('rsAlerts').addRsAlerts, 'Yes')]"
+            },
+            {
+              "name": "rsAlertsFilterPriorityLevel",
+              "type": "Microsoft.Common.TextBox",
+              "label": "RS Alerts Filter: Priority Level",
+              "toolTip": "Comma-separated LOW/MEDIUM/HIGH/CRITICAL. Empty = no filter on this field.",
+              "defaultValue": "MEDIUM,HIGH,CRITICAL",
+              "constraints": {
+                "required": false,
+                "regex": "",
+                "validationMessage": "",
+                "validations": []
+              },
+              "visible": "[equals(steps('rsAlerts').addRsAlerts, 'Yes')]"
+            },
+            {
+              "name": "rsAlertsFilterRelevanceLevel",
+              "type": "Microsoft.Common.TextBox",
+              "label": "RS Alerts Filter: Relevance Level",
+              "toolTip": "Comma-separated LOW/MEDIUM/HIGH. Empty = no filter on this field.",
+              "defaultValue": "MEDIUM,HIGH",
+              "constraints": {
+                "required": false,
+                "regex": "",
+                "validationMessage": "",
+                "validations": []
+              },
+              "visible": "[equals(steps('rsAlerts').addRsAlerts, 'Yes')]"
+            },
+            {
+              "name": "rsAlertsFilterRelevanceConfidence",
+              "type": "Microsoft.Common.TextBox",
+              "label": "RS Alerts Filter: Relevance Confidence",
+              "toolTip": "Comma-separated LOW/MEDIUM/HIGH. Empty = no filter on this field.",
+              "defaultValue": "MEDIUM,HIGH",
+              "constraints": {
+                "required": false,
+                "regex": "",
+                "validationMessage": "",
+                "validations": []
+              },
+              "visible": "[equals(steps('rsAlerts').addRsAlerts, 'Yes')]"
+            }
+          ]
+        }
+      ]
+    },
+    "outputs": {
+      "kind": "ResourceGroup",
+      "location": "[steps('basics').resourceScope.location.name]",
+      "resourceGroupId": "[steps('basics').resourceScope.resourceGroup.id]",
+      "parameters": {
+        "functionAppName": "[steps('basics').functionAppName]",
+        "hostingPlanType": "[steps('basics').hostingPlanType]",
+        "instanceMemoryMB": "[steps('basics').instanceMemoryMB]",
+        "premiumSku": "[steps('basics').premiumSku]",
+        "gtiApiKey": "[steps('basics').gtiApiKey]",
+        "maximumInstanceCount": "[steps('basics').maximumInstanceCount]",
+        "outputFormatInstructions": "[steps('basics').outputFormatInstructions]",
+        "threadContextMessageCount": "[steps('basics').threadContextMessageCount]",
+        "addRsAlerts": "[steps('rsAlerts').addRsAlerts]",
+        "rsAlertsFunctionAppName": "[if(empty(steps('rsAlerts').rsAlertsFunctionAppName), concat(steps('basics').functionAppName, '-rs-alerts'), steps('rsAlerts').rsAlertsFunctionAppName)]",
+        "rsAlertsHostingPlanType": "[steps('rsAlerts').rsAlertsHostingPlanType]",
+        "rsAlertsInstanceMemoryMB": "[steps('rsAlerts').rsAlertsInstanceMemoryMB]",
+        "rsAlertsPremiumSku": "[steps('rsAlerts').rsAlertsPremiumSku]",
+        "rsAlertsChannelIdOrChannelLink": "[steps('rsAlerts').rsAlertsChannelIdOrChannelLink]",
+        "rsAlertsGtiProject": "[steps('rsAlerts').rsAlertsGtiProject]",
+        "rsAlertsFilterSeverityLevel": "[steps('rsAlerts').rsAlertsFilterSeverityLevel]",
+        "rsAlertsFilterPriorityLevel": "[steps('rsAlerts').rsAlertsFilterPriorityLevel]",
+        "rsAlertsFilterRelevanceLevel": "[steps('rsAlerts').rsAlertsFilterRelevanceLevel]",
+        "rsAlertsFilterRelevanceConfidence": "[steps('rsAlerts').rsAlertsFilterRelevanceConfidence]"
+      }
+    }
+  }
+}
