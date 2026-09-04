@@ -159,7 +159,7 @@
               "type": "Microsoft.Common.TextBox",
               "label": "RS Alerts Function App Name",
               "toolTip": "Name of the RS Alerts Function App.",
-              "defaultValue": "",
+              "defaultValue": "gti-team-bot-rs-alerts",
               "constraints": {
                 "required": true,
                 "regex": "",
