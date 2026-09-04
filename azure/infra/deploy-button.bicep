@@ -21,27 +21,21 @@
 @description('Name of the Function App to create.')
 param functionAppName string = 'gti-team-bot'
 
-@description('Hosting plan for the Function App. FlexConsumption (default): serverless, scale-to-zero, pay-per-execution. Consumption: classic serverless. Premium-EP1 / EP2 / EP3: pre-warmed instances, no cold starts, VNET support.')
+@description('Hosting plan for the Function App. FlexConsumption (2048 MB default): serverless, scale-to-zero, pay-per-execution. Consumption: classic serverless. Premium-EP1 / EP2 / EP3: pre-warmed instances, no cold starts, VNET support.')
 @allowed([
-  'FlexConsumption'
+  'FlexConsumption-2048MB'
+  'FlexConsumption-512MB'
+  'FlexConsumption-4096MB'
   'Consumption'
   'Premium-EP1'
   'Premium-EP2'
   'Premium-EP3'
 ])
-param hostingPlan string = 'FlexConsumption'
+param hostingPlan string = 'FlexConsumption-2048MB'
 
 @description('Google Threat Intelligence Agentic API key. Stored as a Key Vault secret, never as a plaintext app setting.')
 @secure()
 param gtiApiKey string
-
-@description('Per-instance memory (MB) for the Flex Consumption plan. Ignored on Consumption or Premium.')
-@allowed([
-  512
-  2048
-  4096
-])
-param instanceMemoryMB int = 2048
 
 @description('Maximum scale-out instance count for the Flex Consumption plan. Ignored on Consumption or Premium.')
 @minValue(40)
@@ -68,13 +62,15 @@ param rsAlertsFunctionAppName string = '${functionAppName}-rs-alerts'
 
 @description('Hosting plan for the RS Alerts Function App. Only used when "Add RS Alerts to this Team" is Yes.')
 @allowed([
-  'FlexConsumption'
+  'FlexConsumption-512MB'
+  'FlexConsumption-2048MB'
+  'FlexConsumption-4096MB'
   'Consumption'
   'Premium-EP1'
   'Premium-EP2'
   'Premium-EP3'
 ])
-param rsAlertsHostingPlan string = 'FlexConsumption'
+param rsAlertsHostingPlan string = 'FlexConsumption-512MB'
 
 @description('The Teams channel RS Alerts posts GTI alerts into. Paste the FULL channel link (right-click the channel -> Get link to channel) — the full link is required so the bot\'s Teams app can be auto-installed into the team via Microsoft Graph. A bare ID (19:xxx@thread.tacv2) still works for delivery, but skips auto-install. Required when "Add RS Alerts to this Team" is Yes.')
 param rsAlertsChannelIdOrChannelLink string = ''
@@ -95,14 +91,16 @@ param rsAlertsFilterRelevanceLevel string = 'MEDIUM,HIGH'
 param rsAlertsFilterRelevanceConfidence string = 'MEDIUM,HIGH'
 
 // ---------------------------------------------------------------------------
-// Variables — resolve plan type and SKU from combined dropdown
+// Variables — resolve plan type, SKU, and memory from combined dropdown
 // ---------------------------------------------------------------------------
 
 var hostingPlanType = startsWith(hostingPlan, 'Premium') ? 'Premium' : (hostingPlan == 'Consumption' ? 'Consumption' : 'FlexConsumption')
 var premiumSku = hostingPlan == 'Premium-EP2' ? 'EP2' : (hostingPlan == 'Premium-EP3' ? 'EP3' : 'EP1')
+var instanceMemoryMB = hostingPlan == 'FlexConsumption-512MB' ? 512 : (hostingPlan == 'FlexConsumption-4096MB' ? 4096 : 2048)
 
 var rsAlertsHostingPlanType = startsWith(rsAlertsHostingPlan, 'Premium') ? 'Premium' : (rsAlertsHostingPlan == 'Consumption' ? 'Consumption' : 'FlexConsumption')
 var rsAlertsPremiumSku = rsAlertsHostingPlan == 'Premium-EP2' ? 'EP2' : (rsAlertsHostingPlan == 'Premium-EP3' ? 'EP3' : 'EP1')
+var rsAlertsInstanceMemoryMB = rsAlertsHostingPlan == 'FlexConsumption-2048MB' ? 2048 : (rsAlertsHostingPlan == 'FlexConsumption-4096MB' ? 4096 : 512)
 
 // ---------------------------------------------------------------------------
 // Delegate everything else to main.bicep's own defaults
@@ -124,6 +122,7 @@ module main 'main.bicep' = {
     rsAlertsFunctionAppName: rsAlertsFunctionAppName
     rsAlertsHostingPlanType: rsAlertsHostingPlanType
     rsAlertsPremiumSku: rsAlertsPremiumSku
+    rsAlertsInstanceMemoryMB: rsAlertsInstanceMemoryMB
     rsAlertsTeamsChannelId: rsAlertsChannelIdOrChannelLink
     rsAlertsGtiProject: rsAlertsGtiProject
     rsAlertsFilterSeverityLevel: rsAlertsFilterSeverityLevel

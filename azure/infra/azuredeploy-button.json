@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.46.1.21595",
-      "templateHash": "10796939640425175061"
+      "templateHash": "609034884100316984"
     }
   },
   "parameters": {
@@ -18,34 +18,24 @@
     },
     "hostingPlan": {
       "type": "string",
-      "defaultValue": "FlexConsumption",
+      "defaultValue": "FlexConsumption-2048MB",
       "allowedValues": [
-        "FlexConsumption",
+        "FlexConsumption-2048MB",
+        "FlexConsumption-512MB",
+        "FlexConsumption-4096MB",
         "Consumption",
         "Premium-EP1",
         "Premium-EP2",
         "Premium-EP3"
       ],
       "metadata": {
-        "description": "Hosting plan for the Function App. FlexConsumption (default): serverless, scale-to-zero, pay-per-execution. Consumption: classic serverless. Premium-EP1 / EP2 / EP3: pre-warmed instances, no cold starts, VNET support."
+        "description": "Hosting plan for the Function App. FlexConsumption (2048 MB default): serverless, scale-to-zero, pay-per-execution. Consumption: classic serverless. Premium-EP1 / EP2 / EP3: pre-warmed instances, no cold starts, VNET support."
       }
     },
     "gtiApiKey": {
       "type": "securestring",
       "metadata": {
         "description": "Google Threat Intelligence Agentic API key. Stored as a Key Vault secret, never as a plaintext app setting."
-      }
-    },
-    "instanceMemoryMB": {
-      "type": "int",
-      "defaultValue": 2048,
-      "allowedValues": [
-        512,
-        2048,
-        4096
-      ],
-      "metadata": {
-        "description": "Per-instance memory (MB) for the Flex Consumption plan. Ignored on Consumption or Premium."
       }
     },
     "maximumInstanceCount": {
@@ -93,9 +83,11 @@
     },
     "rsAlertsHostingPlan": {
       "type": "string",
-      "defaultValue": "FlexConsumption",
+      "defaultValue": "FlexConsumption-512MB",
       "allowedValues": [
-        "FlexConsumption",
+        "FlexConsumption-512MB",
+        "FlexConsumption-2048MB",
+        "FlexConsumption-4096MB",
         "Consumption",
         "Premium-EP1",
         "Premium-EP2",
@@ -151,8 +143,10 @@
   "variables": {
     "hostingPlanType": "[if(startsWith(parameters('hostingPlan'), 'Premium'), 'Premium', if(equals(parameters('hostingPlan'), 'Consumption'), 'Consumption', 'FlexConsumption'))]",
     "premiumSku": "[if(equals(parameters('hostingPlan'), 'Premium-EP2'), 'EP2', if(equals(parameters('hostingPlan'), 'Premium-EP3'), 'EP3', 'EP1'))]",
+    "instanceMemoryMB": "[if(equals(parameters('hostingPlan'), 'FlexConsumption-512MB'), 512, if(equals(parameters('hostingPlan'), 'FlexConsumption-4096MB'), 4096, 2048))]",
     "rsAlertsHostingPlanType": "[if(startsWith(parameters('rsAlertsHostingPlan'), 'Premium'), 'Premium', if(equals(parameters('rsAlertsHostingPlan'), 'Consumption'), 'Consumption', 'FlexConsumption'))]",
-    "rsAlertsPremiumSku": "[if(equals(parameters('rsAlertsHostingPlan'), 'Premium-EP2'), 'EP2', if(equals(parameters('rsAlertsHostingPlan'), 'Premium-EP3'), 'EP3', 'EP1'))]"
+    "rsAlertsPremiumSku": "[if(equals(parameters('rsAlertsHostingPlan'), 'Premium-EP2'), 'EP2', if(equals(parameters('rsAlertsHostingPlan'), 'Premium-EP3'), 'EP3', 'EP1'))]",
+    "rsAlertsInstanceMemoryMB": "[if(equals(parameters('rsAlertsHostingPlan'), 'FlexConsumption-2048MB'), 2048, if(equals(parameters('rsAlertsHostingPlan'), 'FlexConsumption-4096MB'), 4096, 512))]"
   },
   "resources": [
     {
@@ -181,7 +175,7 @@
             "value": "[parameters('gtiApiKey')]"
           },
           "instanceMemoryMB": {
-            "value": "[parameters('instanceMemoryMB')]"
+            "value": "[variables('instanceMemoryMB')]"
           },
           "maximumInstanceCount": {
             "value": "[parameters('maximumInstanceCount')]"
@@ -203,6 +197,9 @@
           },
           "rsAlertsPremiumSku": {
             "value": "[variables('rsAlertsPremiumSku')]"
+          },
+          "rsAlertsInstanceMemoryMB": {
+            "value": "[variables('rsAlertsInstanceMemoryMB')]"
           },
           "rsAlertsTeamsChannelId": {
             "value": "[parameters('rsAlertsChannelIdOrChannelLink')]"
