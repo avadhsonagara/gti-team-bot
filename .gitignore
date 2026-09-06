@@ -1,0 +1,142 @@
+# =============================================================================
+# Root .gitignore — Google Threat Intelligence (GTI) Teams Bot & RS Alerts
+# =============================================================================
+
+# ── Environment & Secrets ───────────────────────────────────────────────────
+# Never commit credentials, API keys, or active environment files
+.env
+.env.*
+!.env.example
+*.env
+
+# Azure Functions local configuration & secrets
+local.settings.json
+local.settings.*.json
+!local.settings.json.example
+appsettings.json
+appsettings.*.json
+
+# Certificates, private keys, and keystores
+*.pem
+*.key
+*.cer
+*.crt
+*.pfx
+*.p12
+*.secret
+*.token
+
+# ── Python ──────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environments
+venv/
+.venv/
+env/
+.env_dir/
+ENV/
+env.bak/
+venv.bak/
+
+# Testing, Linting & Coverage
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+nosetests.xml
+coverage.xml
+*.cover
+
+# ── Azure Functions Core Tools ──────────────────────────────────────────────
+.python_packages/
+bin/
+obj/
+
+# ── Terraform ───────────────────────────────────────────────────────────────
+# Local .terraform directories and cached provider plugins
+**/.terraform/*
+.terraform/
+.terraform.lock.hcl
+
+# State files & backups
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+
+# Plan files (contain unencrypted secrets, configurations, and state diffs)
+*.tfplan
+*tfplan*
+tfplan
+
+# Variable definition files (contain deployment secrets)
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+
+# Crash and execution logs
+crash.log
+crash.*.log
+*.log
+
+# Local override files
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# CLI configuration
+.terraformrc
+terraform.rc
+
+# ── Azure / Bicep ───────────────────────────────────────────────────────────
+*.bicepparam
+!*.bicepparam.example
+
+# ── Archives & Compressed Packages ──────────────────────────────────────────
+# Generated zip packages from local testing or deployment packaging
+*.zip
+*.tar.gz
+*.tgz
+*.rar
+
+# ── Temporary & Scratch Files ───────────────────────────────────────────────
+scratch/
+tmp/
+*.tmp
+
+# ── OS & Editor Metadata ────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+*~

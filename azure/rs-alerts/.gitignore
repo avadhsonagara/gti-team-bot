@@ -1,0 +1,83 @@
+# =============================================================================
+# Git Ignore Configuration — RS Alerts — Azure Functions
+# =============================================================================
+
+# ── Environment & Secrets ───────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+local.settings.json
+*.pem
+*.key
+*.cer
+*.crt
+*.pfx
+*.p12
+
+# ── Azure Functions Core Tools local artifacts ──────────────────────────────
+bin/
+obj/
+appsettings.json
+.python_packages/
+
+# ── Python Bytecode & Cache ─────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# ── Virtual Environments ────────────────────────────────────────────────────
+.venv
+.venv/
+.venv*/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# ── Testing & Code Quality ──────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+nosetests.xml
+coverage.xml
+*.cover
+.mypy_cache/
+.ruff_cache/
+
+# ── Logs & Debugging ────────────────────────────────────────────────────────
+*.log
+logs/
+nohup.out
+
+# ── Operating System & Editors ──────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~

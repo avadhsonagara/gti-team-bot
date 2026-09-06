@@ -1,0 +1,14 @@
+__pycache__
+**/__pycache__
+*.pyc
+.venv
+venv
+.git
+.env
+.env.example
+.gitignore
+README.md
+teams-app-manifest
+project.toml
+Procfile
+.python-version

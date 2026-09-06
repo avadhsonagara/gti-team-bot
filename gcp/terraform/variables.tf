@@ -1,0 +1,207 @@
+# =============================================================================
+# GTI Teams Bot (Agentic) — GCP Terraform Variables
+# =============================================================================
+
+variable "project_id" {
+  description = "Google Cloud Project ID where all resources will be created."
+  type        = string
+  default     = "gtimsteamaiintegration-3898"
+}
+
+variable "region" {
+  description = "Google Cloud region for all resources (Cloud Functions, GCS, Firestore, Secrets)."
+  type        = string
+  default     = "us-central1"
+}
+
+variable "bot_name" {
+  description = "Base resource name for the bot application."
+  type        = string
+  default     = "gti-team-bot"
+}
+
+variable "storage_bucket_name" {
+  description = "Globally-unique GCS bucket name for source code and manifests. Empty = derive from project_id/bot_name plus a random suffix."
+  type        = string
+  default     = ""
+}
+
+variable "azure_bot_name" {
+  description = "Globally-unique name for the Azure Bot Service resource (Bot Service names are unique across all of Azure, not just this subscription). Empty = derive from bot_name plus a random suffix."
+  type        = string
+  default     = ""
+}
+
+variable "azure_resource_group_name" {
+  description = "Name of an EXISTING Azure resource group to deploy the Bot Service into. Leave empty to create a new resource group named '<bot_name>-rg' — creating a resource group requires subscription-level permission, which the deploying identity may not have if its access is scoped to a single existing resource group."
+  type        = string
+  default     = ""
+}
+
+
+variable "memory" {
+  description = "Memory allocated to the gti-bot Cloud Run function (e.g. 512Mi, 1Gi, 2Gi)."
+  type        = string
+  default     = "1Gi"
+}
+
+variable "timeout_seconds" {
+  description = "Execution timeout in seconds for the gti-bot function (max 3600 for HTTP)."
+  type        = number
+  default     = 300
+}
+
+variable "max_instances" {
+  description = "Maximum scale-out instance count for the gti-bot function."
+  type        = number
+  default     = 1
+}
+
+variable "concurrency" {
+  description = "Maximum concurrent requests per instance for the gti-bot function."
+  type        = number
+  default     = 10
+}
+
+variable "min_instances" {
+  description = "Minimum idle instance count for warm starts (0 allows scaling to zero)."
+  type        = number
+  default     = 0
+}
+
+
+# ── Google Threat Intelligence (GTI) Credentials ─────────────────────────────
+
+variable "gti_api_key" {
+  description = "Google Threat Intelligence / VirusTotal API key. Stored securely in Secret Manager."
+  type        = string
+  sensitive   = true
+}
+
+variable "gti_api_base_url" {
+  description = "Base URL for the Google Threat Intelligence Agentic API."
+  type        = string
+  default     = "https://www.virustotal.com/api/v3"
+}
+
+# ── Firestore & Output Formatting ───────────────────────────────────────────
+
+variable "output_format_instructions" {
+  description = "Optional custom formatting instructions applied to every bot response (seeds the Firestore document on first read)."
+  type        = string
+  default     = ""
+}
+
+# ── Microsoft Graph (channel thread context) ─────────────────────────────────
+# Requires the bot's Entra app registration to be granted the Graph
+# APPLICATION permission ChannelMessage.Read.All with tenant-admin consent —
+# separate from the Bot Framework permissions it already has.
+
+variable "thread_context_message_count" {
+  description = "Number of most-recent channel-thread messages to fetch as context for each query."
+  type        = number
+  default     = 5
+}
+
+# ── RS Alerts (Background GTI Alerts -> Teams) ───────────────────────────────
+
+variable "enable_rs_alerts" {
+  description = "Set to true to provision the RS Alerts background function and Cloud Scheduler trigger."
+  type        = bool
+  default     = false
+}
+
+variable "rs_alerts_teams_channel_id_or_link" {
+  description = "Teams channel link or ID (19:...@thread.tacv2) that RS Alerts posts GTI alerts into. Pass the FULL channel link (not a bare ID) so the bot's Teams app can be auto-installed into the team via Microsoft Graph. Required when enable_rs_alerts is true."
+  type        = string
+  default     = ""
+}
+
+variable "rsa_gti_project" {
+  description = "Google Threat Intelligence project ID that RS Alerts queries for alerts. This is a GTI-side project, not necessarily the same as `project_id` (the GCP project hosting this infrastructure) — required when enable_rs_alerts is true."
+  type        = string
+  default     = ""
+}
+
+# Optional RSA tuning (defaults shown)
+variable "rsa_function_name" {
+  description = "Name of the RS Alerts Cloud Run function."
+  type        = string
+  default     = "gti-alerts-fetch"
+}
+
+variable "rsa_schedule" {
+  description = "Cron expression for the Cloud Scheduler job triggering RS Alerts. Default: every 3 minutes (matches the Azure deployment's default cadence)."
+  type        = string
+  default     = "*/3 * * * *"
+}
+
+variable "rsa_schedule_timezone" {
+  description = "Timezone for the Cloud Scheduler job."
+  type        = string
+  default     = "Etc/UTC"
+}
+
+variable "rsa_page_size" {
+  description = "Page size for GTI Alerts API pagination."
+  type        = number
+  default     = 1000
+}
+
+variable "rsa_function_memory" {
+  description = "Memory allocated to the RS Alerts Cloud Run function."
+  type        = string
+  default     = "256Mi"
+}
+
+variable "rsa_function_timeout_seconds" {
+  description = "Execution timeout in seconds for the RS Alerts Cloud Run function."
+  type        = number
+  default     = 540
+}
+
+# Optional RSA alert filters (empty = no filter on that field)
+variable "rsa_filter_severity_level" {
+  description = "Allowed alert severities (comma-separated: LOW,MEDIUM,HIGH). Empty = no filter on this field."
+  type        = string
+  default     = "MEDIUM,HIGH"
+}
+
+variable "rsa_filter_priority_level" {
+  description = "Allowed alert priorities (comma-separated: LOW,MEDIUM,HIGH,CRITICAL). Empty = no filter on this field."
+  type        = string
+  default     = "MEDIUM,HIGH,CRITICAL"
+}
+
+variable "rsa_filter_relevance_level" {
+  description = "Allowed alert relevance levels (comma-separated: LOW,MEDIUM,HIGH). Empty = no filter on this field."
+  type        = string
+  default     = "MEDIUM,HIGH"
+}
+
+variable "rsa_filter_relevance_confidence" {
+  description = "Allowed alert relevance confidences (comma-separated: LOW,MEDIUM,HIGH). Empty = no filter on this field."
+  type        = string
+  default     = "MEDIUM,HIGH"
+}
+
+variable "firestore_state_collection" {
+  description = "Firestore collection used for persisting RS Alerts cursor state."
+  type        = string
+  default     = "rs-alerts-state"
+}
+
+variable "firestore_state_doc" {
+  description = "Firestore document used for persisting RS Alerts cursor state."
+  type        = string
+  default     = "cursor"
+}
+
+variable "labels" {
+  description = "Labels applied to all provisioned GCP resources."
+  type        = map(string)
+  default = {
+    managed-by = "terraform"
+    app        = "gti-team-bot-agentic"
+  }
+}
