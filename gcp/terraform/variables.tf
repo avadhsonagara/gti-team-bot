@@ -5,7 +5,6 @@
 variable "project_id" {
   description = "Google Cloud Project ID where all resources will be created."
   type        = string
-  default     = "gtimsteamaiintegration-3898"
 }
 
 variable "region" {

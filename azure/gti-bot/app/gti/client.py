@@ -10,7 +10,6 @@ Directly connects to the VirusTotal / GTI Agentic Sessions API:
 import asyncio
 import logging
 import random
-import time
 from typing import Any
 
 import httpx
@@ -42,56 +41,12 @@ class GTIServiceError(GTIError):
     """Raised when the GTI service returns a 5xx error or is temporarily unavailable."""
 
 
-class GTIBadRequestError(GTIError):
-    """Raised for a permanent 4xx client error (e.g. malformed request) — not retried."""
+class GTIClientError(GTIError):
+    """Raised for a permanent, non-retryable 4xx error (e.g. malformed request, conflict) other than 401/403/404/429."""
 
 
 class GTITimeoutError(GTIError):
     """Raised when the request to the GTI Agentic API times out."""
-
-
-# ── In-Memory Rate Limiter (Token/Sliding Window) ─────────────────────────────
-
-class AsyncRateLimiter:
-    """
-    Sliding-window in-memory rate limiter to enforce fair-use request caps (e.g. 5 RPM).
-    Smooths bursts of concurrent user queries and avoids hitting HTTP 429.
-    """
-
-    def __init__(self, max_requests: int = 5, window_seconds: float = 60.0) -> None:
-        self.max_requests = max(1, max_requests)
-        self.window_seconds = max(1.0, window_seconds)
-        self._timestamps: list[float] = []
-        self._lock: asyncio.Lock | None = None
-
-    def _get_lock(self) -> asyncio.Lock:
-        if self._lock is None:
-            self._lock = asyncio.Lock()
-        return self._lock
-
-    async def acquire(self) -> None:
-        """Wait until a request slot within the sliding window becomes available."""
-        lock = self._get_lock()
-        while True:
-            async with lock:
-                now = time.time()
-                # Prune timestamps older than window_seconds
-                self._timestamps = [t for t in self._timestamps if now - t < self.window_seconds]
-                if len(self._timestamps) < self.max_requests:
-                    self._timestamps.append(now)
-                    return
-                # Window is full: calculate wait time until oldest timestamp rolls off
-                oldest = self._timestamps[0]
-                wait_seconds = max(0.2, (oldest + self.window_seconds) - now + 0.1)
-
-            logger.info(
-                "[GTI-RATE-LIMIT] 5 req/min threshold reached (%d/%d in %.0fs). Waiting %.1fs for quota window to free a slot...",
-                len(self._timestamps),
-                self.max_requests,
-                self.window_seconds,
-                wait_seconds,
-            )
-            await asyncio.sleep(wait_seconds)
 
 
 # ── GTI Agentic API Client ───────────────────────────────────────────────────
@@ -107,8 +62,6 @@ class GTIAgenticClient:
         max_retries: int | None = None,
         retry_delay: float | None = None,
         rate_limit_retry_delay: float | None = None,
-        max_rpm: int | None = None,
-        rate_limit_window: float | None = None,
     ) -> None:
         self.api_key = api_key or settings.gti_api_key
         self.base_url = (base_url or settings.gti_api_base_url).rstrip("/")
@@ -117,10 +70,6 @@ class GTIAgenticClient:
         self.retry_delay = retry_delay if retry_delay is not None else 2.0
         self.rate_limit_retry_delay = rate_limit_retry_delay if rate_limit_retry_delay is not None else 5.0
         self._client: httpx.AsyncClient | None = None
-        self.rate_limiter = AsyncRateLimiter(
-            max_requests=max_rpm if max_rpm is not None else settings.gti_max_rpm,
-            window_seconds=rate_limit_window if rate_limit_window is not None else settings.gti_rate_limit_window_seconds,
-        )
 
     async def _get_client(self) -> httpx.AsyncClient:
         """Return or lazily initialize the shared httpx.AsyncClient."""
@@ -173,16 +122,6 @@ class GTIAgenticClient:
                 if text_parts:
                     return "\n\n".join(text_parts)
 
-        # Fallback: if no AGENT_FINAL_RESPONSE, check for agent thoughts or generic widget
-        for event in reversed(events):
-            thought = event.get("agent_thought", {})
-            widgets = thought.get("widgets", [])
-            for widget in widgets:
-                if widget.get("widget_type") == "MARKDOWN_TEXT":
-                    md_text = widget.get("markdown_text_widget", {}).get("text")
-                    if md_text:
-                        return md_text.strip()
-
         return "Analysis completed, but no displayable text was generated."
 
     # ── Core Request Runner with Retries ───────────────────────────────────────
@@ -208,9 +147,6 @@ class GTIAgenticClient:
 
         last_exc: Exception | None = None
         for attempt in range(self.max_retries + 1):
-            # 1. Enforce fair-use rate limiting (max 5 requests / 60 seconds) before firing
-            await self.rate_limiter.acquire()
-
             try:
                 logger.info(
                     "[GTI] %s %s (attempt %d/%d)",
@@ -265,8 +201,8 @@ class GTIAgenticClient:
                     raise GTIServiceError(f"GTI service error ({response.status_code}): {response.text}")
 
                 if 400 <= response.status_code < 500:
-                    logger.error("[GTI] Bad request (%d): %s", response.status_code, response.text)
-                    raise GTIBadRequestError(f"GTI API rejected the request ({response.status_code}).")
+                    logger.error("[GTI] Client error (%d): %s", response.status_code, response.text)
+                    raise GTIClientError(f"GTI API rejected the request ({response.status_code}).")
 
                 # Other HTTP errors
                 response.raise_for_status()
@@ -282,7 +218,7 @@ class GTIAgenticClient:
                     continue
                 raise GTITimeoutError(f"GTI request timed out or network failed: {exc}") from exc
 
-            except (GTIAuthenticationError, GTISessionNotFoundError, GTIBadRequestError):
+            except (GTIAuthenticationError, GTISessionNotFoundError, GTIClientError):
                 # Don't retry client-side / permanent errors
                 raise
 
@@ -390,22 +326,6 @@ class GTIAgenticClient:
             method="GET",
             endpoint=endpoint,
         )
-
-    async def delete_session(self, session_id: str) -> bool:
-        """
-        Delete an existing agentic session.
-        """
-        endpoint = f"/agentspace/sessions/{session_id}"
-        try:
-            await self._send_request_with_retries(
-                method="DELETE",
-                endpoint=endpoint,
-            )
-            return True
-        except Exception as exc:
-            logger.warning("[GTI] Failed to delete session %s: %s", session_id, exc)
-            return False
-
 
 # Shared client instance
 gti_client = GTIAgenticClient()

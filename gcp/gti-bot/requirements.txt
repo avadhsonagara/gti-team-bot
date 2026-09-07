@@ -28,9 +28,6 @@ pydantic-settings>=2.0
 # Local development only — load .env file into environment
 python-dotenv>=1.0
 
-# Fast JSON parsing — ~2-5x faster than stdlib json for Adaptive Card responses
-orjson>=3.9
-
 # ASGI server — serves the app directly, both locally and in the container
 uvicorn>=0.29.0
 

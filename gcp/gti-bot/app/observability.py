@@ -25,7 +25,7 @@ def _gcp_project() -> str:
         os.getenv("GCP_PROJECT_ID")
         or os.getenv("GOOGLE_CLOUD_PROJECT")
         or os.getenv("GCP_PROJECT")
-        or "gtimsteamaiintegration-3898"
+        or ""
     )
 
 

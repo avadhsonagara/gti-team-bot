@@ -37,7 +37,7 @@ This is the **Google Threat Intelligence (GTI) Microsoft Teams Agentic Bot** run
 
 | `GTI_API_KEY` | Google Threat Intelligence / VirusTotal API Key | _Required_ |
 | `GTI_API_BASE_URL` | GTI API base URL | `https://www.virustotal.com/api/v3` |
-| `GCP_PROJECT_ID` | Google Cloud Project ID | `gtimsteamaiintegration-3898` |
+| `GCP_PROJECT_ID` | Google Cloud Project ID | `your-gcp-project-id` |
 | `FIRESTORE_DATABASE` | Firestore Database ID | `(default)` |
 | `FIRESTORE_BOT_CONFIG_COLLECTION` | Firestore collection for bot config | `bot-config` |
 | `FIRESTORE_OUTPUT_FORMAT_DOC` | Firestore document for output format | `output-format` |

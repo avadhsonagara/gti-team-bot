@@ -53,7 +53,6 @@ class Settings(BaseSettings):
     # concept for personal/group chats.
     thread_context_enabled: bool = True
     thread_context_message_count: int = 5
-    thread_context_log_file: str = "thread_context.txt"
 
     # ── Server ────────────────────────────────────────────────────────────────
     port: int = 8080

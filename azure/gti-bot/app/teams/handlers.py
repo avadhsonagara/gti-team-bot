@@ -16,7 +16,7 @@ from app.config import settings
 from app.constants import SYSTEM_PROMPT
 from app.gti.client import (
     GTIAuthenticationError,
-    GTIBadRequestError,
+    GTIClientError,
     GTIRateLimitError,
     GTIServiceError,
     GTISessionNotFoundError,
@@ -239,7 +239,7 @@ async def _handle_user_query(
         err_msg = "🔄 **Session Expired**\n\nYour conversation session with the Google Threat Intelligence service has expired. Please start a new query."
         await deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg))
 
-    except GTIBadRequestError as exc:
+    except GTIClientError as exc:
         logger.error("[ERROR] GTI rejected the request: %s", exc)
         err_msg = "🚫 **Request Rejected**\n\nThe Google Threat Intelligence service could not process this query. Try rephrasing your question."
         await deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg))

@@ -185,8 +185,8 @@ resource "google_storage_bucket_object" "rs_alerts_source" {
 # -----------------------------------------------------------------------------
 resource "local_file" "manifest_json" {
   content = jsonencode({
-    "$schema"         = "https://developer.microsoft.com/en-us/json-schemas/teams/v1.25/MicrosoftTeams.schema.json"
-    "manifestVersion" = "1.25"
+    "$schema"         = "https://developer.microsoft.com/en-us/json-schemas/teams/v1.30/MicrosoftTeams.schema.json"
+    "manifestVersion" = "1.30"
     "version"         = "1.0.1"
     "id"              = azuread_application.bot_app.client_id
     "developer" = {

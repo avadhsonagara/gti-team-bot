@@ -1,8 +1,8 @@
 """
 Everything related to Microsoft Teams channel thread context lives here:
 Graph API message fetching, HTML/Adaptive Card text extraction, thread-root
-id parsing, the plain-text history log file, and the top-level orchestrator
-(get_thread_context) called from the message handler.
+id parsing, and the top-level orchestrator (get_thread_context) called from
+the message handler.
 
 Requires the bot's Entra app registration (CLIENT_ID/CLIENT_SECRET/TENANT_ID)
 to be granted the Graph application permission `ChannelMessage.Read.All` with
@@ -14,12 +14,10 @@ group chats. Reading those would need the broader `Chat.Read.All` permission
 instead, which this module does not use.
 """
 import html as html_lib
+import json
 import logging
 import re
-from datetime import datetime, timezone
 from typing import Any, Optional
-
-import orjson
 
 from app.config import settings
 from app.graph.client import GraphError, graph_client
@@ -85,8 +83,8 @@ def extract_attachment_text(attachments: list[dict[str, Any]] | None) -> str:
         if not raw_content or "card.adaptive" not in content_type:
             continue
         try:
-            card = orjson.loads(raw_content) if isinstance(raw_content, str) else raw_content
-        except orjson.JSONDecodeError:
+            card = json.loads(raw_content) if isinstance(raw_content, str) else raw_content
+        except json.JSONDecodeError:
             continue
         card_text = extract_text_from_card(card)
         if card_text:
@@ -201,40 +199,6 @@ def get_team_id(activity) -> str:
     return getattr(team, "aad_group_id", None) or getattr(team, "id", None) or ""
 
 
-# ── Logging ──────────────────────────────────────────────────────────────────
-
-def write_thread_context_log(conversation_id: str, thread_id: str, messages: list[dict]) -> None:
-    """
-    Append the raw fetched thread messages to a plain-text file (separate from
-    the main server log) so thread history can be inspected on its own.
-    Best-effort — a logging failure must never break message handling.
-
-    This writes to local container disk, which is ephemeral and per-instance
-    on Cloud Run — useful for local dev / a quick look on a single running
-    instance, but not a durable or cross-instance log. The real audit trail
-    is the [GRAPH] logger.info() calls below, which reach Cloud Logging.
-    """
-    if not settings.thread_context_log_file:
-        return
-    try:
-        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-        lines = [
-            "=" * 80,
-            f"{timestamp} | conversation={conversation_id} | thread={thread_id}",
-            "=" * 80,
-        ]
-        if messages:
-            for i, msg in enumerate(messages, start=1):
-                lines.append(f"{i}. {msg['author']}: {msg['text']}")
-        else:
-            lines.append("(no messages fetched)")
-        lines.append("")  # blank line between entries
-        with open(settings.thread_context_log_file, "a", encoding="utf-8") as f:
-            f.write("\n".join(lines) + "\n")
-    except Exception:
-        logger.exception("[GRAPH] Failed to write thread context log file.")
-
-
 # ── Orchestration ────────────────────────────────────────────────────────────
 
 async def get_thread_context(activity, scope: str) -> str:
@@ -269,7 +233,6 @@ async def get_thread_context(activity, scope: str) -> str:
         for i, msg in enumerate(messages, start=1):
             preview = msg["text"][:200] + ("..." if len(msg["text"]) > 200 else "")
             logger.info("[GRAPH]   %d. %s: %r", i, msg["author"], preview)
-        write_thread_context_log(activity.conversation.id, thread_id, messages)
         return format_thread_context(messages)
     except GraphError as exc:
         logger.warning("[GRAPH] Thread context fetch failed: %s", exc)

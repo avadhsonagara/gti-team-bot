@@ -37,7 +37,7 @@ class Settings(BaseSettings):
             os.getenv("GCP_PROJECT_ID")
             or os.getenv("GOOGLE_CLOUD_PROJECT")
             or os.getenv("GCP_PROJECT")
-            or "gtimsteamaiintegration-3898"
+            or ""
         )
     )
     firestore_database: str = "(default)"
@@ -56,7 +56,6 @@ class Settings(BaseSettings):
     # Teams has no equivalent thread concept for personal/group chats.
     thread_context_enabled: bool = True
     thread_context_message_count: int = 5
-    thread_context_log_file: str = "thread_context.txt"
 
     # ── Server & Observability ────────────────────────────────────────────────
     port: int = 8080

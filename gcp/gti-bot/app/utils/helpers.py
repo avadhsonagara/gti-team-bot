@@ -1,8 +1,8 @@
+import json
 import logging
 import re
 from typing import Optional
 
-import orjson
 from microsoft_teams.api import MessageActivityInput
 
 logger = logging.getLogger("gti-teams-bot")
@@ -61,8 +61,8 @@ def parse_adaptive_card(raw_text: str | None) -> tuple[Optional[dict], str]:
         text = re.sub(r"^```[a-zA-Z]*\n?", "", text)
         text = re.sub(r"\n?```$", "", text).strip()
     try:
-        data = orjson.loads(text)
-    except orjson.JSONDecodeError:
+        data = json.loads(text)
+    except json.JSONDecodeError:
         return None, raw_text or "No response generated."
 
     if isinstance(data, dict) and data.get("type") == "AdaptiveCard" and isinstance(data.get("body"), list) and data["body"]:

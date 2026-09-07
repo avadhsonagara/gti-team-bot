@@ -31,7 +31,7 @@ RS Alerts is a background worker that polls the **Google Threat Intelligence (GT
 | `FILTER_PRIORITY_LEVEL` | Allowed priorities (comma-separated: `LOW,MEDIUM,HIGH,CRITICAL`) | `MEDIUM,HIGH,CRITICAL` |
 | `FILTER_RELEVANCE_LEVEL` | Allowed relevance levels (comma-separated: `LOW,MEDIUM,HIGH`) | `MEDIUM,HIGH` |
 | `FILTER_RELEVANCE_CONFIDENCE` | Allowed confidence levels (comma-separated: `LOW,MEDIUM,HIGH`) | `MEDIUM,HIGH` |
-| `GCP_PROJECT_ID` | Google Cloud Project ID | `gtimsteamaiintegration-3898` |
+| `GCP_PROJECT_ID` | Google Cloud Project ID | `your-gcp-project-id` |
 | `FIRESTORE_DATABASE` | Firestore Database ID | `(default)` |
 | `FIRESTORE_STATE_COLLECTION` | Firestore collection for state storage | `rs-alerts-state` |
 | `FIRESTORE_STATE_DOC` | Firestore document for alert cursor | `cursor` |
