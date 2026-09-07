@@ -34,6 +34,7 @@ from app.teams.thread import get_session_key, get_team_id, get_thread_context
 from app.utils.helpers import (
     EMPTY_QUERY_NOTICE,
     build_custom_format_section,
+    build_thread_context_section,
     deliver_message,
     parse_adaptive_card,
     strip_mentions,
@@ -42,12 +43,13 @@ from app.utils.helpers import (
 logger = logging.getLogger("gti-teams-bot")
 
 
-def _render_system_prompt(user_query: str, output_format: str = "") -> str:
-    """Render the system prompt with user query, dynamic UTC timestamp, and output format."""
+def _render_system_prompt(user_query: str, thread_context: str = "", output_format: str = "") -> str:
+    """Render the system prompt with user query, thread context, dynamic UTC timestamp, and output format."""
     if not SYSTEM_PROMPT:
         return user_query
     now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
     prompt = SYSTEM_PROMPT.replace("{{CURRENT_DATETIME_UTC}}", now_utc)
+    prompt = prompt.replace("{{THREAD_CONTEXT}}", build_thread_context_section(thread_context))
     prompt = prompt.replace("{{CUSTOM_FORMAT}}", build_custom_format_section(output_format))
     if "{{USER_QUERY}}" in prompt:
         prompt = prompt.replace("{{USER_QUERY}}", user_query)
@@ -155,14 +157,10 @@ async def _handle_user_query(
         # ── Step 3: Query GTI Agentic Sessions API (create or continue session) ──
         output_format = await get_output_format(settings)
         if thread_context:
-            logger.info("[THREAD] Prepending channel thread context to query:\n%s", thread_context)
-            contextual_query = (
-                f"Recent messages in this Teams thread (oldest first):\n{thread_context}\n\n"
-                f"User query:\n{user_text}"
-            )
-        else:
-            contextual_query = user_text
-        initial_msg = _render_system_prompt(user_query=contextual_query, output_format=output_format)
+            logger.info("[THREAD] Injecting channel thread context into prompt:\n%s", thread_context)
+        initial_msg = _render_system_prompt(
+            user_query=user_text, thread_context=thread_context, output_format=output_format,
+        )
 
         # Session continuity only applies to channel threads (one GTI session
         # per thread) — personal and group chats always start a fresh

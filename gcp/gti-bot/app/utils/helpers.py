@@ -95,6 +95,25 @@ def build_custom_format_section(output_format: str) -> str:
     )
 
 
+def build_thread_context_section(thread_context: str) -> str:
+    """
+    Wrap the fetched Teams thread history for injection into the prompt.
+
+    Returns an empty string when there is no prior thread context (personal/group
+    chats, or the first message in a channel thread), so the {{THREAD_CONTEXT}}
+    placeholder disappears rather than leaving a dangling section.
+    """
+    if not thread_context.strip():
+        return ""
+    return (
+        "## CONVERSATION CONTEXT\n\n"
+        "Recent messages in this Teams thread, oldest first "
+        "(for resolving follow-ups and pronouns):\n"
+        f"{thread_context.strip()}\n\n"
+        "---\n\n"
+    )
+
+
 # ── Standard User Notices ─────────────────────────────────────────────────────
 
 EMPTY_QUERY_NOTICE = (
