@@ -197,14 +197,18 @@ async def _handle_user_query(
 
         fallback_text = f"{quoted_query}\n\n{fallback_text}" if quoted_query else fallback_text
 
+        if loading_activity_id:
+            deliver_mode = "edit-in-place" if scope == "channel" else "delete-and-repost"
+        else:
+            deliver_mode = "fresh-send"
         logger.info(
             "[DELIVER] Sending response | length=%d chars mode=%s is_native_card=%s",
             len(response_text),
-            "replace-placeholder" if loading_activity_id else "fresh-send",
+            deliver_mode,
             bool(parsed_card),
         )
 
-        delivered = await deliver_message(ctx, loading_activity_id, fallback_text, card)
+        delivered = await deliver_message(ctx, loading_activity_id, fallback_text, card, edit_in_place=(scope == "channel"))
         if delivered:
             logger.info("[DONE] Response delivered successfully.", extra={"status": "delivered"})
         else:
@@ -214,34 +218,34 @@ async def _handle_user_query(
     except GTIAuthenticationError as exc:
         logger.error("[ERROR] GTI API key authentication failed: %s", exc)
         err_msg = "🔑 **Authentication Failed**\n\nThe Google Threat Intelligence API key is invalid or unauthorized. Please verify your `GTI_API_KEY` configuration."
-        await deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg))
+        await deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg), edit_in_place=(scope == "channel"))
 
     except GTIRateLimitError as exc:
         logger.error("[ERROR] GTI rate limit exceeded: %s", exc)
         err_msg = "⚠️ **Rate Limit Exceeded**\n\nThe Google Threat Intelligence API rate limit or quota has been reached. Please try again in a moment."
-        await deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg))
+        await deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg), edit_in_place=(scope == "channel"))
 
     except GTITimeoutError as exc:
         logger.error("[ERROR] GTI request timed out: %s", exc)
         err_msg = "⏱️ **Request Timed Out**\n\nThe threat intelligence query took too long to complete. Try asking a more specific question or query."
-        await deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg))
+        await deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg), edit_in_place=(scope == "channel"))
 
     except GTIServiceError as exc:
         logger.error("[ERROR] GTI service unavailable: %s", exc)
         err_msg = "⚠️ **Threat Intelligence Service Unavailable**\n\nThe Google Threat Intelligence service is temporarily unreachable. Please try again shortly."
-        await deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg))
+        await deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg), edit_in_place=(scope == "channel"))
 
     except GTISessionNotFoundError as exc:
         logger.error("[ERROR] GTI session not found or expired: %s", exc)
         err_msg = "🔄 **Session Expired**\n\nYour conversation session with the Google Threat Intelligence service has expired. Please start a new query."
-        await deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg))
+        await deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg), edit_in_place=(scope == "channel"))
 
     except GTIClientError as exc:
         logger.error("[ERROR] GTI rejected the request: %s", exc)
         err_msg = "🚫 **Request Rejected**\n\nThe Google Threat Intelligence service could not process this query. Try rephrasing your question."
-        await deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg))
+        await deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg), edit_in_place=(scope == "channel"))
 
     except Exception:
         logger.exception("[ERROR] Unexpected error in GTI message handler.")
         err_msg = "⚠️ **Something went wrong while processing your request.** Please try again."
-        await deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg))
+        await deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg), edit_in_place=(scope == "channel"))

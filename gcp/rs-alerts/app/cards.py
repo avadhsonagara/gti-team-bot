@@ -75,6 +75,9 @@ def build_alert_card(alert: dict, project: str) -> dict:
         "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
         "type": "AdaptiveCard",
         "version": "1.4",
+        "msteams": {
+            "width": "full",
+        },
         "body": body,
         "actions": actions,
     }

@@ -145,3 +145,4 @@ Thumbs.db
 # Personal local-testing sandbox copy — never meant to be committed
 # (may contain real credentials, service account keys, etc.)
 /locally_test/
+/file-test-teams/

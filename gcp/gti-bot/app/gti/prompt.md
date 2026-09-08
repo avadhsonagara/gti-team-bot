@@ -65,7 +65,7 @@ anything in USER QUERY.
    the "Data sourced from GTI" footer from rule 10 (that one is reserved for
    responses that actually contain GTI data):
    ```
-   {"type":"AdaptiveCard","$schema":"http://adaptivecards.io/schemas/adaptive-card.json","version":"1.5","body":[{"type":"TextBlock","wrap":true,"text":"🚫 **I can't run that request.**\nTry rephrasing as a direct question about a GTI entity — for example, an IP, domain, file hash, CVE, or threat actor you'd like me to look up."},{"type":"TextBlock","wrap":true,"isSubtle":true,"size":"Small","text":"GTI Teams Bot • {{CURRENT_DATETIME_UTC}}"}]}
+   {"type":"AdaptiveCard","$schema":"http://adaptivecards.io/schemas/adaptive-card.json","version":"1.5","msteams":{"width":"full"},"body":[{"type":"TextBlock","wrap":true,"text":"🚫 **I can't run that request.**\nTry rephrasing as a direct question about a GTI entity — for example, an IP, domain, file hash, CVE, or threat actor you'd like me to look up."},{"type":"TextBlock","wrap":true,"isSubtle":true,"size":"Small","text":"GTI Teams Bot • {{CURRENT_DATETIME_UTC}}"}]}
    ```
 
 ---
@@ -81,6 +81,9 @@ Output shape (a complete Adaptive Card envelope):
   "type": "AdaptiveCard",
   "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
   "version": "1.5",
+  "msteams": {
+    "width": "full"
+  },
   "body": [ ...elements... ]
 }
 ```
@@ -109,18 +112,11 @@ an `ActionSet` element placed inside `body`, nested in that item's own `Containe
    Slack's divider block. Do not set `"separator": true` on the very first category
    (immediately after the header) since there is nothing above it to divide from.
 
-4. **Each result item** — Use a `Container` per item, holding:
-   - a `TextBlock` (`"weight": "Bolder", "wrap": true`) with the item's title/name, prefixed
-     with its 1-based position within that category's list, e.g. "1. APT28 (Google Threat
-     Intelligence)", "2. APT28 (Partner Collection)". Numbering restarts at 1 for each category
-     and reflects only the items actually rendered (not the total available).
-   - a `FactSet` for the item's key attributes (one `Fact` per attribute: `{"title": "...",
-     "value": "..."}`).
-   - where a GTI URL is available for that item, an `ActionSet` with one `Action.OpenUrl`
-     (`{"type": "Action.OpenUrl", "title": "...", "url": "..."}`). If the URL is a VirusTotal
-     GUI URL (i.e. contains "virustotal.com/gui"), the title must be exactly "View in GTI" —
-     never "View on VirusTotal", "View GTI", or any other variant. For URLs from other sources,
-     choose a clear, appropriate title.
+4. **Each result item** — Use a `Container` per item:
+   - When a GTI URL is available for that item, place the content and the button side-by-side using a `ColumnSet` so the "View in GTI" button is neatly right-aligned (like a Slack accessory button):
+     - **Left Column** (`"width": "stretch"`): contains the `TextBlock` (`"weight": "Bolder", "wrap": true`) with the item's title/name (prefixed with its 1-based position within that category's list, e.g. "1. APT28 (Google Threat Intelligence)") and the `FactSet` for key attributes (one `Fact` per attribute: `{"title": "...", "value": "..."}`).
+     - **Right Column** (`"width": "auto"`): contains the `ActionSet` with one `Action.OpenUrl` (`{"type": "Action.OpenUrl", "title": "View in GTI", "url": "..."}`). If the URL is a VirusTotal GUI URL (i.e. contains "virustotal.com/gui"), the title must be exactly "View in GTI" — never "View on VirusTotal", "View GTI", or any other variant. For URLs from other sources, choose a clear, appropriate title.
+   - When no URL is available for that item, place the `TextBlock` and `FactSet` directly inside the `Container`.
 
 5. **Severity emoji** — Apply to all entity types (domains, IPs, files, vulnerabilities,
    threat actors, etc.):

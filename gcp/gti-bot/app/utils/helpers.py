@@ -66,6 +66,7 @@ def parse_adaptive_card(raw_text: str | None) -> tuple[Optional[dict], str]:
         return None, raw_text or "No response generated."
 
     if isinstance(data, dict) and data.get("type") == "AdaptiveCard" and isinstance(data.get("body"), list) and data["body"]:
+        data.setdefault("msteams", {})["width"] = "full"
         return data, extract_text_from_card(data) or "GTI report"
 
     logger.warning("[PARSE] Model returned JSON without a valid AdaptiveCard shape — delivering raw text")
@@ -154,47 +155,75 @@ async def deliver_message(
     loading_activity_id: Optional[str],
     text: str,
     card: Optional[dict] = None,
+    edit_in_place: bool = False,
 ) -> bool:
     """
     Send a response message to the Teams user.
 
-    If loading_activity_id is provided, deletes the temporary placeholder first,
-    then sends the final message as a fresh activity to avoid the Teams 'Edited' tag.
+    If loading_activity_id is provided:
+      - edit_in_place=True: updates that placeholder activity in place with
+        the final message. Used for channel threads, where deleting a
+        message leaves a "This message has been deleted." tombstone visible
+        to the whole channel — updating it instead only adds a small
+        "(Edited)" label.
+      - edit_in_place=False (default): deletes the placeholder first, then
+        sends the final message as a fresh activity, avoiding the "Edited"
+        tag entirely. Used for personal/group chats, where a deleted
+        message leaves no trace anyway.
     """
     conversation_id = ctx.activity.conversation.id
+    activities = ctx.api.conversations.activities(conversation_id)
 
-    if loading_activity_id:
+    if loading_activity_id and not edit_in_place:
         try:
-            await ctx.api.conversations.activities(conversation_id).delete(loading_activity_id)
+            await activities.delete(loading_activity_id)
         except Exception as exc:
             logger.warning("[DELIVER] Could not delete placeholder message (%s); proceeding with fresh send.", exc)
 
-    async def _send_card(payload_card: dict) -> None:
-        activity = MessageActivityInput().add_card(payload_card)
-        await ctx.send(activity)
-
-    async def _send_text(payload_text: str) -> None:
-        await ctx.send(payload_text)
+    async def _deliver(activity: MessageActivityInput) -> None:
+        if loading_activity_id and edit_in_place:
+            await activities.update(loading_activity_id, activity)
+        else:
+            await ctx.send(activity)
 
     # Attempt 1: Deliver Adaptive Card if provided
     if card:
         try:
-            await _send_card(card)
+            if isinstance(card, dict):
+                from app.teams.cards import align_card_actions_to_right
+                card.setdefault("msteams", {})["width"] = "full"
+                card = align_card_actions_to_right(card)
+            await _deliver(MessageActivityInput().add_card(card))
             return True
         except Exception as exc:
             logger.warning("[DELIVER] Teams rejected Adaptive Card (%s); retrying as plain text.", exc)
 
     # Attempt 2: Deliver plain text
     try:
-        await _send_text(text)
+        await _deliver(MessageActivityInput(text=text))
         return True
     except Exception as exc2:
         logger.error("[DELIVER] Teams rejected plain-text delivery (%s); sending fallback notice.", exc2)
 
         notice = LARGE_QUERY_NOTICE if _looks_like_size_limit_error(exc2) else GENERIC_DELIVERY_FAILURE_NOTICE
         try:
-            await _send_text(notice)
+            await _deliver(MessageActivityInput(text=notice))
             return True
         except Exception as exc3:
             logger.error("[DELIVER] Failed to deliver fallback notice: %s", exc3)
+
+            # Placeholder updates can fail (e.g. an activity too old to edit)
+            # in ways a fresh send wouldn't — don't leave the "Looking into
+            # that…" placeholder stuck forever; fall back to delete + send.
+            if loading_activity_id and edit_in_place:
+                try:
+                    await activities.delete(loading_activity_id)
+                except Exception:
+                    pass
+                try:
+                    await ctx.send(MessageActivityInput(text=notice))
+                    return True
+                except Exception as exc4:
+                    logger.error("[DELIVER] Fallback delete+send also failed: %s", exc4)
+
             return False
