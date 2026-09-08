@@ -11,12 +11,16 @@ one backs an async app, so token acquisition and HTTP calls are async here).
 Either identity must be granted the Graph APPLICATION permission
 `ChannelMessage.Read.All` with tenant-admin consent — separate from the Bot
 Framework permissions already in use.
+
+Uses `requests` (synchronous) rather than an async HTTP client — every call
+is offloaded to a thread via asyncio.to_thread() so it can't block the
+single shared event loop this app runs on.
 """
 import asyncio
 import logging
 import time
 
-import httpx
+import requests
 from azure.identity import ManagedIdentityCredential
 
 from app.config import settings
@@ -33,7 +37,7 @@ class GraphError(Exception):
 
 
 class GraphClient:
-    """Async client for app-only Microsoft Graph calls."""
+    """Async-facing client for app-only Microsoft Graph calls."""
 
     def __init__(
         self,
@@ -48,19 +52,19 @@ class GraphClient:
         self.tenant_id = tenant_id or settings.tenant_id
         self.managed_identity_client_id = managed_identity_client_id or settings.managed_identity_client_id
         self.timeout = timeout
-        self._client: httpx.AsyncClient | None = None
+        self._session: requests.Session | None = None
         self._token: str | None = None
         self._token_expires_at: float = 0.0
 
-    async def _get_client(self) -> httpx.AsyncClient:
-        if self._client is None or self._client.is_closed:
-            self._client = httpx.AsyncClient(timeout=httpx.Timeout(self.timeout))
-        return self._client
+    def _get_session(self) -> requests.Session:
+        if self._session is None:
+            self._session = requests.Session()
+        return self._session
 
     async def close(self) -> None:
-        if self._client and not self._client.is_closed:
-            await self._client.aclose()
-            self._client = None
+        if self._session is not None:
+            await asyncio.to_thread(self._session.close)
+            self._session = None
 
     # ── Auth ─────────────────────────────────────────────────────────────────
 
@@ -97,7 +101,7 @@ class GraphClient:
                 "MANAGED_IDENTITY_CLIENT_ID or CLIENT_ID + CLIENT_SECRET + TENANT_ID."
             )
 
-        client = await self._get_client()
+        session = self._get_session()
         url = _TOKEN_URL_TMPL.format(tenant_id=self.tenant_id)
         data = {
             "grant_type": "client_credentials",
@@ -105,7 +109,7 @@ class GraphClient:
             "client_secret": self.client_secret,
             "scope": _GRAPH_SCOPE,
         }
-        response = await client.post(url, data=data)
+        response = await asyncio.to_thread(session.post, url, data=data, timeout=self.timeout)
         if response.status_code != 200:
             raise GraphError(f"Graph token request failed ({response.status_code}): {response.text}")
 

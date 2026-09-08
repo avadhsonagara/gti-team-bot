@@ -6,13 +6,17 @@ Directly connects to the VirusTotal / GTI Agentic Sessions API:
   - Post message to session: POST /agentspace/sessions/{session_id}
   - Get session details: GET /agentspace/sessions/{session_id}
   - Delete session: DELETE /agentspace/sessions/{session_id}
+
+Uses `requests` (synchronous) rather than an async HTTP client — every
+network call is offloaded to a thread via asyncio.to_thread() so it can't
+block the single shared event loop this app runs on.
 """
 import asyncio
 import logging
 import random
 from typing import Any
 
-import httpx
+import requests
 
 from app.config import settings
 
@@ -56,7 +60,7 @@ class GTITimeoutError(GTIError):
 # ── GTI Agentic API Client ───────────────────────────────────────────────────
 
 class GTIAgenticClient:
-    """Async client for the Google Threat Intelligence Agentic API."""
+    """Async-facing client for the Google Threat Intelligence Agentic API."""
 
     def __init__(
         self,
@@ -73,27 +77,23 @@ class GTIAgenticClient:
         self.max_retries = max_retries if max_retries is not None else 3
         self.retry_delay = retry_delay if retry_delay is not None else 2.0
         self.rate_limit_retry_delay = rate_limit_retry_delay if rate_limit_retry_delay is not None else 5.0
-        self._client: httpx.AsyncClient | None = None
+        self._session: requests.Session | None = None
 
-    async def _get_client(self) -> httpx.AsyncClient:
-        """Return or lazily initialize the shared httpx.AsyncClient."""
-        if self._client is None or self._client.is_closed:
-            self._client = httpx.AsyncClient(
-                base_url=self.base_url,
-                timeout=httpx.Timeout(self.timeout, connect=15.0),
-                headers={
-                    "x-apikey": self.api_key,
-                    "User-Agent": "gti-teams-bot-agentic-gcp/1.0",
-                },
-                follow_redirects=True,
-            )
-        return self._client
+    def _get_session(self) -> requests.Session:
+        """Return or lazily initialize the shared requests.Session."""
+        if self._session is None:
+            self._session = requests.Session()
+            self._session.headers.update({
+                "x-apikey": self.api_key,
+                "User-Agent": "gti-teams-bot-agentic-gcp/1.0",
+            })
+        return self._session
 
     async def close(self) -> None:
-        """Close the underlying HTTP client."""
-        if self._client and not self._client.is_closed:
-            await self._client.aclose()
-            self._client = None
+        """Close the underlying HTTP session."""
+        if self._session is not None:
+            await asyncio.to_thread(self._session.close)
+            self._session = None
 
     # ── Response Text Extraction ──────────────────────────────────────────────
 
@@ -146,8 +146,8 @@ class GTIAgenticClient:
                 "GTI_API_KEY is missing. Please configure your API key in Secret Manager, .env, or environment."
             )
 
-        client = await self._get_client()
-        url = endpoint
+        session = self._get_session()
+        url = f"{self.base_url}{endpoint}"
 
         last_exc: Exception | None = None
         for attempt in range(self.max_retries + 1):
@@ -156,11 +156,13 @@ class GTIAgenticClient:
                     "[GTI] %s %s (attempt %d/%d)",
                     method, endpoint, attempt + 1, self.max_retries + 1,
                 )
-                response = await client.request(
-                    method=method,
-                    url=url,
+                response = await asyncio.to_thread(
+                    session.request,
+                    method,
+                    url,
                     files=files,
                     data=data,
+                    timeout=(15.0, self.timeout),
                 )
 
                 if response.status_code == 200:
@@ -216,7 +218,7 @@ class GTIAgenticClient:
                 response.raise_for_status()
                 return response.json()
 
-            except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout) as exc:
+            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as exc:
                 logger.warning("[GTI] Connection/timeout error: %s", exc)
                 last_exc = exc
                 if attempt < self.max_retries:

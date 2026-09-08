@@ -10,9 +10,16 @@ Two distinct download paths per the Bot Framework attachment schema:
     it's a foreign host outside the Bot Framework Connector.
   - Anything else with a `content_url` (e.g. inline/pasted images,
     `image/*`): the bytes live behind `content_url`, a protected Bot
-    Framework Connector endpoint that requires the bot's own token.
-    Reusing `ctx.api.http` (the SDK's own authenticated client) attaches
-    that token automatically instead of us handling it manually.
+    Framework Connector endpoint that requires the bot's own token. The
+    token is resolved the same way the SDK resolves it for every other
+    Connector call (`ctx.api.http`'s own token source) and attached here
+    manually as an Authorization header.
+
+Uses `requests`, same as this app's other HTTP clients (gti/client.py,
+graph/client.py). requests is synchronous, so each download runs via
+asyncio.to_thread() to avoid blocking the single shared event loop — see
+bot.py's _patch_token_validator_for_async_jwks() for why a blocking call
+anywhere in a message handler is a real problem here, not a theoretical one.
 
 Attachments Teams adds for its own message rendering (HTML previews,
 Adaptive/Hero/Thumbnail cards) are filtered out — they aren't user files.
@@ -20,22 +27,31 @@ Adaptive/Hero/Thumbnail cards) are filtered out — they aren't user files.
 Only called for channel and group-chat scopes — see handle_message() in
 handlers.py for why personal (1:1) messages don't go through this path.
 """
+import asyncio
 import logging
+from typing import Optional
 
-import httpx
+import requests
 
 logger = logging.getLogger("gti-teams-bot")
 
 _FILE_DOWNLOAD_INFO = "application/vnd.microsoft.teams.file.download.info"
 _NON_FILE_PREFIXES = ("text/html", "application/vnd.microsoft.card.")
 
-_DOWNLOAD_TIMEOUT = httpx.Timeout(30.0, connect=10.0)
+_DOWNLOAD_TIMEOUT = (10.0, 30.0)  # (connect, read) seconds
 
 
 def _is_user_file(content_type: str) -> bool:
     if not content_type:
         return False
     return not content_type.startswith(_NON_FILE_PREFIXES)
+
+
+def _download(url: str, headers: Optional[dict[str, str]] = None) -> bytes:
+    """Blocking GET — always run via asyncio.to_thread(), never awaited directly."""
+    resp = requests.get(url, headers=headers, timeout=_DOWNLOAD_TIMEOUT)
+    resp.raise_for_status()
+    return resp.content
 
 
 async def download_attachments(ctx) -> list[tuple[str, bytes, str]]:
@@ -49,35 +65,33 @@ async def download_attachments(ctx) -> list[tuple[str, bytes, str]]:
     attachments = getattr(ctx.activity, "attachments", None) or []
     results: list[tuple[str, bytes, str]] = []
 
-    async with httpx.AsyncClient(follow_redirects=True) as anon_client:
-        for attachment in attachments:
-            content_type = attachment.content_type or ""
-            if not _is_user_file(content_type):
-                continue
-            name = attachment.name or "file"
+    for attachment in attachments:
+        content_type = attachment.content_type or ""
+        if not _is_user_file(content_type):
+            continue
+        name = attachment.name or "file"
 
-            try:
-                if content_type == _FILE_DOWNLOAD_INFO:
-                    info = attachment.content or {}
-                    download_url = info.get("downloadUrl") if isinstance(info, dict) else None
-                    if not download_url:
-                        logger.warning("[ATTACHMENT] %r has no downloadUrl — skipping", name)
-                        continue
-                    resp = await anon_client.get(download_url, timeout=_DOWNLOAD_TIMEOUT)
-                    resp.raise_for_status()
-                    data = resp.content
-                    mime = "application/octet-stream"
-                elif attachment.content_url:
-                    resp = await ctx.api.http.get(attachment.content_url, timeout=_DOWNLOAD_TIMEOUT)
-                    data = resp.content
-                    mime = content_type or "application/octet-stream"
-                else:
+        try:
+            if content_type == _FILE_DOWNLOAD_INFO:
+                info = attachment.content or {}
+                download_url = info.get("downloadUrl") if isinstance(info, dict) else None
+                if not download_url:
+                    logger.warning("[ATTACHMENT] %r has no downloadUrl — skipping", name)
                     continue
+                data = await asyncio.to_thread(_download, download_url)
+                mime = "application/octet-stream"
+            elif attachment.content_url:
+                bot_token = await ctx.api.http._resolve_token(None)
+                headers = {"Authorization": f"Bearer {bot_token}"} if bot_token else None
+                data = await asyncio.to_thread(_download, attachment.content_url, headers)
+                mime = content_type or "application/octet-stream"
+            else:
+                continue
 
-                logger.info("[ATTACHMENT] Downloaded %r (%d bytes, %s)", name, len(data), mime)
-                results.append((name, data, mime))
+            logger.info("[ATTACHMENT] Downloaded %r (%d bytes, %s)", name, len(data), mime)
+            results.append((name, data, mime))
 
-            except Exception:
-                logger.exception("[ATTACHMENT] Failed to download %r (content_type=%s)", name, content_type)
+        except Exception:
+            logger.exception("[ATTACHMENT] Failed to download %r (content_type=%s)", name, content_type)
 
     return results

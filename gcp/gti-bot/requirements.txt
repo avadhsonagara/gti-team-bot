@@ -7,8 +7,11 @@
 # https://microsoft.github.io/teams-sdk/python/
 microsoft-teams-apps>=1.0
 
-# HTTP client for Google Threat Intelligence (GTI) Agentic REST API
-httpx>=0.27,<1.0
+# HTTP client for the GTI Agentic API, Microsoft Graph, and Teams message
+# attachment downloads (app/gti/client.py, app/graph/client.py,
+# app/teams/attachments.py). Synchronous — every call is offloaded to a
+# thread via asyncio.to_thread() so it can't block the shared event loop.
+requests>=2.31.0
 
 # FastAPI — Web framework for endpoints and lifecycle management
 fastapi>=0.110

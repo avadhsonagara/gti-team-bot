@@ -12,8 +12,7 @@ from app.observability import RequestContextFilter
 _LIBRARY_TAG_PREFIXES = (
     ("gti-teams-bot", ""),
     ("microsoft_teams", "[TEAMS]"),
-    ("httpx", "[HTTP]"),
-    ("httpcore", "[HTTP]"),
+    ("urllib3", "[HTTP]"),
     ("azure.storage", "[STORAGE]"),
     ("azure.core", "[AZURE]"),
     ("azure.identity", "[AUTH]"),
@@ -21,7 +20,7 @@ _LIBRARY_TAG_PREFIXES = (
 
 
 def _tag_for_logger(name: str) -> str:
-    """Bracket tag for a logger name, e.g. 'httpx' -> '[HTTP]'."""
+    """Bracket tag for a logger name, e.g. 'urllib3' -> '[HTTP]'."""
     for prefix, tag in _LIBRARY_TAG_PREFIXES:
         if name == prefix or name.startswith(prefix + "."):
             return tag

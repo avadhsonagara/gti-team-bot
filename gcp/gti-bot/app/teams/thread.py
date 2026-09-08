@@ -13,6 +13,7 @@ Channel-only: Teams has no thread/reply-chain concept for personal (1:1) or
 group chats. Reading those would need the broader `Chat.Read.All` permission
 instead, which this module does not use.
 """
+import asyncio
 import html as html_lib
 import json
 import logging
@@ -114,13 +115,13 @@ async def fetch_thread_messages(
     drops off just like any older message.
     """
     token = await graph_client._get_token()
-    client = await graph_client._get_client()
+    session = graph_client._get_session()
     headers = {"Authorization": f"Bearer {token}"}
 
     messages: list[dict[str, Any]] = []
 
     root_url = f"{_GRAPH_BASE_URL}/teams/{team_id}/channels/{channel_id}/messages/{thread_id}"
-    root_resp = await client.get(root_url, headers=headers)
+    root_resp = await asyncio.to_thread(session.get, root_url, headers=headers)
     if root_resp.status_code == 200:
         messages.append(root_resp.json())
     elif root_resp.status_code == 404:
@@ -134,7 +135,7 @@ async def fetch_thread_messages(
     # Cap pagination — a channel thread context window only needs the tail.
     pages_fetched = 0
     while replies_url and pages_fetched < 5:
-        resp = await client.get(replies_url, headers=headers)
+        resp = await asyncio.to_thread(session.get, replies_url, headers=headers)
         if resp.status_code != 200:
             raise GraphError(f"Graph replies fetch failed ({resp.status_code}): {resp.text}")
         payload = resp.json()
