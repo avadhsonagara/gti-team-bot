@@ -42,7 +42,11 @@ class GTIServiceError(GTIError):
 
 
 class GTIClientError(GTIError):
-    """Raised for a permanent, non-retryable 4xx error (e.g. malformed request, conflict) other than 401/403/404/429."""
+    """Raised for a permanent, non-retryable 4xx error (e.g. malformed request, conflict) other than 401/403/404/413/429."""
+
+
+class GTIPayloadTooLargeError(GTIClientError):
+    """Raised when the request body (typically attached files) exceeds the GTI API's size limit (HTTP 413)."""
 
 
 class GTITimeoutError(GTIError):
@@ -169,6 +173,10 @@ class GTIAgenticClient:
                 if response.status_code == 404:
                     logger.warning("[GTI] Session not found (%d): %s", response.status_code, response.text)
                     raise GTISessionNotFoundError(f"Session not found or expired ({response.status_code}).")
+
+                if response.status_code == 413:
+                    logger.warning("[GTI] Payload too large (413): %s", response.text)
+                    raise GTIPayloadTooLargeError(f"Request payload too large ({response.status_code}).")
 
                 if response.status_code == 429:
                     logger.warning("[GTI] Rate limit / quota exceeded (429): %s", response.text)

@@ -16,6 +16,7 @@ from app.constants import SYSTEM_PROMPT
 from app.gti.client import (
     GTIAuthenticationError,
     GTIClientError,
+    GTIPayloadTooLargeError,
     GTIRateLimitError,
     GTIServiceError,
     GTISessionNotFoundError,
@@ -25,6 +26,7 @@ from app.gti.client import (
 from app.gti.session_store import get_session_id, set_session_id
 from app.observability import bind_request, clear_request
 from app.output_format_store import get_output_format
+from app.teams.attachments import download_attachments
 from app.teams.cards import (
     build_gti_response_card,
     build_status_card,
@@ -95,12 +97,18 @@ async def handle_message(ctx) -> None:
         bind_request(tenant=tenant_id)
 
     try:
+        scope = _get_conversation_scope(activity)
+        # File/image attachments are only forwarded to GTI in channel and
+        # group chats — see download_attachments()'s docstring for why 1:1
+        # personal chats are intentionally excluded.
+        attachments = await download_attachments(ctx) if scope in ("channel", "groupChat") else []
+
         if not user_text or not re.search(r"\w", user_text, re.UNICODE):
             logger.info("[EVENT] Message with no meaningful query — replying with usage hint.")
             await deliver_message(ctx, None, EMPTY_QUERY_NOTICE, build_status_card(EMPTY_QUERY_NOTICE))
             return
 
-        await _handle_user_query(ctx, user_text, tenant_id, conversation_id)
+        await _handle_user_query(ctx, user_text, tenant_id, conversation_id, scope, attachments)
     finally:
         clear_request()
 
@@ -112,6 +120,8 @@ async def _handle_user_query(
     user_text: str,
     tenant_id: str,
     conversation_id: str,
+    scope: str,
+    attachments: Optional[list[tuple[str, bytes, str]]] = None,
 ) -> None:
     """
     Process a GTI query end-to-end:
@@ -121,7 +131,7 @@ async def _handle_user_query(
       4. Format and deliver response as Adaptive Card
     """
     loading_activity_id: Optional[str] = None
-    scope = _get_conversation_scope(ctx.activity)
+    attachments = attachments or []
     # Channel messages already show the original post inline (and, for thread
     # replies, Teams renders the reply-to preview itself) — the quoted-query
     # blockquote is only useful in personal/group chats, which have neither.
@@ -135,7 +145,7 @@ async def _handle_user_query(
         preview = user_text[:80] + ("..." if len(user_text) > 80 else "")
         logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
         logger.info("[EVENT] conversation=%s scope=%s", conversation_id, scope)
-        logger.info("[EVENT] query=%r", preview)
+        logger.info("[EVENT] query=%r attachments=%d", preview, len(attachments))
 
         # ── Step 1: Fetch channel thread context (before posting anything —
         # otherwise our own placeholder reply gets read right back as "history") ──
@@ -179,7 +189,7 @@ async def _handle_user_query(
             conversation_id, session_key or "-", team_id or "-", "continue" if existing_session_id else "new",
         )
         session_id, response_text, _ = await gti_client.send_message(
-            message=initial_msg, session_id=existing_session_id,
+            message=initial_msg, session_id=existing_session_id, files=attachments,
         )
         bind_request(session_id=session_id)
         if session_key:
@@ -238,6 +248,15 @@ async def _handle_user_query(
     except GTISessionNotFoundError as exc:
         logger.error("[ERROR] GTI session not found or expired: %s", exc)
         err_msg = "🔄 **Session Expired**\n\nYour conversation session with the Google Threat Intelligence service has expired. Please start a new query."
+        await deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg), edit_in_place=(scope == "channel"))
+
+    except GTIPayloadTooLargeError as exc:
+        logger.error("[ERROR] GTI rejected the request — payload too large: %s", exc)
+        err_msg = (
+            "📁 **File Too Large**\n\n"
+            "The attached file(s) exceed the maximum size the Google Threat Intelligence "
+            "service accepts. Please try again with a smaller file, or fewer files at once."
+        )
         await deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg), edit_in_place=(scope == "channel"))
 
     except GTIClientError as exc:
