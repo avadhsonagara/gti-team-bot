@@ -31,7 +31,7 @@ from app.teams.cards import (
     build_status_card,
     inject_quote_into_card,
 )
-from app.teams.thread import get_session_key, get_team_id, get_thread_context
+from app.teams.thread import get_channel_id, get_session_key, get_team_id, get_thread_context
 from app.utils.helpers import (
     EMPTY_QUERY_NOTICE,
     build_custom_format_section,
@@ -98,7 +98,7 @@ async def handle_message(ctx) -> None:
     try:
         if not user_text or not re.search(r"\w", user_text, re.UNICODE):
             logger.info("[EVENT] Message with no meaningful query — replying with usage hint.")
-            await ctx.send(EMPTY_QUERY_NOTICE)
+            await deliver_message(ctx, None, EMPTY_QUERY_NOTICE, build_status_card(EMPTY_QUERY_NOTICE))
             return
 
         await _handle_user_query(ctx, user_text, tenant_id, conversation_id)
@@ -170,10 +170,12 @@ async def _handle_user_query(
         if scope == "channel":
             session_key = get_session_key(ctx.activity, scope)
             team_id = get_team_id(ctx.activity)
+            channel_id = get_channel_id(ctx.activity)
             existing_session_id = await asyncio.to_thread(get_session_id, session_key)
         else:
             session_key = ""
             team_id = ""
+            channel_id = ""
             existing_session_id = None
         logger.info(
             "[AGENTIC] Dispatching query to GTI Agentic API | conversation=%s session_key=%s team_id=%s mode=%s",
@@ -184,7 +186,7 @@ async def _handle_user_query(
         )
         bind_request(session_id=session_id)
         if session_key:
-            await asyncio.to_thread(set_session_id, session_key, session_id, team_id or None)
+            await asyncio.to_thread(set_session_id, session_key, session_id, team_id or None, channel_id or None)
 
         # ── Step 4: Format & Deliver ──────────────────────────────────────────
         # Try parsing native Adaptive Card JSON from GTI Agent

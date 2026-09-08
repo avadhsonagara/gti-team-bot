@@ -32,5 +32,10 @@ python-dotenv>=1.0
 # Function App's own storage account (app/output_format_store.py).
 azure-storage-blob>=12.19.0
 
+# Persists per-thread GTI session IDs as Table Storage entities in the same
+# storage account (app/gti/session_store.py) — atomic per-row upserts avoid
+# the read-modify-write race a shared JSON blob would have.
+azure-data-tables>=12.5.0
+
 # JWT decoding and key verification for Bot Framework security validation
 pyjwt>=2.8.0

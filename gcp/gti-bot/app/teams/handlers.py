@@ -97,7 +97,7 @@ async def handle_message(ctx) -> None:
     try:
         if not user_text or not re.search(r"\w", user_text, re.UNICODE):
             logger.info("[EVENT] Message with no meaningful query — replying with usage hint.")
-            await ctx.send(EMPTY_QUERY_NOTICE)
+            await deliver_message(ctx, None, EMPTY_QUERY_NOTICE, build_status_card(EMPTY_QUERY_NOTICE))
             return
 
         await _handle_user_query(ctx, user_text, tenant_id, conversation_id)

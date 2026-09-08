@@ -199,6 +199,12 @@ def get_team_id(activity) -> str:
     return getattr(team, "aad_group_id", None) or getattr(team, "id", None) or ""
 
 
+def get_channel_id(activity) -> str:
+    """Return the Teams channel id for this activity, or "" outside channels."""
+    channel = getattr(activity, "channel", None)
+    return (getattr(channel, "id", None) if channel else None) or ""
+
+
 # ── Orchestration ────────────────────────────────────────────────────────────
 
 async def get_thread_context(activity, scope: str) -> str:
