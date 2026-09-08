@@ -91,7 +91,18 @@ async def download_attachments(ctx) -> list[tuple[str, bytes, str]]:
             logger.info("[ATTACHMENT] Downloaded %r (%d bytes, %s)", name, len(data), mime)
             results.append((name, data, mime))
 
+        except requests.exceptions.RequestException as exc:
+            # Deliberately not logging str(exc) / exc_info here — requests embeds the
+            # full request URL in its error message, and for the downloadUrl path
+            # that URL is itself a bearer-equivalent credential (pre-signed, no
+            # separate auth needed). Logging it would leak that token.
+            status = getattr(getattr(exc, "response", None), "status_code", None)
+            logger.warning(
+                "[ATTACHMENT] Download failed for %r (content_type=%s, status=%s): %s",
+                name, content_type, status, type(exc).__name__,
+            )
+
         except Exception:
-            logger.exception("[ATTACHMENT] Failed to download %r (content_type=%s)", name, content_type)
+            logger.exception("[ATTACHMENT] Unexpected error downloading %r (content_type=%s)", name, content_type)
 
     return results

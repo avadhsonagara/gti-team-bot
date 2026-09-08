@@ -226,7 +226,6 @@ async def _handle_user_query(
             logger.info("[DONE] Response delivered successfully.", extra={"status": "delivered"})
         else:
             logger.error("[DONE] All delivery attempts failed.", extra={"status": "failed"})
-        logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
     except GTIAuthenticationError as exc:
         logger.error("[ERROR] GTI API key authentication failed: %s", exc)
@@ -271,3 +270,8 @@ async def _handle_user_query(
         logger.exception("[ERROR] Unexpected error in GTI message handler.")
         err_msg = "⚠️ **Something went wrong while processing your request.** Please try again."
         await deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg), edit_in_place=(scope == "channel"))
+
+    finally:
+        # Always closes this request's log block — success or any error path —
+        # so the divider reliably marks "one request done" in the log stream.
+        logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
