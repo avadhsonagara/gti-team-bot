@@ -134,7 +134,7 @@ class GTIAgenticClient:
         self,
         method: str,
         endpoint: str,
-        files: dict[str, Any] | None = None,
+        files: list[tuple[str, Any]] | dict[str, Any] | None = None,
         data: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """
@@ -259,12 +259,17 @@ class GTIAgenticClient:
             (session_id, response_markdown_text, raw_api_response_dict)
         """
         endpoint = "/agentspace/sessions"
-        form_files: dict[str, Any] = {"message": (None, message)}
+        # `files` is a single array-typed field in the API schema, so every file
+        # must repeat the SAME field name "files" (a dict can't hold duplicate
+        # keys, hence the list-of-tuples form here — requests' documented way
+        # to send a repeated multipart field). Using indexed keys like
+        # "files[0]"/"files[1]" here previously meant the backend never saw
+        # them as part of its "files" array at all.
+        form_files: list[tuple[str, Any]] = [("message", (None, message))]
 
         if files:
-            # files is a list of (filename, file_bytes, content_type)
-            for idx, (fname, fbytes, ftype) in enumerate(files):
-                form_files[f"files[{idx}]"] = (fname, fbytes, ftype)
+            for fname, fbytes, ftype in files:
+                form_files.append(("files", (fname, fbytes, ftype)))
 
         raw_data = await self._send_request_with_retries(
             method="POST",
@@ -290,11 +295,12 @@ class GTIAgenticClient:
             (session_id, response_markdown_text, raw_api_response_dict)
         """
         endpoint = f"/agentspace/sessions/{session_id}"
-        form_files: dict[str, Any] = {"message": (None, message)}
+        # See create_session()'s comment — repeated "files" field name, not indexed keys.
+        form_files: list[tuple[str, Any]] = [("message", (None, message))]
 
         if files:
-            for idx, (fname, fbytes, ftype) in enumerate(files):
-                form_files[f"files[{idx}]"] = (fname, fbytes, ftype)
+            for fname, fbytes, ftype in files:
+                form_files.append(("files", (fname, fbytes, ftype)))
 
         raw_data = await self._send_request_with_retries(
             method="POST",

@@ -99,10 +99,8 @@ async def handle_message(ctx) -> None:
 
     try:
         scope = _get_conversation_scope(activity)
-        # File/image attachments are only forwarded to GTI in channel and
-        # group chats — see download_attachments()'s docstring for why 1:1
-        # personal chats are intentionally excluded.
-        attachments = await download_attachments(ctx) if scope in ("channel", "groupChat") else []
+        # Download user file/image attachments across all scopes (personal, groupChat, channel).
+        attachments = await download_attachments(ctx)
 
         if not user_text or not re.search(r"\w", user_text, re.UNICODE):
             logger.info("[EVENT] Message with no meaningful query — replying with usage hint.")
@@ -169,6 +167,7 @@ async def _handle_user_query(
         output_format = await asyncio.to_thread(get_output_format, settings)
         if thread_context:
             logger.info("[THREAD] Injecting channel thread context into prompt:\n%s", thread_context)
+
         initial_msg = _render_system_prompt(
             user_query=user_text, thread_context=thread_context, output_format=output_format,
         )
