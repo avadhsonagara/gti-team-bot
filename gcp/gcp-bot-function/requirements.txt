@@ -1,0 +1,37 @@
+# =============================================================================
+# GTI MS Teams Bot (Agentic) — GCP Cloud Run function (2nd Gen) Dependencies
+# =============================================================================
+
+# Google Cloud Functions Framework — HTTP trigger support for Cloud Run
+# functions (Flask/WSGI). See main.py's gti_bot_http entrypoint.
+functions-framework>=3.8.0
+
+# Flask — request/response handling for Functions Framework.
+flask>=3.0.0
+
+# HTTP client for everything that talks to an external API: the GTI Agentic
+# API, Microsoft Graph, and the Bot Framework Connector API itself (sending/
+# editing/deleting Teams messages, and the bot's own OAuth token) — see
+# app/gti/client.py, app/graph/client.py, app/teams/bot_client.py,
+# app/teams/attachments.py. Plain synchronous calls throughout — no
+# microsoft-teams-apps SDK, no async, matching the style already used in
+# gcp/rs-alerts.
+requests>=2.31.0
+
+# Google Cloud Firestore — durable persistence for bot output format
+# instructions and per-thread GTI session ids (synchronous Client, not
+# AsyncClient — see app/gti/session_store.py, app/output_format_store.py).
+google-cloud-firestore>=2.14.0
+
+# Google Cloud Logging — structured log integration
+google-cloud-logging>=3.11.0
+
+# Type-safe, validated configuration from environment variables / Secret Manager
+pydantic-settings>=2.0
+
+# Local development only — load .env file into environment
+python-dotenv>=1.0
+
+# JWT decoding and key verification for Bot Framework security validation
+# (app/teams/auth.py) — [crypto] pulls in `cryptography`, required for RS256.
+pyjwt[crypto]>=2.8.0

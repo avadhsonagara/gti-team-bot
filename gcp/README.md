@@ -41,7 +41,7 @@ Infrastructure is fully automated with **Terraform**, running on **Cloud Run fun
 
 ```
 gcp/
-├── gti-bot/                      # Interactive Microsoft Teams Bot (FastAPI + Cloud Run function)
+├── gcp-bot-function/              # Interactive Microsoft Teams Bot (Cloud Run function)
 │   ├── app/
 │   │   ├── config.py             # Settings & GCP Firestore configuration
 │   │   ├── constants.py          # App constants & prompt loader

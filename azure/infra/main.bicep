@@ -148,7 +148,7 @@ param manifestContainerName string = 'teams-manifest'
 param manifestBlobName string = 'teams-app-manifest.zip'
 
 @description('Base URL the Teams app manifest source files (manifest.json, color.png, outline.png) are fetched from at deploy time. Defaults to this repo\'s teams-app-manifest folder. Skip the manifest upload entirely by leaving this empty.')
-param manifestSourceBaseUrl string = 'https://raw.githubusercontent.com/avadhsonagara/gti-team-bot/main/azure/gti-bot/teams-app-manifest'
+param manifestSourceBaseUrl string = 'https://raw.githubusercontent.com/avadhsonagara/gti-team-bot/main/azure/azure-bot-function/teams-app-manifest'
 
 @description('Forces the manifest-upload deployment script to re-run on every deployment. Microsoft.Resources/deploymentScripts otherwise skips re-execution — and keeps its old environment variables (e.g. a stale storage account name) — when redeployed without this changing.')
 param forceUpdateTag string = utcNow()
@@ -283,9 +283,9 @@ var mainAppSettingsBase = [
     value: appInsights.properties.ConnectionString
   }
   {
-    // The Teams SDK (microsoft_teams.apps.App) reads CLIENT_ID +
+    // app/teams/bot_client.py and app/graph/client.py read CLIENT_ID +
     // MANAGED_IDENTITY_CLIENT_ID together to authenticate via managed
-    // identity instead of a client secret — see app/teams/bot.py.
+    // identity instead of a client secret.
     name: 'CLIENT_ID'
     value: botIdentity.properties.clientId
   }

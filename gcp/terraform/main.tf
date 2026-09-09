@@ -131,7 +131,7 @@ resource "google_storage_bucket" "source_bucket" {
 # -----------------------------------------------------------------------------
 data "archive_file" "gti_bot_zip" {
   type        = "zip"
-  source_dir  = "${path.module}/../gti-bot"
+  source_dir  = "${path.module}/../gcp-bot-function"
   output_path = "${path.module}/.build/gti-bot.zip"
   excludes = [
     "__pycache__",
@@ -224,12 +224,12 @@ resource "local_file" "manifest_json" {
 }
 
 resource "local_file" "manifest_color_png" {
-  content_base64 = filebase64("${path.module}/../gti-bot/teams-app-manifest/color.png")
+  content_base64 = filebase64("${path.module}/../gcp-bot-function/teams-app-manifest/color.png")
   filename       = "${path.module}/.build/manifest_pkg/color.png"
 }
 
 resource "local_file" "manifest_outline_png" {
-  content_base64 = filebase64("${path.module}/../gti-bot/teams-app-manifest/outline.png")
+  content_base64 = filebase64("${path.module}/../gcp-bot-function/teams-app-manifest/outline.png")
   filename       = "${path.module}/.build/manifest_pkg/outline.png"
 }
 
@@ -418,7 +418,7 @@ resource "null_resource" "gti_bot_image_build" {
 
   provisioner "local-exec" {
     command = <<-EOT
-      docker build -t ${local.gti_bot_image} ${abspath("${path.module}/../gti-bot")} && \
+      docker build -t ${local.gti_bot_image} ${abspath("${path.module}/../gcp-bot-function")} && \
       docker push ${local.gti_bot_image}
     EOT
   }

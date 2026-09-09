@@ -39,7 +39,7 @@ azure_resource_group_name = "YOUR_AZURE_RESOURCE_GROUP_NAME"
 
 # ── gti-bot Cloud Run Sizing & Concurrency Tuning (optional) ─────────────────
 # gti-bot deploys as a Cloud Run v2 service (see main.tf), built from
-# gcp/gti-bot/Dockerfile and pushed straight to Docker Hub — see the
+# gcp/gcp-bot-function and pushed straight to Docker Hub — see the
 # null_resource.gti_bot_image_build image reference in main.tf if you're
 # using a different Docker Hub account/repo than the one hardcoded there.
 
