@@ -1,0 +1,43 @@
+# =============================================================================
+# GTI Teams Bot (Agentic) — local Docker Compose setup
+#
+# Build + run:  docker compose up --build
+# Stop:         docker compose down
+# Logs:         docker compose logs -f
+#
+# .env is intentionally excluded from the image build (see .dockerignore) —
+# `env_file` below supplies it to the container at runtime instead, the same
+# way `python main.py` reads it directly when run outside Docker.
+#
+# main.py auto-enables HTTPS when cert.key + fullchain.cer/cert.cer are
+# present (they are, via the image's `COPY . .`), so the app serves
+# https://localhost:8080 with a self-signed cert, not plain http.
+# =============================================================================
+services:
+  gti-teams-bot:
+    build: .
+    container_name: gti-teams-bot-local-v1
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      # Store data outside the container's writable layer so it survives
+      # `docker compose down`/rebuilds — see the volume mount below.
+      LOCAL_STORE_PATH: /app/data/local_store.json
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      # No curl in the python:3.11-slim base image — use the stdlib instead.
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import ssl,urllib.request as u; c=ssl.SSLContext(); c.check_hostname=False; c.verify_mode=ssl.CERT_NONE; u.urlopen('https://localhost:8080/health', context=c, timeout=3)",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
