@@ -22,19 +22,15 @@ class Settings(BaseSettings):
     )
 
     # ── Bot Framework identity ───────────────────────────────────────────────
-    # In Azure, CLIENT_ID + MANAGED_IDENTITY_CLIENT_ID authenticate outbound
-    # calls to the Bot Framework Connector API via the same User-Assigned
-    # Managed Identity the bot's Azure Bot resource uses as its App ID
-    # (msaAppType "UserAssignedMSI") — no client secret involved.
-    # CLIENT_SECRET is only used as a local-dev fallback (classic app
-    # registration flow), since managed identity isn't available outside Azure.
-    # This same identity is also used to call Microsoft Graph for Teams app
-    # auto-install (app/graph_client.py) — it needs the
+    # CLIENT_ID + MANAGED_IDENTITY_CLIENT_ID authenticate outbound calls to
+    # the Bot Framework Connector API via the same User-Assigned Managed
+    # Identity the bot's Azure Bot resource uses as its App ID (msaAppType
+    # "UserAssignedMSI") — no client secret, ever. This same identity is also
+    # used to call Microsoft Graph for Teams app auto-install
+    # (app/graph_client.py) — it needs the
     # TeamsAppInstallation.ReadWriteForTeam.All application permission
     # granted with admin consent for that to work.
     client_id: str = ""
-    client_secret: str = ""
-    tenant_id: str = ""
     managed_identity_client_id: str = ""
 
     # ── Microsoft Teams target ───────────────────────────────────────────────
@@ -63,7 +59,7 @@ class Settings(BaseSettings):
 
     # ── Validators ────────────────────────────────────────────────────────────
 
-    @field_validator("gti_api_key", "client_secret", mode="before")
+    @field_validator("gti_api_key", mode="before")
     @classmethod
     def strip_secret(cls, v: str) -> str:
         """Trim whitespace from secret-like values."""

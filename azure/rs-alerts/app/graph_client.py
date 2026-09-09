@@ -1,8 +1,7 @@
 """
 Microsoft Graph client for automating Teams app installation.
 
-Reuses the same Azure AD identity as bot_auth.py (User-Assigned Managed
-Identity, or a client-secret app registration for local dev) — the only
+Reuses the same User-Assigned Managed Identity as bot_auth.py — the only
 difference is the requested token's scope (Microsoft Graph instead of the
 Bot Framework Connector API). Once that identity has been granted the
 TeamsAppInstallation.ReadWriteForTeam.All application permission with admin
@@ -27,30 +26,10 @@ def _get_graph_token_via_managed_identity(managed_identity_client_id: str) -> st
     return credential.get_token(GRAPH_SCOPE).token
 
 
-def _get_graph_token_via_client_secret(client_id: str, client_secret: str, tenant_id: str) -> str:
-    url = f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
-    data = {
-        "client_id": client_id,
-        "client_secret": client_secret,
-        "scope": GRAPH_SCOPE,
-        "grant_type": "client_credentials",
-    }
-    resp = requests.post(url, data=data, timeout=30)
-    resp.raise_for_status()
-    return resp.json()["access_token"]
-
-
 def _get_graph_token(settings: Settings) -> str:
-    if settings.managed_identity_client_id:
-        return _get_graph_token_via_managed_identity(settings.managed_identity_client_id)
-    if settings.client_id and settings.client_secret and settings.tenant_id:
-        return _get_graph_token_via_client_secret(
-            settings.client_id, settings.client_secret, settings.tenant_id
-        )
-    raise RuntimeError(
-        "No Azure AD credentials configured for Microsoft Graph: set either "
-        "MANAGED_IDENTITY_CLIENT_ID or CLIENT_ID + CLIENT_SECRET + TENANT_ID."
-    )
+    if not settings.managed_identity_client_id:
+        raise RuntimeError("MANAGED_IDENTITY_CLIENT_ID is not configured.")
+    return _get_graph_token_via_managed_identity(settings.managed_identity_client_id)
 
 
 def _get_catalog_app_id(token: str, external_id: str) -> str | None:

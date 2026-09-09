@@ -7,7 +7,7 @@ hand-rolls the pieces the SDK previously provided —
   - app/teams/activity.py   — parsing the raw Activity JSON
   - app/teams/context.py    — sending/editing/deleting Teams messages
   - app/teams/bot_client.py — the bot's own outbound Connector API token
-    (Managed Identity in Azure, client-secret fallback for local dev)
+    (User-Assigned Managed Identity only — no client secret)
 — using plain `requests`, the same style as azure/rs-alerts.
 
 `host.json` sets `extensions.http.routePrefix` to "" so routes are exposed
@@ -39,12 +39,11 @@ setup_logging()
 logger = logging.getLogger("gti-teams-bot")
 
 logger.info(
-    "GTI Teams Bot (Agentic - Azure Functions) starting | gti_url=%s gti_key=%s client_id=%s tenant_id=%s managed_identity=%s",
+    "GTI Teams Bot (Agentic - Azure Functions) starting | gti_url=%s gti_key=%s client_id=%s managed_identity=%s",
     settings.gti_api_base_url,
     "set" if settings.gti_api_key else "MISSING",
     "set" if settings.client_id else "MISSING",
-    "set" if settings.tenant_id else "MISSING",
-    "set" if settings.managed_identity_client_id else "not set (local-dev client-secret mode)",
+    "set" if settings.managed_identity_client_id else "MISSING",
 )
 
 app = func.FunctionApp()

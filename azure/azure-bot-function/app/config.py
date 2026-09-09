@@ -22,16 +22,12 @@ class Settings(BaseSettings):
     )
 
     # ── Microsoft Teams / Bot Framework ─────────────────────────────────────────
-    # In Azure, CLIENT_ID + MANAGED_IDENTITY_CLIENT_ID authenticate via the same
+    # CLIENT_ID + MANAGED_IDENTITY_CLIENT_ID authenticate via the same
     # User-Assigned Managed Identity the Azure Bot resource uses as its App ID
-    # (msaAppType "UserAssignedMSI") — no client secret involved in production.
-    # CLIENT_SECRET is only a local-dev fallback (classic app registration
-    # flow), since managed identity isn't available outside Azure. This same
+    # (msaAppType "UserAssignedMSI") — no client secret, ever. This same
     # identity is also used for Microsoft Graph calls (app/graph/client.py)
     # and for the bot's own Connector API token (app/teams/bot_client.py).
     client_id: str = ""
-    client_secret: str = ""
-    tenant_id: str = ""
     managed_identity_client_id: str = ""
 
     # ── Google Threat Intelligence (GTI) Agentic API ────────────────────────────
@@ -48,11 +44,10 @@ class Settings(BaseSettings):
     azure_web_jobs_storage: str = Field(default="", validation_alias="AzureWebJobsStorage")
 
     # ── Microsoft Graph (channel thread context) ──────────────────────────────
-    # Requires whichever identity is configured above (managed identity in
-    # Azure, or the CLIENT_ID app registration for local dev) to be granted
-    # the Graph APPLICATION permission ChannelMessage.Read.All with
-    # tenant-admin consent. Channel-only — Teams has no equivalent thread
-    # concept for personal/group chats.
+    # Requires the Managed Identity above to be granted the Graph APPLICATION
+    # permission ChannelMessage.Read.All with tenant-admin consent.
+    # Channel-only — Teams has no equivalent thread concept for personal/
+    # group chats.
     thread_context_enabled: bool = True
     thread_context_message_count: int = 5
 
@@ -65,7 +60,7 @@ class Settings(BaseSettings):
         val = (v or "https://www.virustotal.com/api/v3").strip()
         return val.rstrip("/")
 
-    @field_validator("gti_api_key", "client_secret", mode="before")
+    @field_validator("gti_api_key", mode="before")
     @classmethod
     def strip_secret(cls, v: str) -> str:
         """Trim whitespace from secret-like values."""

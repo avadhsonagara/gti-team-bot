@@ -2,13 +2,12 @@
 Outbound Bot Framework Connector API access — the bot's own token, and
 sending/updating/deleting a Teams message. Plain synchronous `requests`.
 
-Token acquisition matches azure/rs-alerts/app/bot_auth.py's dual-mode
-pattern: a User-Assigned Managed Identity in production
-(MANAGED_IDENTITY_CLIENT_ID) — no client secret involved — falling back to
-an Entra ID client-secret app registration for local dev
-(CLIENT_ID/CLIENT_SECRET/TENANT_ID), since managed identity isn't available
-outside Azure. Extended here with update/delete since this bot (unlike
-rs-alerts) edits and removes its own "looking into that…" placeholder.
+Token acquisition is Managed-Identity-only: this is a production bot, and
+the User-Assigned Managed Identity (MANAGED_IDENTITY_CLIENT_ID) is always
+available since it's provisioned together with the Function App by
+azure/infra/main.bicep — no client secret ever enters this codebase.
+Extended here with update/delete since this bot (unlike rs-alerts) edits
+and removes its own "looking into that…" placeholder.
 """
 import logging
 import threading
@@ -38,20 +37,6 @@ def _fetch_token_via_managed_identity() -> tuple[str, float]:
     return result.token, seconds_remaining
 
 
-def _fetch_token_via_client_secret() -> tuple[str, float]:
-    url = f"https://login.microsoftonline.com/{settings.tenant_id}/oauth2/v2.0/token"
-    data = {
-        "client_id": settings.client_id,
-        "client_secret": settings.client_secret,
-        "scope": _BOTFRAMEWORK_SCOPE,
-        "grant_type": "client_credentials",
-    }
-    resp = _session.post(url, data=data, timeout=30)
-    resp.raise_for_status()
-    payload = resp.json()
-    return payload["access_token"], float(payload.get("expires_in", 3600))
-
-
 def get_bot_token() -> str:
     """Return a cached app-only Bot Framework Connector token, refreshing it if near expiry."""
     global _bot_token, _bot_token_expires_at
@@ -65,16 +50,10 @@ def get_bot_token() -> str:
         if _bot_token and time.monotonic() < _bot_token_expires_at - _TOKEN_EXPIRY_SAFETY_SECONDS:
             return _bot_token
 
-        if settings.managed_identity_client_id:
-            token, seconds_remaining = _fetch_token_via_managed_identity()
-        elif settings.client_id and settings.client_secret and settings.tenant_id:
-            token, seconds_remaining = _fetch_token_via_client_secret()
-        else:
-            raise RuntimeError(
-                "No Bot Framework credentials configured: set either MANAGED_IDENTITY_CLIENT_ID "
-                "or CLIENT_ID + CLIENT_SECRET + TENANT_ID."
-            )
+        if not settings.managed_identity_client_id:
+            raise RuntimeError("MANAGED_IDENTITY_CLIENT_ID is not configured.")
 
+        token, seconds_remaining = _fetch_token_via_managed_identity()
         _bot_token = token
         _bot_token_expires_at = time.monotonic() + seconds_remaining
         return _bot_token

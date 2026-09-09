@@ -38,13 +38,8 @@ def _validate_settings(settings: Settings) -> str:
     if missing:
         raise RuntimeError(f"Missing required environment variable(s): {', '.join(missing)}")
 
-    if not settings.managed_identity_client_id and not (
-        settings.client_id and settings.client_secret and settings.tenant_id
-    ):
-        raise RuntimeError(
-            "No Bot Framework credentials configured: set either MANAGED_IDENTITY_CLIENT_ID "
-            "or CLIENT_ID + CLIENT_SECRET + TENANT_ID."
-        )
+    if not settings.managed_identity_client_id:
+        raise RuntimeError("MANAGED_IDENTITY_CLIENT_ID is not configured.")
 
     return extract_channel_id(settings.teams_channel_id)
 

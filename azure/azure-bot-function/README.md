@@ -31,11 +31,9 @@ things the SDK was actually doing:
   `handlers.py`/`attachments.py`/`thread.py` needed no logic changes.
 - `app/teams/bot_client.py` — the bot's own Connector API token and
   sending/editing/deleting a Teams message. Token acquisition is
-  Azure-specific: a **User-Assigned Managed Identity** in production
-  (`MANAGED_IDENTITY_CLIENT_ID`, no secret involved), falling back to an
-  Entra ID client-secret app registration for local dev — the same
-  dual-mode pattern already proven in
-  [`../rs-alerts/app/bot_auth.py`](../rs-alerts/app/bot_auth.py).
+  Managed-Identity-only: a **User-Assigned Managed Identity**
+  (`MANAGED_IDENTITY_CLIENT_ID`) provisioned by `azure/infra/main.bicep` —
+  no client secret exists anywhere in this codebase.
 - `app/teams/context.py` — a small stand-in for the SDK's `ctx` object.
 
 Everything else — the GTI client, Graph client, Table/Blob storage, and
@@ -73,9 +71,8 @@ See `.env.example` for the full list with defaults. The required ones:
 
 | Variable | Description |
 |---|---|
-| `CLIENT_ID` | Microsoft App ID (Client ID) — Azure Bot registration / Managed Identity |
-| `CLIENT_SECRET` | Local-dev fallback only — production uses `MANAGED_IDENTITY_CLIENT_ID` |
-| `TENANT_ID` | Microsoft Entra Tenant ID |
+| `CLIENT_ID` | Microsoft App ID — the bot's User-Assigned Managed Identity client ID (same value as `MANAGED_IDENTITY_CLIENT_ID`) |
+| `MANAGED_IDENTITY_CLIENT_ID` | The User-Assigned Managed Identity's client ID — the only credential this bot authenticates with |
 | `GTI_API_KEY` | Google Threat Intelligence / VirusTotal API Key |
 | `AzureWebJobsStorage` | Storage account connection string (session + output-format persistence) |
 
@@ -83,37 +80,24 @@ See `.env.example` for the full list with defaults. The required ones:
 
 ## Local Development
 
-1. Create a virtual environment and install dependencies:
-   ```bash
-   python3 -m venv .venv
-   source .venv/bin/activate
-   pip install -r requirements.txt
-   ```
+This bot authenticates exclusively via User-Assigned Managed Identity —
+there is no client-secret fallback, so `func start` on a laptop cannot
+acquire a Bot Framework/Graph token on its own (`ManagedIdentityCredential`
+only resolves against Azure's instance metadata service, which doesn't
+exist outside Azure). To iterate on code changes:
 
-2. Put your secrets into `local.settings.json` → `Values` (Azure Functions
-   Core Tools reads this file, not `.env`):
-   ```json
-   {
-     "IsEncrypted": false,
-     "Values": {
-       "FUNCTIONS_WORKER_RUNTIME": "python",
-       "AzureWebJobsStorage": "UseDevelopmentStorage=true",
-       "CLIENT_ID": "...",
-       "CLIENT_SECRET": "...",
-       "TENANT_ID": "...",
-       "GTI_API_KEY": "..."
-     }
-   }
-   ```
+1. Deploy to a real (dev/staging) Function App provisioned by
+   `azure/infra/main.bicep` — its Managed Identity makes outbound auth work
+   immediately, no local credentials needed.
+2. For fast inner-loop iteration, use `func azure functionapp publish
+   <dev-function-app-name>` against that dev app, or attach VS Code's Azure
+   Functions remote debugger to it.
+3. Point your Azure Bot registration's messaging endpoint at that dev
+   Function App's `/api/messages` URL while iterating.
 
-3. Run locally:
-   ```bash
-   func start
-   ```
-   The bot listens on `http://localhost:7071/api/messages` (and `/`, `/health`).
-
-4. Expose locally via ngrok or a dev tunnel, and point your Azure Bot
-   registration's messaging endpoint at `https://<tunnel>/api/messages`.
+Code paths that don't need outbound Bot Framework/Graph auth (e.g. request
+parsing in `app/teams/activity.py`) can still be unit-tested locally without
+any of this.
 
 ---
 
@@ -130,15 +114,20 @@ az functionapp create \
   --functions-version 4 \
   --os-type linux
 
+# Assign the User-Assigned Managed Identity this bot authenticates with —
+# see azure/infra/main.bicep for provisioning it and granting it the Bot
+# Framework / Graph (ChannelMessage.Read.All) permissions it needs.
+az functionapp identity assign \
+  --resource-group <rg> --name <function-app-name> \
+  --identities <managed-identity-resource-id>
+
 # Configure app settings (equivalent of local.settings.json "Values")
 az functionapp config appsettings set \
   --resource-group <rg> --name <function-app-name> \
   --settings \
-    CLIENT_ID=<entra-app-client-id-or-managed-identity-client-id> \
-    TENANT_ID=<entra-tenant-id> \
+    CLIENT_ID=<managed-identity-client-id> \
+    MANAGED_IDENTITY_CLIENT_ID=<managed-identity-client-id> \
     GTI_API_KEY=<gti-api-key>
-    # Production: also set MANAGED_IDENTITY_CLIENT_ID and grant that
-    # identity the Bot Framework / Graph permissions instead of CLIENT_SECRET.
 
 # Deploy the code (from this directory)
 func azure functionapp publish <function-app-name>
@@ -154,3 +143,19 @@ https://<function-app-name>.azurewebsites.net/api/messages
 Managed Identity, Storage Account, Key Vault, Application Insights;
 this function can reuse the same infrastructure by pointing it at this
 directory's code.)
+
+---
+
+## Microsoft Graph permissions
+
+This bot's identity needs three Microsoft Graph **APPLICATION** permissions
+beyond its Bot Framework ones — `ChannelMessage.Read.All` (channel thread
+context, `app/teams/thread.py`), `Chat.Read.All` (the group-chat equivalent
+of that same lookup, for file attachments shared in group chats), and
+`Files.Read.All` (downloading the actual file bytes via the Graph Shares
+API, `app/teams/attachments.py`). ARM/Bicep has no native resource type for
+granting a Graph app role, so this is a manual, one-time step per bot,
+after deployment: Entra admin center → *Enterprise applications* → this
+bot's identity → *Permissions* → *Add a permission* → *Microsoft Graph* →
+*Application permissions* → select all three above → *Grant admin consent*.
+Requires a Global Administrator or Privileged Role Administrator to do it.

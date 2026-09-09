@@ -22,7 +22,7 @@ main bot, sharing its Azure Bot identity, Key Vault secret, and storage account 
 |---|---|---|
 | Host | Google Cloud Function (Gen2) + Cloud Scheduler | Azure Function, Timer Trigger |
 | Cursor state | Local `state.json` file | Blob in the Function App's own storage account (`app/state_store.py`) — local disk isn't durable across Flex Consumption timer ticks |
-| Bot auth | `CLIENT_ID` + `CLIENT_SECRET` client-credentials grant | User-Assigned Managed Identity (`MANAGED_IDENTITY_CLIENT_ID`) when deployed via `main.bicep`, matching the bot's `UserAssignedMSI` registration — falls back to `CLIENT_SECRET` for local dev (`app/bot_auth.py`) |
+| Bot auth | `CLIENT_ID` + `CLIENT_SECRET` client-credentials grant | User-Assigned Managed Identity (`MANAGED_IDENTITY_CLIENT_ID`) only, provisioned by `main.bicep`, matching the bot's `UserAssignedMSI` registration — no client secret anywhere (`app/bot_auth.py`) |
 | Manual run | `python3 gti_alerts.py` | `GET`/`POST` to `/api/trigger` (function-key protected), or `func start` locally |
 
 The alert-fetching, filtering, and Adaptive Card logic (`app/gti_client.py`, `app/cards.py`)
@@ -39,8 +39,7 @@ object instead (Azure Functions Core Tools doesn't read `.env`).
 | `TEAMS_CHANNEL_ID` | ✅ | Teams channel link or ID (`19:xxx@thread.tacv2`) |
 | `GTI_API_KEY` | ✅ | GTI API key |
 | `GTI_RSA_PROJECT` | ✅ | GTI project id, from the Alerts URL `...&project=projects/<id>` |
-| `MANAGED_IDENTITY_CLIENT_ID` | one of these two | Bot's managed identity client ID (Azure deployments) |
-| `CLIENT_ID` / `CLIENT_SECRET` / `TENANT_ID` | one of these two | Classic app registration credentials (local dev) |
+| `CLIENT_ID` / `MANAGED_IDENTITY_CLIENT_ID` | ✅ | Bot's User-Assigned Managed Identity client ID — the only credential this job authenticates with |
 | `RS_ALERTS_SCHEDULE` | ❌ | NCRONTAB schedule. Default: every 15 minutes (`0 */15 * * * *`) |
 | `FILTER_*` | ❌ | Severity/priority/relevance/confidence filters — see `.env.example` |
 
@@ -49,18 +48,22 @@ Framework Connector API returns 404 when posting.
 
 ## Running locally
 
+This job authenticates exclusively via User-Assigned Managed Identity —
+`ManagedIdentityCredential` only resolves against Azure's instance metadata
+service, which doesn't exist outside Azure, so `func start` on a laptop
+cannot acquire a Bot Framework/Graph token on its own. To iterate on code
+changes, deploy to a real (dev/staging) `<functionAppName>-rs-alerts`
+Function App provisioned by `../infra/main.bicep` — its Managed Identity
+makes outbound auth work immediately:
+
 ```bash
-cd azure/rs-alerts
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example local.settings.json.values   # then paste into local.settings.json
-func start
+func azure functionapp publish <functionAppName>-rs-alerts --python
 ```
 
 Trigger a run without waiting for the timer:
 
 ```bash
-curl "http://localhost:7071/api/trigger"
+curl "https://<functionAppName>-rs-alerts.azurewebsites.net/api/trigger?code=<function-key>"
 ```
 
 ## Deploying

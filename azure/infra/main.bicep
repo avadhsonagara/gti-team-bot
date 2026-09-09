@@ -283,15 +283,14 @@ var mainAppSettingsBase = [
     value: appInsights.properties.ConnectionString
   }
   {
-    // app/teams/bot_client.py and app/graph/client.py read CLIENT_ID +
-    // MANAGED_IDENTITY_CLIENT_ID together to authenticate via managed
-    // identity instead of a client secret.
+    // app/teams/auth.py validates inbound JWTs' audience against CLIENT_ID —
+    // set here to the bot identity's client ID, which also doubles as this
+    // Azure Bot's msaAppId below. app/teams/bot_client.py and
+    // app/graph/client.py authenticate outbound calls via
+    // MANAGED_IDENTITY_CLIENT_ID alone (see app/config.py) — this bot has no
+    // client-secret path at all.
     name: 'CLIENT_ID'
     value: botIdentity.properties.clientId
-  }
-  {
-    name: 'TENANT_ID'
-    value: tenantId
   }
   {
     name: 'MANAGED_IDENTITY_CLIENT_ID'
@@ -357,12 +356,9 @@ var rsAlertsAppSettingsBase = [
     // is also the Azure Bot's msaAppId, so RS Alerts authenticates to the
     // Bot Framework Connector API (and Microsoft Graph, for Teams app
     // auto-install) as the same bot (app/bot_auth.py, app/graph_client.py).
+    // No client-secret path exists — Managed Identity only.
     name: 'CLIENT_ID'
     value: botIdentity.properties.clientId
-  }
-  {
-    name: 'TENANT_ID'
-    value: tenantId
   }
   {
     name: 'MANAGED_IDENTITY_CLIENT_ID'
