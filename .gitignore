@@ -122,6 +122,12 @@ terraform.rc
 *.tgz
 *.rar
 
+# Pre-built deployment packages committed on purpose — main.bicep's
+# botCodeZipUrl/rsAlertsCodeZipUrl deployment scripts fetch these directly.
+# Rebuild with `git archive`/zip after changing either app's code or deps.
+!azure/azure-bot-function/code.zip
+!azure/rs-alerts/code.zip
+
 # ── Temporary & Scratch Files ───────────────────────────────────────────────
 scratch/
 tmp/

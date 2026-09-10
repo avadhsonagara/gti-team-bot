@@ -13,6 +13,10 @@
 //   - Application Insights + the storage account Flex Consumption needs
 //   - The Teams app manifest package, assembled and uploaded to blob storage
 //     at deploy time (see the "Teams manifest" section below for why)
+//   - The bot's (and, if enabled, RS Alerts') actual application code,
+//     zip-deployed with a remote build from this repo's pre-built code.zip
+//     files — see "Automatic code deployment" below. Set botCodeZipUrl /
+//     rsAlertsCodeZipUrl to '' to skip this and publish code yourself.
 //
 // Two ways to deploy this template:
 //   - infra/deploy-button.bicep: a thin wrapper exposing only functionAppName /
@@ -235,6 +239,27 @@ param rsAlertsFilterRelevanceConfidence string = 'MEDIUM,HIGH'
 param rsAlertsAppSettings object = {}
 
 // ---------------------------------------------------------------------------
+// Automatic code deployment (optional)
+// ---------------------------------------------------------------------------
+// Bicep only provisions the Function App *resource* — it has no application
+// code in it until something publishes a package. To make the "Deploy to
+// Azure" button (and a plain `az deployment group create`) produce a fully
+// working bot with no manual `func azure functionapp publish` step, a
+// deployment script (same mechanism as manifestUpload below) downloads a
+// pre-built code.zip — committed to this repo alongside its source (see
+// azure/azure-bot-function/code.zip and azure/rs-alerts/code.zip; rebuild
+// and recommit either one whenever that app's code or dependencies change)
+// — and zip-deploys it with a remote (Oryx) build to each Function App that
+// gets created. Leave a URL empty to provision that Function App empty
+// instead and publish code yourself.
+
+@description('URL to a pre-built bot code zip (host.json etc. at the zip root). Fetched and zip-deployed with a remote build. Leave empty to skip automatic code deployment for the bot.')
+param botCodeZipUrl string = 'https://raw.githubusercontent.com/avadhsonagara/gti-team-bot/main/azure/azure-bot-function/code.zip'
+
+@description('URL to a pre-built RS Alerts code zip. Only used when enableRsAlerts is true. Leave empty to skip automatic code deployment for RS Alerts.')
+param rsAlertsCodeZipUrl string = 'https://raw.githubusercontent.com/avadhsonagara/gti-team-bot/main/azure/rs-alerts/code.zip'
+
+// ---------------------------------------------------------------------------
 // Variables
 // ---------------------------------------------------------------------------
 
@@ -248,6 +273,32 @@ var customAppSettingsArray = [for key in items(appSettings): {
   name: key.key
   value: key.value
 }]
+
+// Shared by both code-deploy deployment scripts below (bot and RS Alerts) —
+// only CODE_ZIP_URL/RESOURCE_GROUP/APP_NAME differ between the two, passed
+// in as environment variables rather than baked into the script. Downloads
+// the given pre-built code.zip (host.json etc. already at its root — see
+// azure/azure-bot-function/code.zip and azure/rs-alerts/code.zip) and
+// zip-deploys it with a remote build, so requirements.txt dependencies
+// (never vendored into these zips) get installed server-side.
+var codeDeployScriptContent = '''
+  set -e
+  python3 - "$CODE_ZIP_URL" /tmp/code.zip <<'PY'
+import sys
+import urllib.request
+
+url, out_path = sys.argv[1:3]
+urllib.request.urlretrieve(url, out_path)
+PY
+
+  az functionapp deployment source config-zip \
+    --resource-group "$RESOURCE_GROUP" \
+    --name "$APP_NAME" \
+    --src /tmp/code.zip \
+    --build-remote true
+
+  echo "{\"deployed\": true}" > $AZ_SCRIPTS_OUTPUT_PATH
+'''
 
 var rsAlertsDeploymentContainerName = 'app-package-${toLower(rsAlertsFunctionAppName)}'
 var rsAlertsStateContainerName = 'rs-alerts-state'
@@ -482,6 +533,33 @@ resource botIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-3
   name: '${functionAppName}-identity'
   location: location
   tags: tags
+}
+
+// A second, dedicated identity solely for the code-deploy deployment scripts
+// below — kept separate from botIdentity (the bot's own runtime credential,
+// trusted by Teams/Graph/GTI) so the Website Contributor role needed to
+// zip-deploy code never ends up on the identity the bot authenticates as.
+var codeAutoDeployEnabled = !empty(botCodeZipUrl) || (enableRsAlerts && !empty(rsAlertsCodeZipUrl))
+
+resource deployIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = if (codeAutoDeployEnabled) {
+  name: '${functionAppName}-deploy-identity'
+  location: location
+  tags: tags
+}
+
+resource deployIdentityWebsiteContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (codeAutoDeployEnabled) {
+  name: guid(resourceGroup().id, functionAppName, 'WebsiteContributor', 'deployIdentity')
+  scope: resourceGroup()
+  properties: {
+    // Built-in "Website Contributor" role, scoped to this resource group —
+    // lets this identity zip-deploy code (via the SCM /api/zipdeploy
+    // endpoint, Azure AD-authenticated, no publish profile/basic-auth
+    // credentials needed) to the Function Apps this deployment creates,
+    // without granting access to storage, Key Vault, or botIdentity itself.
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'de139f84-1756-47ae-9be6-808fbbe84772')
+    principalId: deployIdentity!.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -899,6 +977,94 @@ resource rsAlertsFunctionAppClassic 'Microsoft.Web/sites@2023-12-01' = if (enabl
 var rsAlertsFunctionAppHostName = !enableRsAlerts ? '' : (rsAlertsHostingPlanType == 'FlexConsumption' ? rsAlertsFunctionApp!.properties.defaultHostName : rsAlertsFunctionAppClassic!.properties.defaultHostName)
 
 // ---------------------------------------------------------------------------
+// Automatic code deployment — bot
+// ---------------------------------------------------------------------------
+
+resource botCodeDeploy 'Microsoft.Resources/deploymentScripts@2023-08-01' = if (!empty(botCodeZipUrl)) {
+  name: '${functionAppName}-code-deploy'
+  location: location
+  tags: tags
+  kind: 'AzureCLI'
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${deployIdentity.id}': {}
+    }
+  }
+  properties: {
+    azCliVersion: '2.60.0'
+    forceUpdateTag: forceUpdateTag
+    retentionInterval: 'PT1H'
+    timeout: 'PT15M'
+    cleanupPreference: 'OnSuccess'
+    environmentVariables: [
+      {
+        name: 'CODE_ZIP_URL'
+        value: botCodeZipUrl
+      }
+      {
+        name: 'RESOURCE_GROUP'
+        value: resourceGroup().name
+      }
+      {
+        name: 'APP_NAME'
+        value: functionAppName
+      }
+    ]
+    scriptContent: codeDeployScriptContent
+  }
+  dependsOn: [
+    functionApp
+    functionAppClassic
+    deployIdentityWebsiteContributor
+  ]
+}
+
+// ---------------------------------------------------------------------------
+// Automatic code deployment — RS Alerts (only when enableRsAlerts)
+// ---------------------------------------------------------------------------
+
+resource rsAlertsCodeDeploy 'Microsoft.Resources/deploymentScripts@2023-08-01' = if (enableRsAlerts && !empty(rsAlertsCodeZipUrl)) {
+  name: '${rsAlertsFunctionAppName}-code-deploy'
+  location: location
+  tags: tags
+  kind: 'AzureCLI'
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${deployIdentity.id}': {}
+    }
+  }
+  properties: {
+    azCliVersion: '2.60.0'
+    forceUpdateTag: forceUpdateTag
+    retentionInterval: 'PT1H'
+    timeout: 'PT15M'
+    cleanupPreference: 'OnSuccess'
+    environmentVariables: [
+      {
+        name: 'CODE_ZIP_URL'
+        value: rsAlertsCodeZipUrl
+      }
+      {
+        name: 'RESOURCE_GROUP'
+        value: resourceGroup().name
+      }
+      {
+        name: 'APP_NAME'
+        value: rsAlertsFunctionAppName
+      }
+    ]
+    scriptContent: codeDeployScriptContent
+  }
+  dependsOn: [
+    rsAlertsFunctionApp
+    rsAlertsFunctionAppClassic
+    deployIdentityWebsiteContributor
+  ]
+}
+
+// ---------------------------------------------------------------------------
 // Outputs
 // ---------------------------------------------------------------------------
 
@@ -913,6 +1079,8 @@ output botName string = bot.name
 output botAppId string = botIdentity.properties.clientId
 output manifestContainerUrl string = '${storageAccount.properties.primaryEndpoints.blob}${manifestContainerName}'
 output manifestBlobUrl string = '${storageAccount.properties.primaryEndpoints.blob}${manifestContainerName}/${manifestBlobName}'
+output botCodeAutoDeployed bool = !empty(botCodeZipUrl)
+output rsAlertsCodeAutoDeployed bool = enableRsAlerts && !empty(rsAlertsCodeZipUrl)
 
 output rsAlertsEnabled bool = enableRsAlerts
 output rsAlertsFunctionAppName string = enableRsAlerts ? rsAlertsFunctionAppName : ''

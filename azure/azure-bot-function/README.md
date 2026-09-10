@@ -103,6 +103,16 @@ any of this.
 
 ## Deploying
 
+Deploying via `../infra/main.bicep` (or the repo-root "Deploy to Azure"
+button) already zip-deploys this folder's code automatically, from the
+pre-built [`code.zip`](code.zip) committed alongside it — see `botCodeZipUrl`
+in `main.bicep`. **Rebuild and commit `code.zip` whenever this folder's code
+or dependencies change** (see the root [README](../../README.md#deploy-to-azure)
+for the rebuild command) — it's a static snapshot, not built from source at
+deploy time. The manual steps below are for deploying to an existing Function
+App without re-running the Bicep template (e.g. fast inner-loop iteration
+against a dev app).
+
 ```bash
 # One-time: create the Function App (Linux, Python, Consumption/Premium plan)
 az functionapp create \

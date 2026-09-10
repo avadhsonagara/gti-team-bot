@@ -18,8 +18,10 @@ channel. Both ship as two parallel, independently deployable implementations:
 The button below provisions everything the bot needs — a Flex Consumption
 Function App, a Key Vault holding your GTI API key, Application Insights, and
 an Azure Bot resource wired to a User-Assigned Managed Identity (no app
-registration or client secret to create by hand). RS Alerts is an optional
-toggle on the same form.
+registration or client secret to create by hand) — **and deploys this repo's
+current bot code into it automatically**, with no manual publish step. RS
+Alerts is an optional toggle on the same form, deployed the same way when
+enabled.
 
 [![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Favadhsonagara%2Fgti-team-bot%2Fmain%2Fazure%2Finfra%2Fazuredeploy-button.json)
 
@@ -40,6 +42,46 @@ After deployment:
    (`ChannelMessage.Read.All`, `Chat.Read.All`, `Files.Read.All`) — a manual,
    one-time admin-consent step with no ARM/Bicep equivalent. See
    [`azure/azure-bot-function/README.md`](azure/azure-bot-function/README.md#microsoft-graph-permissions).
+
+Code deployment itself is automatic: a deployment script downloads this
+repo's pre-built [`azure/azure-bot-function/code.zip`](azure/azure-bot-function/code.zip)
+(and, if RS Alerts is enabled, [`azure/rs-alerts/code.zip`](azure/rs-alerts/code.zip))
+and zip-deploys it with a remote (Oryx) build into each Function App the
+template creates, re-running on every redeploy. **Whenever either app's code
+or dependencies change, rebuild and commit the matching `code.zip`** — see
+`botCodeZipUrl`/`rsAlertsCodeZipUrl` in [`main.bicep`](azure/infra/main.bicep)
+to point them at a fork, or clear either one to skip auto-deploy for that app
+and publish code yourself.
+
+**Rebuilding `code.zip` after a code change** — use `git ls-files` (not a
+plain folder zip) so untracked/gitignored files like `.env` never end up in
+a zip that gets committed to a public repo:
+
+```bash
+python3 - <<'PY'
+import subprocess, zipfile
+
+def build_zip(subfolder, out_path):
+    # --cached --others --exclude-standard: tracked files PLUS any new files
+    # not yet committed (still respecting .gitignore) — plain `git ls-files`
+    # misses brand-new files. Excluding *.zip avoids code.zip trying to
+    # include itself (it's the one file in this tree exempted from .gitignore).
+    files = subprocess.run(
+        ["git", "ls-files", "--cached", "--others", "--exclude-standard", subfolder],
+        capture_output=True, text=True, check=True,
+    ).stdout.splitlines()
+    files = [f for f in files if not f.endswith(".zip")]
+    prefix = subfolder.rstrip("/") + "/"
+    with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for f in sorted(files):
+            zf.write(f, f[len(prefix):])
+
+build_zip("azure/azure-bot-function", "azure/azure-bot-function/code.zip")
+build_zip("azure/rs-alerts", "azure/rs-alerts/code.zip")
+PY
+git add azure/azure-bot-function/code.zip azure/rs-alerts/code.zip
+git commit -m "chore: rebuild deployment code.zip"
+```
 
 Prefer full control over parameters (custom naming, reusing an existing
 storage account or App Service Plan, etc.)? Deploy

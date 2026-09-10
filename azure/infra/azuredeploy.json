@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.46.1.21595",
-      "templateHash": "9360721561923185493"
+      "templateHash": "12847572773049402703"
     }
   },
   "parameters": {
@@ -339,6 +339,20 @@
       "metadata": {
         "description": "Additional non-secret application settings merged onto the RS Alerts Function App (e.g. FILTER_SEVERITY_LEVEL)."
       }
+    },
+    "botCodeZipUrl": {
+      "type": "string",
+      "defaultValue": "https://raw.githubusercontent.com/avadhsonagara/gti-team-bot/main/azure/azure-bot-function/code.zip",
+      "metadata": {
+        "description": "URL to a pre-built bot code zip (host.json etc. at the zip root). Fetched and zip-deployed with a remote build. Leave empty to skip automatic code deployment for the bot."
+      }
+    },
+    "rsAlertsCodeZipUrl": {
+      "type": "string",
+      "defaultValue": "https://raw.githubusercontent.com/avadhsonagara/gti-team-bot/main/azure/rs-alerts/code.zip",
+      "metadata": {
+        "description": "URL to a pre-built RS Alerts code zip. Only used when enableRsAlerts is true. Leave empty to skip automatic code deployment for RS Alerts."
+      }
     }
   },
   "variables": {
@@ -361,6 +375,7 @@
       }
     ],
     "deploymentContainerName": "[format('app-package-{0}', toLower(parameters('functionAppName')))]",
+    "codeDeployScriptContent": "  set -e\n  python3 - \"$CODE_ZIP_URL\" /tmp/code.zip <<'PY'\nimport sys\nimport urllib.request\n\nurl, out_path = sys.argv[1:3]\nurllib.request.urlretrieve(url, out_path)\nPY\n\n  az functionapp deployment source config-zip \\\n    --resource-group \"$RESOURCE_GROUP\" \\\n    --name \"$APP_NAME\" \\\n    --src /tmp/code.zip \\\n    --build-remote true\n\n  echo \"{\\\"deployed\\\": true}\" > $AZ_SCRIPTS_OUTPUT_PATH\n",
     "rsAlertsDeploymentContainerName": "[format('app-package-{0}', toLower(parameters('rsAlertsFunctionAppName')))]",
     "rsAlertsStateContainerName": "rs-alerts-state",
     "planSkuName": "[if(equals(parameters('hostingPlanType'), 'FlexConsumption'), 'FC1', parameters('premiumSku'))]",
@@ -383,7 +398,8 @@
         "value": "1"
       }
     ],
-    "httpConcurrencyAppSettings": "[if(greater(parameters('httpPerInstanceConcurrency'), 0), createArray(createObject('name', 'AzureFunctionsJobHost__extensions__http__maxConcurrentRequests', 'value', string(parameters('httpPerInstanceConcurrency')))), createArray())]"
+    "httpConcurrencyAppSettings": "[if(greater(parameters('httpPerInstanceConcurrency'), 0), createArray(createObject('name', 'AzureFunctionsJobHost__extensions__http__maxConcurrentRequests', 'value', string(parameters('httpPerInstanceConcurrency')))), createArray())]",
+    "codeAutoDeployEnabled": "[or(not(empty(parameters('botCodeZipUrl'))), and(parameters('enableRsAlerts'), not(empty(parameters('rsAlertsCodeZipUrl')))))]"
   },
   "resources": [
     {
@@ -462,6 +478,28 @@
       "name": "[format('{0}-identity', parameters('functionAppName'))]",
       "location": "[parameters('location')]",
       "tags": "[parameters('tags')]"
+    },
+    {
+      "condition": "[variables('codeAutoDeployEnabled')]",
+      "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
+      "apiVersion": "2023-01-31",
+      "name": "[format('{0}-deploy-identity', parameters('functionAppName'))]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]"
+    },
+    {
+      "condition": "[variables('codeAutoDeployEnabled')]",
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "name": "[guid(resourceGroup().id, parameters('functionAppName'), 'WebsiteContributor', 'deployIdentity')]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'de139f84-1756-47ae-9be6-808fbbe84772')]",
+        "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-deploy-identity', parameters('functionAppName'))), '2023-01-31').principalId]",
+        "principalType": "ServicePrincipal"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-deploy-identity', parameters('functionAppName')))]"
+      ]
     },
     {
       "type": "Microsoft.KeyVault/vaults",
@@ -811,6 +849,92 @@
         "[resourceId('Microsoft.Web/serverfarms', parameters('rsAlertsAppServicePlanName'))]",
         "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
       ]
+    },
+    {
+      "condition": "[not(empty(parameters('botCodeZipUrl')))]",
+      "type": "Microsoft.Resources/deploymentScripts",
+      "apiVersion": "2023-08-01",
+      "name": "[format('{0}-code-deploy', parameters('functionAppName'))]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "kind": "AzureCLI",
+      "identity": {
+        "type": "UserAssigned",
+        "userAssignedIdentities": {
+          "[format('{0}', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-deploy-identity', parameters('functionAppName'))))]": {}
+        }
+      },
+      "properties": {
+        "azCliVersion": "2.60.0",
+        "forceUpdateTag": "[parameters('forceUpdateTag')]",
+        "retentionInterval": "PT1H",
+        "timeout": "PT15M",
+        "cleanupPreference": "OnSuccess",
+        "environmentVariables": [
+          {
+            "name": "CODE_ZIP_URL",
+            "value": "[parameters('botCodeZipUrl')]"
+          },
+          {
+            "name": "RESOURCE_GROUP",
+            "value": "[resourceGroup().name]"
+          },
+          {
+            "name": "APP_NAME",
+            "value": "[parameters('functionAppName')]"
+          }
+        ],
+        "scriptContent": "[variables('codeDeployScriptContent')]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-deploy-identity', parameters('functionAppName')))]",
+        "[resourceId('Microsoft.Authorization/roleAssignments', guid(resourceGroup().id, parameters('functionAppName'), 'WebsiteContributor', 'deployIdentity'))]",
+        "[resourceId('Microsoft.Web/sites', parameters('functionAppName'))]",
+        "[resourceId('Microsoft.Web/sites', parameters('functionAppName'))]"
+      ]
+    },
+    {
+      "condition": "[and(parameters('enableRsAlerts'), not(empty(parameters('rsAlertsCodeZipUrl'))))]",
+      "type": "Microsoft.Resources/deploymentScripts",
+      "apiVersion": "2023-08-01",
+      "name": "[format('{0}-code-deploy', parameters('rsAlertsFunctionAppName'))]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "kind": "AzureCLI",
+      "identity": {
+        "type": "UserAssigned",
+        "userAssignedIdentities": {
+          "[format('{0}', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-deploy-identity', parameters('functionAppName'))))]": {}
+        }
+      },
+      "properties": {
+        "azCliVersion": "2.60.0",
+        "forceUpdateTag": "[parameters('forceUpdateTag')]",
+        "retentionInterval": "PT1H",
+        "timeout": "PT15M",
+        "cleanupPreference": "OnSuccess",
+        "environmentVariables": [
+          {
+            "name": "CODE_ZIP_URL",
+            "value": "[parameters('rsAlertsCodeZipUrl')]"
+          },
+          {
+            "name": "RESOURCE_GROUP",
+            "value": "[resourceGroup().name]"
+          },
+          {
+            "name": "APP_NAME",
+            "value": "[parameters('rsAlertsFunctionAppName')]"
+          }
+        ],
+        "scriptContent": "[variables('codeDeployScriptContent')]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-deploy-identity', parameters('functionAppName')))]",
+        "[resourceId('Microsoft.Authorization/roleAssignments', guid(resourceGroup().id, parameters('functionAppName'), 'WebsiteContributor', 'deployIdentity'))]",
+        "[resourceId('Microsoft.Web/sites', parameters('rsAlertsFunctionAppName'))]",
+        "[resourceId('Microsoft.Web/sites', parameters('rsAlertsFunctionAppName'))]"
+      ]
     }
   ],
   "outputs": {
@@ -857,6 +981,14 @@
     "manifestBlobUrl": {
       "type": "string",
       "value": "[format('{0}{1}/{2}', reference(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').primaryEndpoints.blob, parameters('manifestContainerName'), parameters('manifestBlobName'))]"
+    },
+    "botCodeAutoDeployed": {
+      "type": "bool",
+      "value": "[not(empty(parameters('botCodeZipUrl')))]"
+    },
+    "rsAlertsCodeAutoDeployed": {
+      "type": "bool",
+      "value": "[and(parameters('enableRsAlerts'), not(empty(parameters('rsAlertsCodeZipUrl'))))]"
     },
     "rsAlertsEnabled": {
       "type": "bool",

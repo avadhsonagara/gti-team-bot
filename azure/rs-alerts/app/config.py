@@ -35,7 +35,16 @@ class Settings(BaseSettings):
 
     # ── Microsoft Teams target ───────────────────────────────────────────────
     teams_channel_id: str = ""
-    service_url: str = "https://smba.trafficmanager.net/amer/"
+    # Microsoft's own documented global routing alias for proactive messages
+    # (RS Alerts always posts proactively, with no incoming activity to read
+    # a region-specific serviceUrl from) — resolves the correct region
+    # internally, so this is NOT a region-specific guess:
+    # https://learn.microsoft.com/en-us/microsoftteams/platform/bots/how-to/
+    # conversations/send-proactive-messages ("If the serviceUrl isn't
+    # available... use https://smba.trafficmanager.net/teams/"). Previously
+    # hardcoded to the Americas-specific endpoint (.../amer/), which silently
+    # failed for tenants outside that region.
+    service_url: str = "https://smba.trafficmanager.net/teams/"
 
     # ── Google Threat Intelligence (GTI) Alerts API ──────────────────────────
     gti_api_key: str = ""

@@ -73,8 +73,13 @@ Infra is provisioned by `../infra/main.bicep` when `enableRsAlerts=true` (see th
 `az deployment group create --template-file ../infra/main.bicep --parameters
 ../infra/main.parameters.json --parameters enableRsAlerts=true
 rsAlertsTeamsChannelId=<link> rsAlertsGtiProject=<id>`). That provisions the Function App, its
-storage container, and wires up the shared managed identity / Key Vault secret — it does not
-push application code. Publish this folder's code separately:
+storage container, wires up the shared managed identity / Key Vault secret, **and (unless
+`rsAlertsCodeZipUrl` is cleared) zip-deploys this folder's code into it automatically** from
+the pre-built [`code.zip`](code.zip) committed alongside it — no separate publish step needed.
+**Rebuild and commit `code.zip` whenever this folder's code or dependencies change** (see the
+root [README](../../README.md#deploy-to-azure) for the rebuild command). The manual publish
+below is only for iterating against an already-provisioned Function App without re-running the
+Bicep template:
 
 ```bash
 func azure functionapp publish <functionAppName>-rs-alerts --python
