@@ -21,12 +21,13 @@
 @description('Name of the Function App to create.')
 param functionAppName string = 'gti-team-bot'
 
-@description('Hosting plan for the Function App. FlexConsumption (default): serverless, scale-to-zero, pay-per-execution. Premium: pre-warmed instances (no cold starts), VNET support.')
+@description('Hosting plan for the Function App. Consumption (default): serverless, scale-to-zero, pay-per-execution. FlexConsumption: modern serverless with configurable memory/concurrency. Premium: pre-warmed instances (no cold starts), VNET support.')
 @allowed([
+  'Consumption'
   'FlexConsumption'
   'Premium'
 ])
-param hostingPlanType string = 'FlexConsumption'
+param hostingPlanType string = 'Consumption'
 
 @description('Function Instance Memory MB: per-instance memory for Flex Consumption. (Only applies when Hosting Plan is FlexConsumption; ignored for Premium).')
 @allowed([
@@ -78,10 +79,11 @@ param rsAlertsFunctionAppName string = '${functionAppName}-rs-alerts'
 
 @description('Hosting plan for the RS Alerts Function App. Only used when "Add RS Alerts to this Team" is Yes.')
 @allowed([
+  'Consumption'
   'FlexConsumption'
   'Premium'
 ])
-param rsAlertsHostingPlanType string = 'FlexConsumption'
+param rsAlertsHostingPlanType string = 'Consumption'
 
 @description('Per-instance memory (MB) for RS Alerts Flex Consumption plan. (Only applies when RS Alerts Hosting Plan is FlexConsumption).')
 @allowed([
@@ -125,7 +127,6 @@ module main 'main.bicep' = {
   name: 'gti-team-bot-main'
   params: {
     functionAppName: functionAppName
-    botName: functionAppName
     hostingPlanType: hostingPlanType
     instanceMemoryMB: instanceMemoryMB
     premiumSku: premiumSku

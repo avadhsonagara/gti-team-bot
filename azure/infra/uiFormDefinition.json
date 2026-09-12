@@ -36,10 +36,11 @@
               "type": "Microsoft.Common.DropDown",
               "label": "Hosting Plan",
               "toolTip": "Flex Consumption: serverless, scale-to-zero, pay-per-execution. Premium: pre-warmed instances (no cold starts), VNET support.",
-              "defaultValue": "FlexConsumption",
+              "defaultValue": "Consumption",
               "constraints": {
                 "required": false,
                 "allowedValues": [
+                  { "label": "Consumption", "value": "Consumption" },
                   { "label": "Flex Consumption", "value": "FlexConsumption" },
                   { "label": "Premium", "value": "Premium" }
                 ]
@@ -223,10 +224,11 @@
               "type": "Microsoft.Common.DropDown",
               "label": "RS Alerts Hosting Plan",
               "toolTip": "Hosting plan for the RS Alerts Function App.",
-              "defaultValue": "FlexConsumption",
+              "defaultValue": "Consumption",
               "constraints": {
                 "required": true,
                 "allowedValues": [
+                  { "label": "Consumption", "value": "Consumption" },
                   { "label": "Flex Consumption", "value": "FlexConsumption" },
                   { "label": "Premium", "value": "Premium" }
                 ]

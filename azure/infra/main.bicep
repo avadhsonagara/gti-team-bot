@@ -55,12 +55,13 @@ param appServicePlanName string = '${functionAppName}-plan'
 @description('Set to false to reuse an existing App Service Plan named appServicePlanName in this resource group, instead of creating a new one. A Function App cannot be moved between plans of different types in-place, so this must be false when redeploying onto an app that already exists on a different plan.')
 param createAppServicePlan bool = true
 
-@description('Hosting plan for the Function App. FlexConsumption (default): serverless, scale-to-zero, pay-per-execution — what this template originally shipped with. Premium (EP1/EP2/EP3, see premiumSku): pre-warmed instances (no cold starts), VNET support, at a fixed baseline cost even when idle. The classic Consumption (Y1) plan is not offered here — it lacks reliable Python-on-Linux support.')
+@description('Hosting plan for the Function App. Consumption (serverless Y1): classic scale-to-zero, pay-per-execution. FlexConsumption: modern serverless with configurable memory/concurrency. Premium (EP1/EP2/EP3, see premiumSku): pre-warmed instances (no cold starts), VNET support, at a fixed baseline cost even when idle.')
 @allowed([
+  'Consumption'
   'FlexConsumption'
   'Premium'
 ])
-param hostingPlanType string = 'FlexConsumption'
+param hostingPlanType string = 'Consumption'
 
 @description('Premium plan SKU. Only used when hostingPlanType is Premium.')
 @allowed([
@@ -112,8 +113,8 @@ param threadContextMessageCount int = 5
 // Bot identity & secrets
 // ---------------------------------------------------------------------------
 
-@description('Name of the Azure Bot resource. Defaults to the same name as functionAppName.')
-param botName string = functionAppName
+@description('Name of the Azure Bot resource. Defaults to functionAppName with a unique suffix, as Azure Bot handles must be globally unique across Azure.')
+param botName string = '${functionAppName}-${take(uniqueString(resourceGroup().id, subscription().id, functionAppName), 6)}'
 
 @description('Microsoft Entra tenant ID for the Azure Bot registration. Defaults to the deployment\'s own tenant.')
 param tenantId string = subscription().tenantId
@@ -125,7 +126,7 @@ param gtiApiKey string
 @description('Globally-unique Key Vault name (3-24 characters) used to store gtiApiKey.')
 @minLength(3)
 @maxLength(24)
-param keyVaultName string = toLower('kv-${take(replace(functionAppName, '-', ''), 9)}-${take(uniqueString(resourceGroup().id, functionAppName), 9)}')
+param keyVaultName string = toLower('kv-${take(replace(functionAppName, '-', ''), 8)}-${take(uniqueString(resourceGroup().id, subscription().id, functionAppName), 9)}')
 
 // ---------------------------------------------------------------------------
 // Observability
@@ -182,10 +183,11 @@ param rsAlertsAppServicePlanName string = '${rsAlertsFunctionAppName}-plan'
 
 @description('Hosting plan for the RS Alerts Function App. Only used when enableRsAlerts is true — see hostingPlanType above for what each option means.')
 @allowed([
+  'Consumption'
   'FlexConsumption'
   'Premium'
 ])
-param rsAlertsHostingPlanType string = 'FlexConsumption'
+param rsAlertsHostingPlanType string = 'Consumption'
 
 @description('Premium plan SKU for RS Alerts. Only used when rsAlertsHostingPlanType is Premium.')
 @allowed([
@@ -312,12 +314,12 @@ var rsAlertsCustomAppSettingsArray = [for key in items(rsAlertsAppSettings): {
 // types, only these values — the Function App resource is what actually
 // needs a structurally different shape (functionAppConfig vs
 // siteConfig.linuxFxVersion), handled by the two separate resources below.
-var planSkuName = hostingPlanType == 'FlexConsumption' ? 'FC1' : premiumSku
-var planSkuTier = hostingPlanType == 'FlexConsumption' ? 'FlexConsumption' : 'ElasticPremium'
+var planSkuName = hostingPlanType == 'FlexConsumption' ? 'FC1' : (hostingPlanType == 'Consumption' ? 'Y1' : premiumSku)
+var planSkuTier = hostingPlanType == 'FlexConsumption' ? 'FlexConsumption' : (hostingPlanType == 'Consumption' ? 'Dynamic' : 'ElasticPremium')
 var planKind = hostingPlanType == 'Premium' ? 'elastic' : 'functionapp'
 
-var rsAlertsPlanSkuName = rsAlertsHostingPlanType == 'FlexConsumption' ? 'FC1' : rsAlertsPremiumSku
-var rsAlertsPlanSkuTier = rsAlertsHostingPlanType == 'FlexConsumption' ? 'FlexConsumption' : 'ElasticPremium'
+var rsAlertsPlanSkuName = rsAlertsHostingPlanType == 'FlexConsumption' ? 'FC1' : (rsAlertsHostingPlanType == 'Consumption' ? 'Y1' : rsAlertsPremiumSku)
+var rsAlertsPlanSkuTier = rsAlertsHostingPlanType == 'FlexConsumption' ? 'FlexConsumption' : (rsAlertsHostingPlanType == 'Consumption' ? 'Dynamic' : 'ElasticPremium')
 var rsAlertsPlanKind = rsAlertsHostingPlanType == 'Premium' ? 'elastic' : 'functionapp'
 
 // App settings shared by both the Flex Consumption and Premium Function App
@@ -364,10 +366,12 @@ var mainAppSettingsBase = [
   }
 ]
 
-// Settings only a classic (non-Flex) plan needs: Flex Consumption infers the
+// Settings only classic (non-Flex) plans need: Flex Consumption infers the
 // runtime from functionAppConfig.runtime and deploys via a blob container
-// (functionAppConfig.deployment) instead of WEBSITE_RUN_FROM_PACKAGE.
-var classicPlanAppSettings = [
+// (functionAppConfig.deployment). Classic Consumption plans use Oryx remote build
+// via SCM_DO_BUILD_DURING_DEPLOYMENT and ENABLE_ORYX_BUILD without hardcoding
+// WEBSITE_RUN_FROM_PACKAGE=1, while Premium plans mount the pre-built package.
+var mainClassicPlanAppSettings = concat([
   {
     name: 'FUNCTIONS_EXTENSION_VERSION'
     value: '~4'
@@ -376,11 +380,46 @@ var classicPlanAppSettings = [
     name: 'FUNCTIONS_WORKER_RUNTIME'
     value: 'python'
   }
+], hostingPlanType == 'Consumption' ? [
+  {
+    name: 'SCM_DO_BUILD_DURING_DEPLOYMENT'
+    value: 'true'
+  }
+  {
+    name: 'ENABLE_ORYX_BUILD'
+    value: 'true'
+  }
+] : [
   {
     name: 'WEBSITE_RUN_FROM_PACKAGE'
     value: '1'
   }
-]
+])
+
+var rsAlertsClassicPlanAppSettings = concat([
+  {
+    name: 'FUNCTIONS_EXTENSION_VERSION'
+    value: '~4'
+  }
+  {
+    name: 'FUNCTIONS_WORKER_RUNTIME'
+    value: 'python'
+  }
+], rsAlertsHostingPlanType == 'Consumption' ? [
+  {
+    name: 'SCM_DO_BUILD_DURING_DEPLOYMENT'
+    value: 'true'
+  }
+  {
+    name: 'ENABLE_ORYX_BUILD'
+    value: 'true'
+  }
+] : [
+  {
+    name: 'WEBSITE_RUN_FROM_PACKAGE'
+    value: '1'
+  }
+])
 
 // Overrides host.json's extensions.http.maxConcurrentRequests at runtime —
 // only meaningful on the classic (Premium) plan, and only when the deployer
@@ -548,7 +587,7 @@ resource deployIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-0
 }
 
 resource deployIdentityWebsiteContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (codeAutoDeployEnabled) {
-  name: guid(resourceGroup().id, functionAppName, 'WebsiteContributor', 'deployIdentity')
+  name: guid(resourceGroup().id, deployIdentity!.id, 'WebsiteContributor')
   scope: resourceGroup()
   properties: {
     // Built-in "Website Contributor" role, scoped to this resource group —
@@ -726,10 +765,11 @@ resource functionAppClassic 'Microsoft.Web/sites@2023-12-01' = if (hostingPlanTy
     keyVaultReferenceIdentity: botIdentity.id
     siteConfig: {
       linuxFxVersion: 'PYTHON|${pythonVersion}'
-      // hostingPlanType is guaranteed 'Premium' here (the only non-Flex
-      // option) — always-on keeps the pre-warmed instance from idling out.
-      alwaysOn: true
-      appSettings: concat(mainAppSettingsBase, classicPlanAppSettings, httpConcurrencyAppSettings, customAppSettingsArray)
+      // Hosting plan is either 'Consumption' or 'Premium' here. Always-on
+      // is only valid for Premium (keeps pre-warmed instances from idling out);
+      // Consumption plans scale to zero and reject alwaysOn=true.
+      alwaysOn: hostingPlanType == 'Premium'
+      appSettings: concat(mainAppSettingsBase, mainClassicPlanAppSettings, httpConcurrencyAppSettings, customAppSettingsArray)
     }
   }
 }
@@ -961,12 +1001,10 @@ resource rsAlertsFunctionAppClassic 'Microsoft.Web/sites@2023-12-01' = if (enabl
     keyVaultReferenceIdentity: botIdentity.id
     siteConfig: {
       linuxFxVersion: 'PYTHON|${pythonVersion}'
-      // rsAlertsHostingPlanType is guaranteed 'Premium' here (the only
-      // non-Flex option). Unlike Flex Consumption's alwaysReady hint above,
-      // Premium's timer trigger fires correctly on its own as long as the
-      // instance never scales to zero, which alwaysOn guarantees.
-      alwaysOn: true
-      appSettings: concat(rsAlertsAppSettingsBase, classicPlanAppSettings, rsAlertsCustomAppSettingsArray)
+      // Hosting plan is either 'Consumption' or 'Premium' here. Always-on
+      // is only valid for Premium; Consumption plans scale to zero and reject alwaysOn=true.
+      alwaysOn: rsAlertsHostingPlanType == 'Premium'
+      appSettings: concat(rsAlertsAppSettingsBase, rsAlertsClassicPlanAppSettings, rsAlertsCustomAppSettingsArray)
     }
   }
 }

@@ -11,6 +11,9 @@
     "pythonVersion": {
       "value": "3.12"
     },
+    "hostingPlanType": {
+      "value": "Consumption"
+    },
     "instanceMemoryMB": {
       "value": 2048
     },

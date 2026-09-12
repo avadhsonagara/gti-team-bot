@@ -15,7 +15,7 @@ channel. Both ship as two parallel, independently deployable implementations:
 
 ## Deploy to Azure
 
-The button below provisions everything the bot needs — a Flex Consumption
+The button below provisions everything the bot needs — a Consumption (or Flex Consumption / Premium)
 Function App, a Key Vault holding your GTI API key, Application Insights, and
 an Azure Bot resource wired to a User-Assigned Managed Identity (no app
 registration or client secret to create by hand) — **and deploys this repo's
