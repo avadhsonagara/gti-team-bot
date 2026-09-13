@@ -1,0 +1,54 @@
+# =============================================================================
+# Git Ignore Configuration — GTI Teams Bot (Agentic) — Azure Container Apps
+# =============================================================================
+
+# ── Environment & Secrets ───────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.cer
+*.crt
+*.pfx
+*.p12
+
+# ── Python Bytecode & Cache ─────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+
+# ── Virtual Environments ────────────────────────────────────────────────────
+.venv
+.venv/
+.venv*/
+venv/
+env/
+ENV/
+
+# ── Testing & Code Quality ──────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# ── Logs & Debugging ────────────────────────────────────────────────────────
+*.log
+logs/
+nohup.out
+
+# ── Operating System & Editors ──────────────────────────────────────────────
+.DS_Store
+._*
+.idea/
+.vscode/
+*.swp
+*.swo
+*~

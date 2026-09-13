@@ -127,6 +127,7 @@ terraform.rc
 # Rebuild with `git archive`/zip after changing either app's code or deps.
 !azure/azure-bot-function/code.zip
 !azure/rs-alerts/code.zip
+!azure-container/rs-alerts/code.zip
 
 # ── Temporary & Scratch Files ───────────────────────────────────────────────
 scratch/
@@ -153,3 +154,4 @@ Thumbs.db
 /locally_test/
 /locally_test_v1/
 /file-test-teams/
+/azure-concurrency-test/

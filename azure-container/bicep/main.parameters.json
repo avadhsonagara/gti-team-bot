@@ -1,0 +1,66 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "containerAppName": {
+      "value": "gti-teams-bot-agentic"
+    },
+    "location": {
+      "value": "canadacentral"
+    },
+    "dedicatedWorkloadProfileType": {
+      "value": "D4"
+    },
+    "premiumIngressIdleTimeoutMinutes": {
+      "value": 15
+    },
+    "gtiTimeoutSeconds": {
+      "value": 600
+    },
+    "botMinReplicas": {
+      "value": 1
+    },
+    "botMaxReplicas": {
+      "value": 10
+    },
+    "botScaleRuleConcurrency": {
+      "value": 40
+    },
+    "outputFormatInstructions": {
+      "value": ""
+    },
+    "threadContextEnabled": {
+      "value": true
+    },
+    "threadContextMessageCount": {
+      "value": 5
+    },
+    "enableRsAlerts": {
+      "value": true
+    },
+    "rsAlertsHostingPlanType": {
+      "value": "Consumption"
+    },
+    "rsAlertsInstanceMemoryMB": {
+      "value": 512
+    },
+    "rsAlertsTeamsChannelId": {
+      "value": ""
+    },
+    "rsAlertsGtiProject": {
+      "value": ""
+    },
+    "rsAlertsSchedule": {
+      "value": "0 */15 * * * *"
+    },
+    "rsAlertsBackfillDays": {
+      "value": 7
+    },
+    "tags": {
+      "value": {
+        "app": "gti-teams-bot-agentic",
+        "managedBy": "bicep"
+      }
+    }
+  }
+}
