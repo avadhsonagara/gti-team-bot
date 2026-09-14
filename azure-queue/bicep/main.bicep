@@ -121,7 +121,7 @@ param createWorkerAppServicePlan bool = true
 ])
 param workerInstanceMemoryMB int = 2048
 
-@description('Number of queue messages the Worker Function processes concurrently per instance (host.json\'s extensions.queues.batchSize, overridden here via AzureFunctionsJobHost__extensions__queues__batchSize so the deployed code\'s own host.json — which defaults to a conservative batchSize of 1 for safe standalone/manual deployment — is never edited). newBatchThreshold is set to half this value, mirroring Azure Functions\' own default 16/8 ratio. Also sets PYTHON_THREADPOOL_THREAD_COUNT to the same value.')
+@description('Number of queue messages the Worker Function processes concurrently per instance (host.json\'s extensions.queues.batchSize, overridden here via AzureFunctionsJobHost__extensions__queues__batchSize so the deployed code\'s own host.json — which defaults to a conservative batchSize of 1 for safe standalone/manual deployment — is never edited). newBatchThreshold is set to 30% of this value (minimum 1). Also sets PYTHON_THREADPOOL_THREAD_COUNT to the same value.')
 @minValue(1)
 @maxValue(32)
 param workerConcurrentRequests int = 15
@@ -248,7 +248,7 @@ var workerFlexMaximumInstanceCount = max(workerMaximumInstanceCount, 40)
 // runs on Flex and so never needs to allow more than 100 in the first place).
 var workerClassicMaximumInstanceCount = min(workerMaximumInstanceCount, 100)
 
-var workerNewBatchThreshold = max(1, workerConcurrentRequests / 2)
+var workerNewBatchThreshold = max(1, (workerConcurrentRequests * 30) / 100)
 
 var workerPlanSkuName = workerHostingPlanType == 'FlexConsumption' ? 'FC1' : 'Y1'
 var workerPlanSkuTier = workerHostingPlanType == 'FlexConsumption' ? 'FlexConsumption' : 'Dynamic'

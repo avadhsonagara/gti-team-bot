@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.47.16.16243",
-      "templateHash": "686478328292993458"
+      "templateHash": "17119497049184468276"
     }
   },
   "parameters": {
@@ -193,7 +193,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.47.16.16243",
-              "templateHash": "11791815128985513619"
+              "templateHash": "4476522413606575261"
             }
           },
           "parameters": {
@@ -329,7 +329,7 @@
               "minValue": 1,
               "maxValue": 32,
               "metadata": {
-                "description": "Number of queue messages the Worker Function processes concurrently per instance (host.json's extensions.queues.batchSize, overridden here via AzureFunctionsJobHost__extensions__queues__batchSize so the deployed code's own host.json — which defaults to a conservative batchSize of 1 for safe standalone/manual deployment — is never edited). newBatchThreshold is set to half this value, mirroring Azure Functions' own default 16/8 ratio. Also sets PYTHON_THREADPOOL_THREAD_COUNT to the same value."
+                "description": "Number of queue messages the Worker Function processes concurrently per instance (host.json's extensions.queues.batchSize, overridden here via AzureFunctionsJobHost__extensions__queues__batchSize so the deployed code's own host.json — which defaults to a conservative batchSize of 1 for safe standalone/manual deployment — is never edited). newBatchThreshold is set to 30% of this value (minimum 1). Also sets PYTHON_THREADPOOL_THREAD_COUNT to the same value."
               }
             },
             "workerMinimumInstanceCount": {
@@ -467,7 +467,7 @@
             "workerDeploymentContainerName": "[format('app-package-{0}', toLower(parameters('workerFunctionAppName')))]",
             "workerFlexMaximumInstanceCount": "[max(parameters('workerMaximumInstanceCount'), 40)]",
             "workerClassicMaximumInstanceCount": "[min(parameters('workerMaximumInstanceCount'), 100)]",
-            "workerNewBatchThreshold": "[max(1, div(parameters('workerConcurrentRequests'), 2))]",
+            "workerNewBatchThreshold": "[max(1, div(mul(parameters('workerConcurrentRequests'), 30), 100))]",
             "workerPlanSkuName": "[if(equals(parameters('workerHostingPlanType'), 'FlexConsumption'), 'FC1', 'Y1')]",
             "workerPlanSkuTier": "[if(equals(parameters('workerHostingPlanType'), 'FlexConsumption'), 'FlexConsumption', 'Dynamic')]",
             "codeDeployScriptContent": "  set -e\n  python3 - \"$CODE_ZIP_URL\" /tmp/code.zip <<'PY'\nimport sys\nimport urllib.request\n\nurl, out_path = sys.argv[1:3]\nurllib.request.urlretrieve(url, out_path)\nPY\n\n  az functionapp deployment source config-zip \\\n    --resource-group \"$RESOURCE_GROUP\" \\\n    --name \"$APP_NAME\" \\\n    --src /tmp/code.zip \\\n    --build-remote true\n\n  echo \"{\\\"deployed\\\": true}\" > $AZ_SCRIPTS_OUTPUT_PATH\n",
