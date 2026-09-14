@@ -12,6 +12,7 @@ anyway; catching it here at least gets it logged.
 """
 import logging
 
+from app.observability import bind_request
 from app.queue_job import InvalidJobPayload, parse_job_payload
 from app.teams.activity import parse_activity
 from app.teams.cards import build_status_card
@@ -37,6 +38,9 @@ def process_poison_job(raw_payload: dict) -> None:
         activity = parse_activity(activity_body)
         ctx = Ctx(activity)
         scope = getattr(activity.conversation, "conversation_type", "") or ""
+        sender = getattr(activity, "from_", None)
+        user_id = getattr(sender, "id", "unknown") if sender else "unknown"
+        bind_request(request_id=activity.id or "", user=user_id, conversation=activity.conversation.id, activity_id=activity.id or "")
     except Exception:
         logger.exception("[POISON] Could not reconstruct the activity from the poisoned message — cannot notify the user.")
         return

@@ -31,6 +31,7 @@ import json
 import logging
 import re
 import threading
+import time
 
 import azure.functions as func
 from azure.core.exceptions import ResourceExistsError
@@ -161,38 +162,44 @@ def messages(req: func.HttpRequest) -> func.HttpResponse:
         logger.info("[EVENT] Ignoring non-message activity | type=%s", body.get("type"))
         return func.HttpResponse(status_code=200)
 
+    t_start = time.perf_counter()
     try:
-        _ingest_message(body)
+        _ingest_message(body, t_start)
     except Exception:
         # Anything unanticipated here must still ack with 200 — Bot Framework
         # retries a non-2xx response, which would re-run this whole ingest
         # path (and could double-post a placeholder or double-enqueue) for a
         # request that may have already been partially handled.
-        logger.exception("[ERROR] Unhandled exception ingesting activity.")
+        logger.exception("[ERROR] Unhandled exception ingesting activity after %.0fms.", (time.perf_counter() - t_start) * 1000)
     finally:
         clear_request()
 
     return func.HttpResponse(status_code=200)
 
 
-def _ingest_message(body: dict) -> None:
+def _ingest_message(body: dict, t_start: float) -> None:
     activity = parse_activity(body)
     ctx = Ctx(activity)
 
     conversation_id = activity.conversation.id
     sender = getattr(activity, "from_", None)
     user_id = getattr(sender, "id", "unknown") if sender else "unknown"
-    bind_request(user=user_id, conversation=conversation_id, activity_id=activity.id or "")
+    bind_request(request_id=activity.id or "", user=user_id, conversation=conversation_id, activity_id=activity.id or "")
 
     scope = getattr(activity.conversation, "conversation_type", "") or ""
     user_text = _strip_mentions(activity.text or "").strip()
 
+    logger.info(
+        "[INGEST 1/3] Activity received | id=%s scope=%s user=%s query_chars=%d attachments=%d",
+        activity.id or "-", scope, user_id, len(user_text), len(activity.attachments or []),
+    )
+
     if not user_text or not re.search(r"\w", user_text, re.UNICODE):
-        logger.info("[EVENT] Message with no meaningful query — replying directly, no queue needed.")
+        logger.info("[INGEST] Empty query text — sent usage hint in %.0fms", (time.perf_counter() - t_start) * 1000)
         try:
             ctx.send(_EMPTY_QUERY_NOTICE)
         except Exception:
-            logger.warning("[EVENT] Failed to send empty-query usage hint.")
+            logger.warning("[INGEST] Failed to send empty-query usage hint.")
         return
 
     # Channel messages already show the original post inline (and, for
@@ -209,15 +216,19 @@ def _ingest_message(body: dict) -> None:
 
     placeholder_text = f"{quoted_query}\n\n{PLACEHOLDER_TEXT}" if quoted_query else PLACEHOLDER_TEXT
 
+    t_ph = time.perf_counter()
     loading_activity_id = None
     try:
         sent = ctx.send(placeholder_text)
         loading_activity_id = getattr(sent, "id", None)
-        logger.info("[PLACEHOLDER] Posted | id=%s conversation=%s", loading_activity_id, conversation_id)
+        logger.info(
+            "[INGEST 2/3] Placeholder posted in %.0fms | placeholder_id=%s conversation=%s",
+            (time.perf_counter() - t_ph) * 1000, loading_activity_id, conversation_id,
+        )
     except Exception as exc:
-        logger.warning("[PLACEHOLDER] Failed (%s) — worker will fall back to a fresh send.", exc)
+        logger.warning("[INGEST 2/3] Placeholder post failed (%.0fms): %s", (time.perf_counter() - t_ph) * 1000, exc)
 
-    _enqueue_job(body, loading_activity_id, ctx, scope)
+    _enqueue_job(body, loading_activity_id, ctx, scope, t_start)
 
 
 def _deliver_error_notice(ctx: Ctx, loading_activity_id, scope: str, text: str) -> None:
@@ -242,14 +253,14 @@ def _deliver_error_notice(ctx: Ctx, loading_activity_id, scope: str, text: str) 
         logger.exception("[ERROR] Failed to deliver error notice to the user.")
 
 
-def _enqueue_job(activity_body: dict, loading_activity_id, ctx: Ctx, scope: str) -> None:
+def _enqueue_job(activity_body: dict, loading_activity_id, ctx: Ctx, scope: str, t_start: float) -> None:
     payload = build_job_payload(activity_body, loading_activity_id)
     encoded = json.dumps(payload)
     encoded_bytes = encoded.encode("utf-8")
 
     if len(encoded_bytes) > settings.max_job_payload_bytes:
         logger.error(
-            "[QUEUE] Job payload too large (%d bytes, limit %d) — notifying user instead of enqueueing.",
+            "[INGEST] Job payload too large (%d bytes, limit %d) — notifying user instead of enqueueing.",
             len(encoded_bytes), settings.max_job_payload_bytes,
         )
         _deliver_error_notice(ctx, loading_activity_id, scope, _JOB_TOO_LARGE_NOTICE)
@@ -257,6 +268,7 @@ def _enqueue_job(activity_body: dict, loading_activity_id, ctx: Ctx, scope: str)
 
     global _queue_client_instance
     try:
+        t_q = time.perf_counter()
         if _queue_client_instance is None:
             with _queue_client_lock:
                 if _queue_client_instance is None:
@@ -274,7 +286,14 @@ def _enqueue_job(activity_body: dict, loading_activity_id, ctx: Ctx, scope: str)
         # reads it back the same way via msg.get_body().decode("utf-8"), so
         # both sides agree on the wire format without any extra framing.
         queue_client.send_message(encoded)
-        logger.info("[QUEUE] Enqueued job (%d bytes) for conversation=%s", len(encoded_bytes), ctx.activity.conversation.id)
+        logger.info(
+            "[INGEST 3/3] Enqueued to %s in %.0fms | payload_size=%d bytes",
+            settings.job_queue_name, (time.perf_counter() - t_q) * 1000, len(encoded_bytes),
+        )
+        logger.info(
+            "[INGEST DONE] Handoff completed in %.0fms | ready for worker pickup",
+            (time.perf_counter() - t_start) * 1000,
+        )
     except Exception:
-        logger.exception("[QUEUE] Failed to enqueue job — notifying user.")
+        logger.exception("[INGEST] Failed to enqueue job after %.0fms — notifying user.", (time.perf_counter() - t_start) * 1000)
         _deliver_error_notice(ctx, loading_activity_id, scope, _QUEUE_FAILURE_NOTICE)

@@ -11,6 +11,7 @@ App (bot-ingest-function/) before this job ever reached the queue.
 """
 import logging
 import re
+import time
 from datetime import datetime, timezone
 
 from app.config import settings
@@ -88,6 +89,7 @@ def _quoted_query(user_text: str, scope: str) -> str:
 
 
 def process_job(raw_payload: dict, dequeue_count: int = 1) -> None:
+    t_worker_start = time.perf_counter()
     activity_body, loading_activity_id, enqueued_at = parse_job_payload(raw_payload)
     activity = parse_activity(activity_body)
     ctx = Ctx(activity)
@@ -98,19 +100,25 @@ def process_job(raw_payload: dict, dequeue_count: int = 1) -> None:
     user_id = getattr(sender, "id", "unknown") if sender else "unknown"
     tenant_id = _get_tenant_id(activity)
 
-    bind_request(user=user_id, conversation=conversation_id, activity_id=activity.id or "")
+    # Bind request_id to activity.id so Application Insights correlates Ingest and Worker logs seamlessly
+    bind_request(
+        request_id=activity.id or "",
+        user=user_id,
+        conversation=conversation_id,
+        activity_id=activity.id or "",
+    )
     if tenant_id:
         bind_request(tenant=tenant_id)
 
     age_seconds = (datetime.now(timezone.utc) - enqueued_at).total_seconds()
     logger.info(
-        "[JOB] Dequeued | conversation=%s scope=%s dequeue_count=%d age=%.0fs",
-        conversation_id, scope, dequeue_count, age_seconds,
+        "[WORKER START] Dequeued job | activity_id=%s scope=%s dequeue_count=%d queue_wait=%.1fs",
+        activity.id or "-", scope, dequeue_count, age_seconds,
     )
 
     if age_seconds > settings.max_job_age_seconds:
         logger.warning(
-            "[JOB] Job is stale (%.0fs old, limit %.0fs, dequeue_count=%d) — notifying user instead of querying GTI.",
+            "[WORKER] Job is stale (%.1fs old, limit %.0fs, dequeue_count=%d) — notifying user instead of querying GTI.",
             age_seconds, settings.max_job_age_seconds, dequeue_count,
         )
         deliver_message(
@@ -130,39 +138,34 @@ def process_job(raw_payload: dict, dequeue_count: int = 1) -> None:
     # Ingest already stripped mentions and rejected empty queries before ever
     # enqueueing — this is just a defensive backstop, not the primary check.
     if not user_text or not re.search(r"\w", user_text, re.UNICODE):
-        logger.warning("[JOB] Dequeued job has no meaningful query text — dropping.")
+        logger.warning("[WORKER] Dequeued job has no meaningful query text — dropping.")
         return
 
     quoted_query = _quoted_query(user_text, scope)
+
+    t_att = time.perf_counter()
     attachments = download_attachments(ctx)
+    logger.info(
+        "[WORKER 1/4] Attachments processed in %.0fms | count=%d",
+        (time.perf_counter() - t_att) * 1000, len(attachments),
+    )
 
     try:
-        logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-        # Deliberately logs only the query's length and attachment count —
-        # never the query text itself, thread context, or GTI's response.
-        # See [DONE]/[DELIVER] below for the same no-content discipline
-        # applied to the outbound side.
-        logger.info("[EVENT] query_length=%d attachments=%d", len(user_text), len(attachments))
+        # Deliberately logs only lengths and counts — never the query text
+        # itself, thread context, or GTI's response text.
 
-        # The except branches below deliberately do NOT re-raise for any
-        # named GTIError subclass — those are known, already-handled failure
-        # modes (the user gets a specific error card), so the queue message
-        # is considered successfully processed and is never retried/poisoned
-        # over them. Only the final bare `except Exception` re-raises, for
-        # anything unanticipated — see its own comment below for why.
-
-        # ── Step 1: Fetch channel thread context ──────────────────────────
+        # ── Step 2: Fetch channel thread context ──────────────────────────
         # Excludes this bot's own placeholder message (already posted by
         # bot-ingest-function/) via app/teams/thread.py::is_placeholder_message.
+        t_ctx = time.perf_counter()
         thread_context = get_thread_context(activity, scope)
+        logger.info(
+            "[WORKER 2/4] Thread context processed in %.0fms | active=%s chars=%d",
+            (time.perf_counter() - t_ctx) * 1000, bool(thread_context), len(thread_context),
+        )
 
-        # ── Step 2: Query GTI Agentic Sessions API (create or continue) ───
+        # ── Step 3: Query GTI Agentic Sessions API (create or continue) ───
         output_format = get_output_format(settings)
-        if thread_context:
-            # Never logs the thread context text itself — just that some
-            # was found and how large it is.
-            logger.info("[THREAD] Injecting thread context into prompt | chars=%d", len(thread_context))
-
         initial_msg = _render_system_prompt(
             user_query=user_text, thread_context=thread_context, output_format=output_format,
         )
@@ -177,9 +180,11 @@ def process_job(raw_payload: dict, dequeue_count: int = 1) -> None:
             team_id = ""
             channel_id = ""
             existing_session_id = None
+
+        t_gti = time.perf_counter()
         logger.info(
-            "[AGENTIC] Dispatching query to GTI Agentic API | conversation=%s session_key=%s team_id=%s mode=%s",
-            conversation_id, session_key or "-", team_id or "-", "continue" if existing_session_id else "new",
+            "[WORKER 3/4] Dispatching query to GTI Agentic API | mode=%s session_id=%s prompt_chars=%d",
+            "continue" if existing_session_id else "new", existing_session_id or "-", len(initial_msg),
         )
         session_id, response_text, _ = gti_client.send_message(
             message=initial_msg, session_id=existing_session_id, files=attachments,
@@ -187,14 +192,19 @@ def process_job(raw_payload: dict, dequeue_count: int = 1) -> None:
         bind_request(session_id=session_id)
         if session_key:
             set_session_id(session_key, session_id, team_id or None, channel_id or None)
+        logger.info(
+            "[WORKER 3/4] GTI query completed in %.2fs | session_id=%s response_chars=%d",
+            time.perf_counter() - t_gti, session_id, len(response_text),
+        )
 
-        # ── Step 3: Format & Deliver ────────────────────────────────────────
+        # ── Step 4: Format & Deliver ────────────────────────────────────────
+        t_del = time.perf_counter()
         parsed_card, fallback_text = parse_adaptive_card(response_text)
         if parsed_card:
-            logger.info("[PARSE] Successfully parsed native Adaptive Card from GTI Agent")
+            logger.info("[WORKER 4/4] Parsed native Adaptive Card from GTI Agent")
             card = inject_quote_into_card(parsed_card, quoted_query)
         else:
-            logger.info("[PARSE] Using markdown Adaptive Card wrapper")
+            logger.info("[WORKER 4/4] Formatting markdown into Adaptive Card wrapper")
             card = build_gti_response_card(response_text, quoted_query=quoted_query)
 
         fallback_text = f"{quoted_query}\n\n{fallback_text}" if quoted_query else fallback_text
@@ -202,39 +212,40 @@ def process_job(raw_payload: dict, dequeue_count: int = 1) -> None:
         deliver_mode = "edit-in-place" if (loading_activity_id and scope == "channel") else (
             "delete-and-repost" if loading_activity_id else "fresh-send"
         )
+        delivered = deliver_message(ctx, loading_activity_id, fallback_text, card, edit_in_place=(scope == "channel"))
         logger.info(
-            "[DELIVER] Sending response | length=%d chars mode=%s is_native_card=%s",
-            len(response_text), deliver_mode, bool(parsed_card),
+            "[WORKER 4/4] Response delivered in %.0fms | mode=%s is_native_card=%s success=%s",
+            (time.perf_counter() - t_del) * 1000, deliver_mode, bool(parsed_card), delivered,
         )
 
-        delivered = deliver_message(ctx, loading_activity_id, fallback_text, card, edit_in_place=(scope == "channel"))
+        total_elapsed = time.perf_counter() - t_worker_start
         if delivered:
-            logger.info("[DONE] Response delivered successfully.", extra={"status": "delivered"})
+            logger.info("[WORKER DONE] Job finished successfully in %.2fs", total_elapsed, extra={"status": "delivered"})
         else:
-            logger.error("[DONE] All delivery attempts failed.", extra={"status": "failed"})
+            logger.error("[WORKER DONE] Delivery failed after %.2fs", total_elapsed, extra={"status": "failed"})
 
     except GTIAuthenticationError as exc:
-        logger.error("[ERROR] GTI API key authentication failed: %s", exc)
+        logger.error("[WORKER ERROR] GTI API key authentication failed after %.2fs: %s", time.perf_counter() - t_worker_start, exc)
         err_msg = "🔑 **Service Unavailable**\n\nUnable to authenticate with the threat intelligence service. Please contact your bot administrator."
         deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg), edit_in_place=(scope == "channel"))
 
     except GTIRateLimitError as exc:
-        logger.error("[ERROR] GTI rate limit exceeded: %s", exc)
+        logger.error("[WORKER ERROR] GTI rate limit exceeded after %.2fs: %s", time.perf_counter() - t_worker_start, exc)
         err_msg = "⚠️ **High Demand**\n\nThe service is currently experiencing high request volume. Please wait a moment and try your query again."
         deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg), edit_in_place=(scope == "channel"))
 
     except GTITimeoutError as exc:
-        logger.error("[ERROR] GTI request timed out: %s", exc)
+        logger.error("[WORKER ERROR] GTI request timed out after %.2fs: %s", time.perf_counter() - t_worker_start, exc)
         err_msg = "⏱️ **Request Timed Out**\n\nThe query took too long to complete. Please try asking a more specific question or narrowing down your search."
         deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg), edit_in_place=(scope == "channel"))
 
     except GTIServiceError as exc:
-        logger.error("[ERROR] GTI service unavailable: %s", exc)
+        logger.error("[WORKER ERROR] GTI service unavailable after %.2fs: %s", time.perf_counter() - t_worker_start, exc)
         err_msg = "⚠️ **Service Temporarily Unavailable**\n\nThe threat intelligence service is currently unreachable. Please try again in a few moments."
         deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg), edit_in_place=(scope == "channel"))
 
     except GTISessionNotFoundError as exc:
-        logger.error("[ERROR] GTI session not found or expired: %s", exc)
+        logger.error("[WORKER ERROR] GTI session not found or expired after %.2fs: %s", time.perf_counter() - t_worker_start, exc)
         err_msg = (
             "🔄 **Thread Session Expired**\n\n"
             "The conversation session for this channel thread has timed out. "
@@ -243,7 +254,7 @@ def process_job(raw_payload: dict, dequeue_count: int = 1) -> None:
         deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg), edit_in_place=(scope == "channel"))
 
     except GTIPayloadTooLargeError as exc:
-        logger.error("[ERROR] GTI rejected the request — payload too large: %s", exc)
+        logger.error("[WORKER ERROR] GTI rejected the request — payload too large after %.2fs: %s", time.perf_counter() - t_worker_start, exc)
         err_msg = (
             "📁 **File Too Large**\n\n"
             "The attached file(s) exceed the allowable upload size. Please try uploading a smaller file or fewer files at once."
@@ -251,7 +262,7 @@ def process_job(raw_payload: dict, dequeue_count: int = 1) -> None:
         deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg), edit_in_place=(scope == "channel"))
 
     except GTIClientError as exc:
-        logger.error("[ERROR] GTI rejected the request: %s", exc)
+        logger.error("[WORKER ERROR] GTI rejected the request after %.2fs: %s", time.perf_counter() - t_worker_start, exc)
         err_msg = "🚫 **Unable to Process Request**\n\nWe couldn't process this request. Please try rephrasing your question or checking your input."
         deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg), edit_in_place=(scope == "channel"))
 
@@ -260,17 +271,11 @@ def process_job(raw_payload: dict, dequeue_count: int = 1) -> None:
         # or failed generation on its own side) — a GTI-API-level failure,
         # not an HTTP/transport error. Not auto-retried: the same query would
         # most likely produce the same empty result again.
-        logger.error("[ERROR] GTI completed the request but returned no displayable result: %s", exc)
+        logger.error("[WORKER ERROR] GTI completed the request but returned no displayable result after %.2fs: %s", time.perf_counter() - t_worker_start, exc)
         err_msg = "🤔 **No Results Found**\n\nNo threat intelligence results were returned for this query. Try rephrasing your question or providing more details."
         deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg), edit_in_place=(scope == "channel"))
 
     except Exception:
-        # Unlike azure/azure-bot-function's handlers.py (which swallows this
-        # to always ack 200 to Bot Framework), this MUST re-raise: the queue
-        # trigger's own return value is what tells the Functions runtime
-        # whether to retry (per host.json's maxDequeueCount) or leave the
-        # message alone.
-        #
         # Deliberately does NOT deliver an error card here (unlike every
         # named GTI* handler above, which are terminal — they never retry).
         # This branch WILL be retried once more, and for a personal/group
@@ -280,11 +285,6 @@ def process_job(raw_payload: dict, dequeue_count: int = 1) -> None:
         # from poison_handler.py once maxDequeueCount is exhausted. Silently
         # re-raising here means poison_handler.py is the ONLY place that
         # ever tells the user about a truly-failed (all retries exhausted)
-        # unexpected error — exactly one message, not up to three. If the
-        # retry succeeds, the user never sees this branch at all, which is
-        # correct: nothing actually went wrong from their perspective.
-        logger.exception("[ERROR] Unexpected error in GTI job processor.")
+        # unexpected error — exactly one message, not up to three.
+        logger.exception("[WORKER FATAL] Unexpected error in GTI job processor after %.2fs — re-raising for queue retry.", time.perf_counter() - t_worker_start)
         raise
-
-    finally:
-        logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")

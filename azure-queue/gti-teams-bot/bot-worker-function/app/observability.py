@@ -23,10 +23,10 @@ def bind_request(**fields) -> None:
     """
     ctx = dict(_request_ctx.get())
 
-    if "request_id" not in ctx and "request_id" not in fields:
-        ctx["request_id"] = uuid.uuid4().hex
+    req_id = fields.pop("request_id", None) or ctx.get("request_id") or uuid.uuid4().hex
+    ctx["request_id"] = req_id
 
-    ctx.update(fields)
+    ctx.update({k: v for k, v in fields.items() if v is not None and v != ""})
     _request_ctx.set(ctx)
 
 
@@ -40,7 +40,7 @@ class RequestContextFilter(logging.Filter):
 
     def filter(self, record: logging.LogRecord) -> bool:
         ctx = _request_ctx.get()
-        record.request_id = ctx.get("request_id", "-")
+        record.request_id = ctx.get("request_id") or "-"
         for field in _CONTEXT_FIELDS:
             if field in ctx:
                 setattr(record, field, ctx[field])
