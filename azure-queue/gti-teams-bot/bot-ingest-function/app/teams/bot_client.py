@@ -66,7 +66,7 @@ def _headers() -> dict:
 def send_activity(service_url: str, conversation_id: str, activity: dict) -> dict:
     """POST a new activity to a conversation. Returns the Connector API response (includes 'id')."""
     url = f"{service_url.rstrip('/')}/v3/conversations/{conversation_id}/activities"
-    resp = _session.post(url, headers=_headers(), json=activity, timeout=30)
+    resp = _session.post(url, headers=_headers(), json=activity, timeout=(10.0, 30.0))
     resp.raise_for_status()
     return resp.json() if resp.content else {}
 
@@ -74,7 +74,7 @@ def send_activity(service_url: str, conversation_id: str, activity: dict) -> dic
 def update_activity(service_url: str, conversation_id: str, activity_id: str, activity: dict) -> dict:
     """PUT (edit in place) an existing activity."""
     url = f"{service_url.rstrip('/')}/v3/conversations/{conversation_id}/activities/{activity_id}"
-    resp = _session.put(url, headers=_headers(), json=activity, timeout=30)
+    resp = _session.put(url, headers=_headers(), json=activity, timeout=(10.0, 30.0))
     resp.raise_for_status()
     return resp.json() if resp.content else {}
 
@@ -82,5 +82,5 @@ def update_activity(service_url: str, conversation_id: str, activity_id: str, ac
 def delete_activity(service_url: str, conversation_id: str, activity_id: str) -> None:
     """DELETE an existing activity."""
     url = f"{service_url.rstrip('/')}/v3/conversations/{conversation_id}/activities/{activity_id}"
-    resp = _session.delete(url, headers=_headers(), timeout=30)
+    resp = _session.delete(url, headers=_headers(), timeout=(10.0, 30.0))
     resp.raise_for_status()

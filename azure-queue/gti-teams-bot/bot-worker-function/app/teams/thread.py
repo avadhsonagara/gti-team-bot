@@ -198,9 +198,10 @@ def fetch_thread_messages(
         pages_fetched += 1
 
     messages.sort(key=lambda m: m.get("createdDateTime") or "")
-    if exclude_message_id:
-        messages = [m for m in messages if m.get("id") != exclude_message_id]
-    messages = [m for m in messages if not is_placeholder_message(m, bot_app_id)]
+    messages = [
+        m for m in messages
+        if m.get("id") != exclude_message_id and not is_placeholder_message(m, bot_app_id)
+    ]
 
     result = []
     for msg in messages[-limit:]:
@@ -273,10 +274,8 @@ def get_thread_context(activity, scope: str) -> str:
     if scope != "channel" or not settings.thread_context_enabled:
         return ""
 
-    team = getattr(activity, "team", None)
-    channel = getattr(activity, "channel", None)
-    team_id = getattr(team, "aad_group_id", None) or getattr(team, "id", None) if team else None
-    channel_id = getattr(channel, "id", None) if channel else None
+    team_id = get_team_id(activity)
+    channel_id = get_channel_id(activity)
     thread_id = get_thread_root_id(activity.conversation.id)
 
     if not (team_id and channel_id and thread_id):

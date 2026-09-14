@@ -77,11 +77,12 @@ _QUEUE_FAILURE_NOTICE = (
     "⚠️ **Something went wrong while queuing your request.** Please try again in a moment."
 )
 
-# create_queue() only needs to succeed once per instance lifetime — without
-# this guard it was an extra HTTP round-trip to Storage on every single
-# inbound message.
-_queue_ensured = False
-_queue_ensured_lock = threading.Lock()
+# Both the QueueClient instance and its create_queue() call only need to
+# happen once per instance lifetime — without this cache, every single
+# inbound message constructed a fresh client and re-issued create_queue() as
+# an extra HTTP round-trip.
+_queue_client_instance: QueueClient | None = None
+_queue_client_lock = threading.Lock()
 
 
 def _json_response(payload: dict, status_code: int = 200) -> func.HttpResponse:
@@ -221,14 +222,21 @@ def _ingest_message(body: dict) -> None:
 def _deliver_error_notice(ctx: Ctx, loading_activity_id, scope: str, text: str) -> None:
     """Minimal, card-free error delivery — this function never needs the rich Adaptive Card path."""
     try:
+        if loading_activity_id and scope == "channel":
+            ctx.api.conversations.activities(ctx.activity.conversation.id).update(loading_activity_id, text)
+            return
+
         if loading_activity_id:
-            if scope == "channel":
-                ctx.api.conversations.activities(ctx.activity.conversation.id).update(loading_activity_id, text)
-            else:
+            # Isolated from the ctx.send() below: a delete failure here (the
+            # placeholder was already gone, expired, or a transient error)
+            # must not skip sending the notice — the user still needs to
+            # hear that something went wrong either way.
+            try:
                 ctx.api.conversations.activities(ctx.activity.conversation.id).delete(loading_activity_id)
-                ctx.send(text)
-        else:
-            ctx.send(text)
+            except Exception as exc:
+                logger.warning("[ERROR] Could not delete placeholder before sending error notice (%s) — sending fresh message anyway.", exc)
+
+        ctx.send(text)
     except Exception:
         logger.exception("[ERROR] Failed to deliver error notice to the user.")
 
@@ -246,19 +254,20 @@ def _enqueue_job(activity_body: dict, loading_activity_id, ctx: Ctx, scope: str)
         _deliver_error_notice(ctx, loading_activity_id, scope, _JOB_TOO_LARGE_NOTICE)
         return
 
-    global _queue_ensured
+    global _queue_client_instance
     try:
-        queue_client = QueueClient.from_connection_string(
-            settings.azure_web_jobs_storage, settings.job_queue_name,
-        )
-        if not _queue_ensured:
-            with _queue_ensured_lock:
-                if not _queue_ensured:
+        if _queue_client_instance is None:
+            with _queue_client_lock:
+                if _queue_client_instance is None:
+                    client = QueueClient.from_connection_string(
+                        settings.azure_web_jobs_storage, settings.job_queue_name,
+                    )
                     try:
-                        queue_client.create_queue()
+                        client.create_queue()
                     except ResourceExistsError:
                         pass
-                    _queue_ensured = True
+                    _queue_client_instance = client
+        queue_client = _queue_client_instance
         # Sent as plain UTF-8 text (no base64/encoding policy) — the worker's
         # native queue_trigger binding (bot-worker-function/function_app.py)
         # reads it back the same way via msg.get_body().decode("utf-8"), so

@@ -3,6 +3,8 @@ import logging
 import re
 from typing import Optional
 
+from app.teams.cards import align_card_actions_to_right
+
 logger = logging.getLogger("gti-teams-bot")
 
 _MENTION_RE = re.compile(r"<at>.*?</at>", re.IGNORECASE)
@@ -11,11 +13,6 @@ _MENTION_RE = re.compile(r"<at>.*?</at>", re.IGNORECASE)
 def strip_mentions(text: str) -> str:
     """Remove all <at>...</at> mention tokens from a Teams message."""
     return _MENTION_RE.sub("", text or "")
-
-
-def has_mention(text: str) -> bool:
-    """True if the raw activity text contains at least one <at>...</at> mention token."""
-    return bool(_MENTION_RE.search(text or ""))
 
 
 # ── Adaptive Card Parser ──────────────────────────────────────────────────────
@@ -114,17 +111,9 @@ def build_thread_context_section(thread_context: str) -> str:
 
 
 # ── Standard User Notices ─────────────────────────────────────────────────────
-
-EMPTY_QUERY_NOTICE = (
-    "👋 **How can I help you with threat intelligence?**\n\n"
-    "Try asking something like:\n"
-    "- _what do you know about 1.1.1.1?_\n"
-    "- _analyze this domain: example.com_\n"
-    "- _check hash: 275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0_\n"
-    "- _give me threat intelligence on APT29_"
-)
-
-EMPTY_MENTION_NOTICE = EMPTY_QUERY_NOTICE
+# The empty-query notice lives in bot-ingest-function/function_app.py instead
+# (as _EMPTY_QUERY_NOTICE) — the ingest function is what actually handles an
+# empty/no-content query, before a job is ever enqueued to this worker.
 
 LARGE_QUERY_NOTICE = (
     "⚠️ **The GTI results for your query were too large to deliver.**\n\n"
@@ -199,7 +188,6 @@ def deliver_message(
     if card:
         try:
             if isinstance(card, dict):
-                from app.teams.cards import align_card_actions_to_right
                 card.setdefault("msteams", {})["width"] = "full"
                 card = align_card_actions_to_right(card)
             _deliver(_card_activity(card))

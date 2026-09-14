@@ -39,7 +39,7 @@ import requests
 
 from app.graph.client import GraphError, graph_client
 from app.teams.bot_client import get_bot_token
-from app.teams.thread import get_thread_root_id
+from app.teams.thread import get_channel_id, get_team_id, get_thread_root_id
 
 logger = logging.getLogger("gti-teams-bot")
 
@@ -184,7 +184,7 @@ def _fetch_graph_message_attachments(activity, scope: str) -> list[dict[str, Any
         return []
 
     conv_id = getattr(getattr(activity, "conversation", None), "id", None)
-    sender = getattr(activity, "from_property", None) or getattr(activity, "from_", None)
+    sender = getattr(activity, "from_", None)
     sender_aad_id = getattr(sender, "aad_object_id", None) or None
     activity_timestamp = getattr(activity, "timestamp", None)
     if not conv_id:
@@ -192,10 +192,8 @@ def _fetch_graph_message_attachments(activity, scope: str) -> list[dict[str, Any
 
     try:
         if scope == "channel":
-            team = getattr(activity, "team", None)
-            team_id = (getattr(team, "aad_group_id", None) or getattr(team, "id", None)) if team else None
-            channel = getattr(activity, "channel", None)
-            channel_id = getattr(channel, "id", None) if channel else None
+            team_id = get_team_id(activity)
+            channel_id = get_channel_id(activity)
             thread_id = get_thread_root_id(conv_id)
             if not (team_id and channel_id and thread_id):
                 return []

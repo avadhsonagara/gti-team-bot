@@ -167,7 +167,6 @@ class GTIAgenticClient:
         session = self._get_session()
         url = f"{self.base_url}{endpoint}"
 
-        last_exc: Exception | None = None
         for attempt in range(self.max_retries + 1):
             try:
                 logger.info(
@@ -205,8 +204,12 @@ class GTIAgenticClient:
                         if retry_after and retry_after.strip().isdigit():
                             backoff = float(retry_after.strip()) + random.uniform(0.5, 1.5)
                         else:
-                            # 10s, 20s, 30s backoff schedule
-                            delays = [10.0, 20.0, 30.0]
+                            # rate_limit_retry_delay * (2, 4, 6) — with the
+                            # default rate_limit_retry_delay=5.0 this is the
+                            # same 10s/20s/30s schedule as before, but now
+                            # actually driven by the constructor parameter
+                            # instead of a hardcoded literal that ignored it.
+                            delays = [self.rate_limit_retry_delay * m for m in (2, 4, 6)]
                             base_delay = delays[min(attempt, len(delays) - 1)]
                             backoff = base_delay + random.uniform(0.5, 2.0)
 
@@ -240,7 +243,6 @@ class GTIAgenticClient:
                 # ConnectTimeout within the 15s connect-timeout above) — cheap
                 # to retry, unlike a read timeout below.
                 logger.warning("[GTI] Connection error: %s", exc)
-                last_exc = exc
                 if attempt < self.max_retries:
                     delay = (self.retry_delay * (2 ** attempt)) + random.uniform(0.1, 0.5)
                     logger.info("[GTI] Retrying connection error in %.1fs...", delay)
@@ -265,22 +267,26 @@ class GTIAgenticClient:
                 logger.warning("[GTI] Read timeout after %.0fs: %s", self.timeout, exc)
                 raise GTITimeoutError(f"GTI request timed out after {self.timeout:.0f}s: {exc}") from exc
 
-            except (GTIAuthenticationError, GTISessionNotFoundError, GTIClientError):
-                # Don't retry client-side / permanent errors
+            except (GTIAuthenticationError, GTISessionNotFoundError, GTIClientError, GTIRateLimitError):
+                # Don't retry client-side / permanent errors, and don't let
+                # GTIRateLimitError fall into the generic `except Exception`
+                # below — it would get logged as "[GTI] Unexpected error",
+                # re-enter the retry loop, and ultimately be re-raised as
+                # GTIServiceError instead, showing the user "Service
+                # Unavailable" instead of the correct "Rate Limit Exceeded".
                 raise
 
             except Exception as exc:
                 logger.warning("[GTI] Unexpected error: %s", exc)
-                last_exc = exc
                 if attempt < self.max_retries:
                     delay = (self.retry_delay * (2 ** attempt)) + random.uniform(0.1, 0.5)
                     time.sleep(delay)
                     continue
                 raise GTIServiceError(f"GTI request failed: {exc}") from exc
 
-        if last_exc:
-            raise GTIServiceError(f"GTI request failed after retries: {last_exc}") from last_exc
-        raise GTIServiceError("GTI request failed after maximum retries.")
+        # Unreachable: every branch above either returns or raises on the
+        # final attempt (attempt == self.max_retries), so the loop can never
+        # complete without hitting one of those. No trailing raise needed.
 
     # ── Public API Methods ────────────────────────────────────────────────────
 

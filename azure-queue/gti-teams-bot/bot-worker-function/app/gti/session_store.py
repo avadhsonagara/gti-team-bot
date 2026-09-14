@@ -28,11 +28,12 @@ logger = logging.getLogger("gti-teams-bot")
 _TABLE_NAME = "GtiSessions"
 _PARTITION_KEY = "session"
 
-# create_table() only needs to succeed once per worker instance lifetime —
-# without this guard it was an extra HTTP round-trip to Table Storage on
-# every single get/set call.
-_table_ensured = False
-_table_ensured_lock = threading.Lock()
+# Both the TableClient instance and its create_table() call only need to
+# happen once per worker instance lifetime — without this cache, every
+# single get/set call constructed a fresh client and (until the flag was
+# added) re-issued create_table() as an extra HTTP round-trip.
+_table_client_instance: TableClient | None = None
+_table_client_lock = threading.Lock()
 
 
 def _sanitize_row_key(key: str) -> str:
@@ -43,19 +44,19 @@ def _sanitize_row_key(key: str) -> str:
 
 
 def _table_client(cfg: Settings):
-    global _table_ensured
+    global _table_client_instance
     if not cfg.azure_web_jobs_storage:
         return None
-    client = TableClient.from_connection_string(cfg.azure_web_jobs_storage, table_name=_TABLE_NAME)
-    if not _table_ensured:
-        with _table_ensured_lock:
-            if not _table_ensured:
+    if _table_client_instance is None:
+        with _table_client_lock:
+            if _table_client_instance is None:
+                client = TableClient.from_connection_string(cfg.azure_web_jobs_storage, table_name=_TABLE_NAME)
                 try:
                     client.create_table()
                 except ResourceExistsError:
                     pass
-                _table_ensured = True
-    return client
+                _table_client_instance = client
+    return _table_client_instance
 
 
 def _get_entity(key: str) -> dict | None:
@@ -82,22 +83,6 @@ def get_session_id(key: str) -> str | None:
     return session_id or None
 
 
-def get_team_id(key: str) -> str | None:
-    """Return the stored Team ID for this key, or None."""
-    if not key:
-        return None
-    entity = _get_entity(key)
-    team_id = entity.get("team_id") if entity else None
-    return team_id or None
-
-
-def get_channel_id(key: str) -> str | None:
-    """Return the stored Channel ID for this key, or None."""
-    if not key:
-        return None
-    entity = _get_entity(key)
-    channel_id = entity.get("channel_id") if entity else None
-    return channel_id or None
 
 
 def set_session_id(

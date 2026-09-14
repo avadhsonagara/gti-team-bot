@@ -65,7 +65,11 @@ def inject_quote_into_card(card: dict, quoted_query: str) -> dict:
         return card
 
     card_copy = dict(card)
-    card_copy.setdefault("msteams", {})["width"] = "full"
+    # setdefault() on a shallow copy would still mutate the caller's own
+    # "msteams" dict if `card` already had one (dict(card) only copies the
+    # top level) — copy it too before writing into it.
+    card_copy["msteams"] = dict(card_copy.get("msteams") or {})
+    card_copy["msteams"]["width"] = "full"
     card_copy = align_card_actions_to_right(card_copy)
     if quoted_query:
         quote_element = {
@@ -75,7 +79,11 @@ def inject_quote_into_card(card: dict, quoted_query: str) -> dict:
             "isSubtle": True,
             "size": "Small",
         }
-        card_copy["body"] = [quote_element] + list(card.get("body", []))
+        # Must prepend onto card_copy's (already right-aligned) body, not
+        # the original untransformed `card` — using `card` here silently
+        # discarded align_card_actions_to_right's ColumnSet transformation
+        # every time a quote was shown (i.e. every personal/group chat reply).
+        card_copy["body"] = [quote_element] + list(card_copy.get("body", []))
     return card_copy
 
 
