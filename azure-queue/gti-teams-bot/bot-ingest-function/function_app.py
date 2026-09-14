@@ -69,12 +69,12 @@ _EMPTY_QUERY_NOTICE = (
     "- _give me threat intelligence on APT29_"
 )
 _JOB_TOO_LARGE_NOTICE = (
-    "📁 **Request Too Large**\n\n"
-    "This message is too large for the bot to queue for processing (likely a very long "
-    "quoted thread or attachment list). Please shorten your message and try again."
+    "📁 **Message Too Large**\n\n"
+    "This message exceeds the maximum allowed size. Please shorten your message or remove long quoted text and try again."
 )
+
 _QUEUE_FAILURE_NOTICE = (
-    "⚠️ **Something went wrong while queuing your request.** Please try again in a moment."
+    "⚠️ **Unable to Submit Request**\n\nWe couldn't submit your request right now. Please try again in a moment."
 )
 
 # Both the QueueClient instance and its create_queue() call only need to

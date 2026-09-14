@@ -116,15 +116,15 @@ def build_thread_context_section(thread_context: str) -> str:
 # empty/no-content query, before a job is ever enqueued to this worker.
 
 LARGE_QUERY_NOTICE = (
-    "⚠️ **The GTI results for your query were too large to deliver.**\n\n"
-    "Try a more specific query — for example:\n"
+    "⚠️ **Response Too Large to Deliver**\n\n"
+    "The results exceed Microsoft Teams message size limits. Try a more specific query — for example:\n"
     "- Ask for one entity type only (e.g. _threat actors only_)\n"
-    "- Reduce the number of results (e.g. _top 3 findings_)\n"
-    "- Split your query into smaller parts"
+    "- Request fewer items (e.g. _top 3 findings_)\n"
+    "- Split your question into smaller parts"
 )
 
 GENERIC_DELIVERY_FAILURE_NOTICE = (
-    "⚠️ Something went wrong delivering the response. Please try again."
+    "⚠️ **Delivery Failed**\n\nUnable to display the response in Teams. Please try submitting your question again."
 )
 
 

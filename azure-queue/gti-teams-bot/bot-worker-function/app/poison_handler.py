@@ -21,7 +21,8 @@ from app.utils.helpers import deliver_message
 logger = logging.getLogger("gti-teams-bot")
 
 _POISON_NOTICE = (
-    "⚠️ **Sorry, we couldn't complete this request after multiple attempts.** Please try again."
+    "⚠️ **Unable to Complete Request**\n\n"
+    "We encountered an unexpected issue while processing your request. Please try again in a few moments."
 )
 
 

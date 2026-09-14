@@ -46,8 +46,8 @@ from app.utils.helpers import (
 logger = logging.getLogger("gti-teams-bot")
 
 _STALE_JOB_NOTICE = (
-    "⏱️ **Sorry, this took too long to get to.**\n\n"
-    "There was a large backlog of requests ahead of yours. Please ask your question again."
+    "⏱️ **Request Timed Out**\n\n"
+    "Due to high activity, your request could not be processed in time. Please ask your question again."
 )
 
 
@@ -206,41 +206,44 @@ def process_job(raw_payload: dict, dequeue_count: int = 1) -> None:
 
     except GTIAuthenticationError as exc:
         logger.error("[ERROR] GTI API key authentication failed: %s", exc)
-        err_msg = "🔑 **Authentication Failed**\n\nThe Google Threat Intelligence API key is invalid or unauthorized. Please verify your `GTI_API_KEY` configuration."
+        err_msg = "🔑 **Service Unavailable**\n\nUnable to authenticate with the threat intelligence service. Please contact your bot administrator."
         deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg), edit_in_place=(scope == "channel"))
 
     except GTIRateLimitError as exc:
         logger.error("[ERROR] GTI rate limit exceeded: %s", exc)
-        err_msg = "⚠️ **Rate Limit Exceeded**\n\nThe Google Threat Intelligence API rate limit or quota has been reached. Please try again in a moment."
+        err_msg = "⚠️ **High Demand**\n\nThe service is currently experiencing high request volume. Please wait a moment and try your query again."
         deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg), edit_in_place=(scope == "channel"))
 
     except GTITimeoutError as exc:
         logger.error("[ERROR] GTI request timed out: %s", exc)
-        err_msg = "⏱️ **Request Timed Out**\n\nThe threat intelligence query took too long to complete. Try asking a more specific question or query."
+        err_msg = "⏱️ **Request Timed Out**\n\nThe query took too long to complete. Please try asking a more specific question or narrowing down your search."
         deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg), edit_in_place=(scope == "channel"))
 
     except GTIServiceError as exc:
         logger.error("[ERROR] GTI service unavailable: %s", exc)
-        err_msg = "⚠️ **Threat Intelligence Service Unavailable**\n\nThe Google Threat Intelligence service is temporarily unreachable. Please try again shortly."
+        err_msg = "⚠️ **Service Temporarily Unavailable**\n\nThe threat intelligence service is currently unreachable. Please try again in a few moments."
         deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg), edit_in_place=(scope == "channel"))
 
     except GTISessionNotFoundError as exc:
         logger.error("[ERROR] GTI session not found or expired: %s", exc)
-        err_msg = "🔄 **Session Expired**\n\nYour conversation session with the Google Threat Intelligence service has expired. Please start a new query."
+        err_msg = (
+            "🔄 **Thread Session Expired**\n\n"
+            "The conversation session for this channel thread has timed out. "
+            "Please post your question again to start a fresh analysis."
+        )
         deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg), edit_in_place=(scope == "channel"))
 
     except GTIPayloadTooLargeError as exc:
         logger.error("[ERROR] GTI rejected the request — payload too large: %s", exc)
         err_msg = (
             "📁 **File Too Large**\n\n"
-            "The attached file(s) exceed the maximum size the Google Threat Intelligence "
-            "service accepts. Please upload a smaller file, or fewer files at once."
+            "The attached file(s) exceed the allowable upload size. Please try uploading a smaller file or fewer files at once."
         )
         deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg), edit_in_place=(scope == "channel"))
 
     except GTIClientError as exc:
         logger.error("[ERROR] GTI rejected the request: %s", exc)
-        err_msg = "🚫 **Request Rejected**\n\nThe Google Threat Intelligence service could not process this query. Try rephrasing your question."
+        err_msg = "🚫 **Unable to Process Request**\n\nWe couldn't process this request. Please try rephrasing your question or checking your input."
         deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg), edit_in_place=(scope == "channel"))
 
     except GTIEmptyResponseError as exc:
@@ -249,7 +252,7 @@ def process_job(raw_payload: dict, dequeue_count: int = 1) -> None:
         # not an HTTP/transport error. Not auto-retried: the same query would
         # most likely produce the same empty result again.
         logger.error("[ERROR] GTI completed the request but returned no displayable result: %s", exc)
-        err_msg = "🤔 **No Result Produced**\n\nThe Google Threat Intelligence agent completed the request but didn't return a usable result. Try rephrasing your question."
+        err_msg = "🤔 **No Results Found**\n\nNo threat intelligence results were returned for this query. Try rephrasing your question or providing more details."
         deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg), edit_in_place=(scope == "channel"))
 
     except Exception:
