@@ -158,6 +158,7 @@ def messages(req: func.HttpRequest) -> func.HttpResponse:
 
     if body.get("type") != "message":
         # conversationUpdate, typing, installationUpdate, etc. — nothing to do.
+        logger.info("[EVENT] Ignoring non-message activity | type=%s", body.get("type"))
         return func.HttpResponse(status_code=200)
 
     try:

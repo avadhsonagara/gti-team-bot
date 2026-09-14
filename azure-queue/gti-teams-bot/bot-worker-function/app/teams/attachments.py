@@ -242,10 +242,10 @@ def download_attachments(ctx) -> list[tuple[str, bytes, str]]:
     for attachment in raw_attachments:
         content_type = attachment.content_type or ""
         if not _is_user_file(content_type):
-            logger.info(
-                "[ATTACHMENT] Skipping non-file attachment (content_type=%r) content=%r",
-                content_type, attachment.content,
-            )
+            # Never logs `attachment.content` here — for content_type
+            # "text/html" that content IS the message's own text (Teams'
+            # own HTML rendering of it), not a real attachment.
+            logger.info("[ATTACHMENT] Skipping non-file attachment (content_type=%r)", content_type)
             continue
         name = attachment.name or "file"
 
@@ -310,4 +310,6 @@ def download_attachments(ctx) -> list[tuple[str, bytes, str]]:
             except Exception:
                 logger.exception("[ATTACHMENT] Unexpected error downloading Graph attachment %r", name)
 
+    if raw_attachments:
+        logger.info("[ATTACHMENT] Downloaded %d of %d attachment(s)", len(results), len(raw_attachments))
     return results

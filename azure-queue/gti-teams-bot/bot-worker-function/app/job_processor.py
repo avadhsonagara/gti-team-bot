@@ -103,6 +103,11 @@ def process_job(raw_payload: dict, dequeue_count: int = 1) -> None:
         bind_request(tenant=tenant_id)
 
     age_seconds = (datetime.now(timezone.utc) - enqueued_at).total_seconds()
+    logger.info(
+        "[JOB] Dequeued | conversation=%s scope=%s dequeue_count=%d age=%.0fs",
+        conversation_id, scope, dequeue_count, age_seconds,
+    )
+
     if age_seconds > settings.max_job_age_seconds:
         logger.warning(
             "[JOB] Job is stale (%.0fs old, limit %.0fs, dequeue_count=%d) — notifying user instead of querying GTI.",
@@ -132,10 +137,12 @@ def process_job(raw_payload: dict, dequeue_count: int = 1) -> None:
     attachments = download_attachments(ctx)
 
     try:
-        preview = user_text[:80] + ("..." if len(user_text) > 80 else "")
         logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-        logger.info("[EVENT] conversation=%s scope=%s dequeue_count=%d age=%.0fs", conversation_id, scope, dequeue_count, age_seconds)
-        logger.info("[EVENT] query=%r attachments=%d", preview, len(attachments))
+        # Deliberately logs only the query's length and attachment count —
+        # never the query text itself, thread context, or GTI's response.
+        # See [DONE]/[DELIVER] below for the same no-content discipline
+        # applied to the outbound side.
+        logger.info("[EVENT] query_length=%d attachments=%d", len(user_text), len(attachments))
 
         # The except branches below deliberately do NOT re-raise for any
         # named GTIError subclass — those are known, already-handled failure
@@ -152,7 +159,9 @@ def process_job(raw_payload: dict, dequeue_count: int = 1) -> None:
         # ── Step 2: Query GTI Agentic Sessions API (create or continue) ───
         output_format = get_output_format(settings)
         if thread_context:
-            logger.info("[THREAD] Injecting channel thread context into prompt:\n%s", thread_context)
+            # Never logs the thread context text itself — just that some
+            # was found and how large it is.
+            logger.info("[THREAD] Injecting thread context into prompt | chars=%d", len(thread_context))
 
         initial_msg = _render_system_prompt(
             user_query=user_text, thread_context=thread_context, output_format=output_format,

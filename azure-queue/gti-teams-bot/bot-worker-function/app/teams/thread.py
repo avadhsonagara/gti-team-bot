@@ -288,13 +288,12 @@ def get_thread_context(activity, scope: str) -> str:
             exclude_message_id=activity.id or "",
             bot_app_id=settings.client_id,
         )
+        # Count only — never the messages' authors or text, which is exactly
+        # what this context is: other people's conversation content.
         logger.info(
             "[GRAPH] Fetched %d thread message(s) | team=%s channel=%s thread=%s",
             len(messages), team_id, channel_id, thread_id,
         )
-        for i, msg in enumerate(messages, start=1):
-            preview = msg["text"][:200] + ("..." if len(msg["text"]) > 200 else "")
-            logger.info("[GRAPH]   %d. %s: %r", i, msg["author"], preview)
         return format_thread_context(messages)
     except GraphError as exc:
         logger.warning("[GRAPH] Thread context fetch failed: %s", exc)
