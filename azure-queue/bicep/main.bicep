@@ -91,11 +91,6 @@ param createIngestAppServicePlan bool = true
 @maxValue(32)
 param ingestConcurrentRequests int = 20
 
-@description('Minimum instance count for the Ingest Function App. Classic Consumption plan scales to zero when idle (0).')
-@minValue(0)
-@maxValue(100)
-param ingestMinimumInstanceCount int = 0
-
 @description('Maximum scale-out instance count for the Ingest Function App (functionAppScaleLimit on Consumption plan).')
 @minValue(1)
 @maxValue(1000)
@@ -327,8 +322,6 @@ var ingestAppSettings = concat(sharedCoreAppSettings, [
     value: 'true'
   }
   {
-    // Overrides host.json's extensions.http.maxConcurrentRequests at
-    // runtime — no code redeploy needed to retune this.
     name: 'AzureFunctionsJobHost__extensions__http__maxConcurrentRequests'
     value: string(ingestConcurrentRequests)
   }
@@ -950,7 +943,6 @@ output ingestFunctionAppName string = ingestFunctionAppName
 output ingestFunctionAppDefaultHostName string = ingestFunctionApp.properties.defaultHostName
 output ingestMessagingEndpoint string = 'https://${ingestFunctionApp.properties.defaultHostName}/api/messages'
 output ingestConcurrentRequests int = ingestConcurrentRequests
-output ingestMinimumInstanceCount int = ingestMinimumInstanceCount
 output ingestMaximumInstanceCount int = ingestMaximumInstanceCount
 
 output workerFunctionAppName string = workerFunctionAppName

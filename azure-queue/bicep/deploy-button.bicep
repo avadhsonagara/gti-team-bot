@@ -22,11 +22,6 @@ param ingestFunctionAppName string = 'gti-teams-bot-ingest'
 @maxValue(32)
 param ingestConcurrentRequests int = 20
 
-@description('Minimum instance count for the Ingest Function App. Classic Consumption plan scales to zero when idle (0).')
-@minValue(0)
-@maxValue(100)
-param ingestMinimumInstanceCount int = 0
-
 @description('Maximum scale-out instance count for the Ingest Function App (functionAppScaleLimit on Consumption plan).')
 @minValue(1)
 @maxValue(1000)
@@ -104,7 +99,6 @@ module main 'main.bicep' = {
   params: {
     ingestFunctionAppName: ingestFunctionAppName
     ingestConcurrentRequests: ingestConcurrentRequests
-    ingestMinimumInstanceCount: ingestMinimumInstanceCount
     ingestMaximumInstanceCount: ingestMaximumInstanceCount
     workerFunctionAppName: workerFunctionAppName
     workerHostingPlanType: workerHostingPlanType

@@ -8,9 +8,6 @@
     "ingestConcurrentRequests": {
       "value": 20
     },
-    "ingestMinimumInstanceCount": {
-      "value": 0
-    },
     "ingestMaximumInstanceCount": {
       "value": 5
     },

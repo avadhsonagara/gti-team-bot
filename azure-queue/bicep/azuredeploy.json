@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.47.16.16243",
-      "templateHash": "2773559788278172060"
+      "templateHash": "484186207498436063"
     }
   },
   "parameters": {
@@ -87,15 +87,6 @@
       "maxValue": 32,
       "metadata": {
         "description": "Maximum concurrent HTTP requests processed per Ingest instance (Portal: \"Scale and concurrency\" -> \"Assign manually\"), applied via the AzureFunctionsJobHost__extensions__http__maxConcurrentRequests app setting. Also sets PYTHON_THREADPOOL_THREAD_COUNT to the same value, since each concurrent request is handled on its own thread within one worker process for this fully-synchronous (non-async) app."
-      }
-    },
-    "ingestMinimumInstanceCount": {
-      "type": "int",
-      "defaultValue": 0,
-      "minValue": 0,
-      "maxValue": 100,
-      "metadata": {
-        "description": "Minimum instance count for the Ingest Function App. Classic Consumption plan scales to zero when idle (0)."
       }
     },
     "ingestMaximumInstanceCount": {
@@ -801,10 +792,6 @@
     "ingestConcurrentRequests": {
       "type": "int",
       "value": "[parameters('ingestConcurrentRequests')]"
-    },
-    "ingestMinimumInstanceCount": {
-      "type": "int",
-      "value": "[parameters('ingestMinimumInstanceCount')]"
     },
     "ingestMaximumInstanceCount": {
       "type": "int",
