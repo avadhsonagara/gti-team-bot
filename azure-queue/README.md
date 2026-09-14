@@ -159,16 +159,26 @@ concurrently.
 
 ## Timeout harmonization
 
-`GTI_TIMEOUT_SECONDS` (worker, default 480s / 8 min), `host.json`'s
-`functionTimeout` (default 9m30s), and `extensions.queues.visibilityTimeout`
-(default 11 min) are deliberately staggered so a slow-but-still-processing
-GTI call is never killed mid-flight by the Functions host, and the queue
-never redelivers the same message to a second instance while the first is
-still working. Consumption's `functionTimeout` has a hard, Azure-enforced
+`GTI_TIMEOUT_SECONDS` (worker, default 480s / 8 min) and `host.json`'s
+`functionTimeout` (default 9m30s) are deliberately staggered so a
+slow-but-still-processing GTI call is never killed mid-flight by the
+Functions host. Consumption's `functionTimeout` has a hard, Azure-enforced
 10-minute ceiling; if this app is deployed on Flex Consumption instead
 (30-minute ceiling), raise `GTI_TIMEOUT_SECONDS` and `host.json`'s
 `functionTimeout` (via the `AzureFunctionsJobHost__functionTimeout` app
 setting, so no redeploy is needed) together.
+
+Protection against a second instance picking up a job while the first is
+still working on it does **not** come from `extensions.queues.
+visibilityTimeout` — for a Storage Queue trigger, Azure Functions manages
+its own internal peek-lock plus automatic lease renewal (fixed, not
+configurable) for as long as an instance stays healthy. `visibilityTimeout`
+only governs how long a message waits before becoming visible again after
+an *explicit* dequeue failure. This repo sets it deliberately short
+(`00:00:10`) paired with `maxDequeueCount: 2`, so a genuinely failing job
+retries almost immediately and lands on the poison queue quickly, instead
+of leaving the user's placeholder stuck for minutes before they're told it
+failed.
 
 ## A second real bug found on re-review
 
