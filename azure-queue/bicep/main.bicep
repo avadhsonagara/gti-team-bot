@@ -860,6 +860,15 @@ resource botTeamsChannel 'Microsoft.BotService/botServices/channels@2022-09-15' 
   location: 'global'
   properties: {
     channelName: 'MsTeamsChannel'
+    properties: {
+      isEnabled: true
+      // Without this, Teams' own app-package validation rejects the
+      // manifest with "Invalid Bot — Please make sure the bot is
+      // registered and Teams channel is enabled", even though the channel
+      // resource itself deployed successfully and isEnabled is already
+      // true — confirmed live against a deployment that had this unset.
+      acceptedTerms: true
+    }
   }
 }
 

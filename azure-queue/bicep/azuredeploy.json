@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.47.16.16243",
-      "templateHash": "4476522413606575261"
+      "templateHash": "6113009354854157685"
     }
   },
   "parameters": {
@@ -685,7 +685,11 @@
       "name": "[format('{0}/{1}', parameters('botName'), 'MsTeamsChannel')]",
       "location": "global",
       "properties": {
-        "channelName": "MsTeamsChannel"
+        "channelName": "MsTeamsChannel",
+        "properties": {
+          "isEnabled": true,
+          "acceptedTerms": true
+        }
       },
       "dependsOn": [
         "[resourceId('Microsoft.BotService/botServices', parameters('botName'))]"
