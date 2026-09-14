@@ -1,0 +1,60 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "ingestFunctionAppName": {
+      "value": "gti-teams-bot-ingest"
+    },
+    "workerFunctionAppName": {
+      "value": "gti-teams-bot-worker"
+    },
+    "location": {
+      "value": "eastus"
+    },
+    "pythonVersion": {
+      "value": "3.12"
+    },
+    "ingestConcurrentRequests": {
+      "value": 20
+    },
+    "workerHostingPlanType": {
+      "value": "FlexConsumption"
+    },
+    "workerInstanceMemoryMB": {
+      "value": 2048
+    },
+    "workerMaximumInstanceCount": {
+      "value": 5
+    },
+    "workerConcurrentRequests": {
+      "value": 15
+    },
+    "gtiTimeoutSeconds": {
+      "value": 480
+    },
+    "maxJobAgeSeconds": {
+      "value": 480
+    },
+    "outputFormatInstructions": {
+      "value": ""
+    },
+    "threadContextMessageCount": {
+      "value": 5
+    },
+    "manifestSourceBaseUrl": {
+      "value": ""
+    },
+    "ingestCodeZipUrl": {
+      "value": ""
+    },
+    "workerCodeZipUrl": {
+      "value": ""
+    },
+    "tags": {
+      "value": {
+        "app": "gti-teams-bot-queue",
+        "managedBy": "bicep"
+      }
+    }
+  }
+}

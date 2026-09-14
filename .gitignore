@@ -128,6 +128,8 @@ terraform.rc
 !azure/azure-bot-function/code.zip
 !azure/rs-alerts/code.zip
 !azure-container/rs-alerts/code.zip
+!azure-queue/gti-teams-bot/bot-ingest-function/code.zip
+!azure-queue/gti-teams-bot/bot-worker-function/code.zip
 
 # ── Temporary & Scratch Files ───────────────────────────────────────────────
 scratch/
