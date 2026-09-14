@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.47.16.16243",
-      "templateHash": "13240097574036674390"
+      "templateHash": "2773559788278172060"
     }
   },
   "parameters": {
@@ -89,6 +89,24 @@
         "description": "Maximum concurrent HTTP requests processed per Ingest instance (Portal: \"Scale and concurrency\" -> \"Assign manually\"), applied via the AzureFunctionsJobHost__extensions__http__maxConcurrentRequests app setting. Also sets PYTHON_THREADPOOL_THREAD_COUNT to the same value, since each concurrent request is handled on its own thread within one worker process for this fully-synchronous (non-async) app."
       }
     },
+    "ingestMinimumInstanceCount": {
+      "type": "int",
+      "defaultValue": 0,
+      "minValue": 0,
+      "maxValue": 100,
+      "metadata": {
+        "description": "Minimum instance count for the Ingest Function App. Classic Consumption plan scales to zero when idle (0)."
+      }
+    },
+    "ingestMaximumInstanceCount": {
+      "type": "int",
+      "defaultValue": 5,
+      "minValue": 1,
+      "maxValue": 1000,
+      "metadata": {
+        "description": "Maximum scale-out instance count for the Ingest Function App (functionAppScaleLimit on Consumption plan)."
+      }
+    },
     "workerHostingPlanType": {
       "type": "string",
       "defaultValue": "FlexConsumption",
@@ -126,15 +144,6 @@
         "description": "Per-instance memory (MB) for the Worker Function App when workerHostingPlanType is FlexConsumption. Ignored for Consumption."
       }
     },
-    "workerMaximumInstanceCount": {
-      "type": "int",
-      "defaultValue": 5,
-      "minValue": 1,
-      "maxValue": 1000,
-      "metadata": {
-        "description": "Requested maximum scale-out instance count for the Worker Function App. On Consumption this becomes an exact functionAppScaleLimit cap (1 is a valid value there). On Flex Consumption, Azure enforces a hard platform floor of 40 on maximumInstanceCount regardless of what's requested here — a value below 40 is silently raised to 40 for that plan type only (see workerAppliedMaxInstanceCount output for the value actually applied)."
-      }
-    },
     "workerConcurrentRequests": {
       "type": "int",
       "defaultValue": 15,
@@ -142,6 +151,24 @@
       "maxValue": 32,
       "metadata": {
         "description": "Number of queue messages the Worker Function processes concurrently per instance (host.json's extensions.queues.batchSize, overridden here via AzureFunctionsJobHost__extensions__queues__batchSize so the deployed code's own host.json — which defaults to a conservative batchSize of 1 for safe standalone/manual deployment — is never edited). newBatchThreshold is set to half this value, mirroring Azure Functions' own default 16/8 ratio. Also sets PYTHON_THREADPOOL_THREAD_COUNT to the same value."
+      }
+    },
+    "workerMinimumInstanceCount": {
+      "type": "int",
+      "defaultValue": 0,
+      "minValue": 0,
+      "maxValue": 100,
+      "metadata": {
+        "description": "Minimum instance count for the Worker Function App. On Flex Consumption, setting a value > 0 keeps that number of always-ready instances pre-warmed for the queue trigger. Ignored on Consumption plan (scales to zero)."
+      }
+    },
+    "workerMaximumInstanceCount": {
+      "type": "int",
+      "defaultValue": 5,
+      "minValue": 1,
+      "maxValue": 1000,
+      "metadata": {
+        "description": "Requested maximum scale-out instance count for the Worker Function App. On Consumption this becomes an exact functionAppScaleLimit cap (1 is a valid value there). On Flex Consumption, Azure enforces a hard platform floor of 40 on maximumInstanceCount regardless of what's requested here — a value below 40 is silently raised to 40 for that plan type only (see workerAppliedMaxInstanceCount output for the value actually applied)."
       }
     },
     "gtiTimeoutSeconds": {
@@ -230,9 +257,9 @@
     },
     "manifestSourceBaseUrl": {
       "type": "string",
-      "defaultValue": "",
+      "defaultValue": "https://raw.githubusercontent.com/avadhsonagara/gti-team-bot/main/azure-queue/gti-teams-bot/teams-app-manifest",
       "metadata": {
-        "description": "Base URL the Teams app manifest source files (manifest.json, color.png, outline.png) are fetched from at deploy time. Leave empty (default) to skip the manifest upload entirely and assemble/sideload it yourself."
+        "description": "Base URL the Teams app manifest source files (manifest.json, color.png, outline.png) are fetched from at deploy time. Defaults to this repo's own gti-teams-bot/teams-app-manifest folder. Leave empty to skip the manifest upload entirely and assemble/sideload it yourself."
       }
     },
     "forceUpdateTag": {
@@ -244,16 +271,16 @@
     },
     "ingestCodeZipUrl": {
       "type": "string",
-      "defaultValue": "",
+      "defaultValue": "https://raw.githubusercontent.com/avadhsonagara/gti-team-bot/main/azure-queue/gti-teams-bot/bot-ingest-function/code.zip",
       "metadata": {
-        "description": "URL to a pre-built bot-ingest-function code zip (host.json etc. at the zip root). Fetched and zip-deployed with a remote build. Leave empty (default) to skip automatic code deployment and publish it yourself."
+        "description": "URL to a pre-built bot-ingest-function code zip (host.json etc. at the zip root). Fetched and zip-deployed with a remote build. Leave empty to skip automatic code deployment and publish it yourself."
       }
     },
     "workerCodeZipUrl": {
       "type": "string",
-      "defaultValue": "",
+      "defaultValue": "https://raw.githubusercontent.com/avadhsonagara/gti-team-bot/main/azure-queue/gti-teams-bot/bot-worker-function/code.zip",
       "metadata": {
-        "description": "URL to a pre-built bot-worker-function code zip. Leave empty (default) to skip automatic code deployment and publish it yourself."
+        "description": "URL to a pre-built bot-worker-function code zip. Leave empty to skip automatic code deployment and publish it yourself."
       }
     }
   },
@@ -469,6 +496,7 @@
         "siteConfig": {
           "linuxFxVersion": "[format('PYTHON|{0}', parameters('pythonVersion'))]",
           "alwaysOn": false,
+          "functionAppScaleLimit": "[parameters('ingestMaximumInstanceCount')]",
           "appSettings": "[concat(createArray(createObject('name', 'AzureWebJobsStorage', 'value', format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix={2}', parameters('storageAccountName'), listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').keys[0].value, environment().suffixes.storage)), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference(resourceId('Microsoft.Insights/components', parameters('appInsightsName')), '2020-02-02').ConnectionString), createObject('name', 'CLIENT_ID', 'value', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('ingestFunctionAppName'))), '2023-01-31').clientId), createObject('name', 'MANAGED_IDENTITY_CLIENT_ID', 'value', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('ingestFunctionAppName'))), '2023-01-31').clientId), createObject('name', 'JOB_QUEUE_NAME', 'value', parameters('jobQueueName'))), createArray(createObject('name', 'FUNCTIONS_EXTENSION_VERSION', 'value', '~4'), createObject('name', 'FUNCTIONS_WORKER_RUNTIME', 'value', 'python'), createObject('name', 'SCM_DO_BUILD_DURING_DEPLOYMENT', 'value', 'true'), createObject('name', 'ENABLE_ORYX_BUILD', 'value', 'true'), createObject('name', 'AzureFunctionsJobHost__extensions__http__maxConcurrentRequests', 'value', string(parameters('ingestConcurrentRequests'))), createObject('name', 'PYTHON_THREADPOOL_THREAD_COUNT', 'value', string(parameters('ingestConcurrentRequests')))))]"
         }
       },
@@ -529,7 +557,8 @@
           },
           "scaleAndConcurrency": {
             "maximumInstanceCount": "[variables('workerFlexMaximumInstanceCount')]",
-            "instanceMemoryMB": "[parameters('workerInstanceMemoryMB')]"
+            "instanceMemoryMB": "[parameters('workerInstanceMemoryMB')]",
+            "alwaysReady": "[if(greater(parameters('workerMinimumInstanceCount'), 0), createArray(createObject('name', 'function:process_query_job', 'instanceCount', parameters('workerMinimumInstanceCount'))), createArray())]"
           },
           "runtime": {
             "name": "python",
@@ -773,6 +802,14 @@
       "type": "int",
       "value": "[parameters('ingestConcurrentRequests')]"
     },
+    "ingestMinimumInstanceCount": {
+      "type": "int",
+      "value": "[parameters('ingestMinimumInstanceCount')]"
+    },
+    "ingestMaximumInstanceCount": {
+      "type": "int",
+      "value": "[parameters('ingestMaximumInstanceCount')]"
+    },
     "workerFunctionAppName": {
       "type": "string",
       "value": "[parameters('workerFunctionAppName')]"
@@ -788,6 +825,10 @@
     "workerConcurrentRequests": {
       "type": "int",
       "value": "[parameters('workerConcurrentRequests')]"
+    },
+    "workerMinimumInstanceCount": {
+      "type": "int",
+      "value": "[parameters('workerMinimumInstanceCount')]"
     },
     "workerRequestedMaxInstanceCount": {
       "type": "int",

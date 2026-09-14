@@ -5,17 +5,17 @@
     "ingestFunctionAppName": {
       "value": "gti-teams-bot-ingest"
     },
-    "workerFunctionAppName": {
-      "value": "gti-teams-bot-worker"
-    },
-    "location": {
-      "value": "eastus"
-    },
-    "pythonVersion": {
-      "value": "3.12"
-    },
     "ingestConcurrentRequests": {
       "value": 20
+    },
+    "ingestMinimumInstanceCount": {
+      "value": 0
+    },
+    "ingestMaximumInstanceCount": {
+      "value": 5
+    },
+    "workerFunctionAppName": {
+      "value": "gti-teams-bot-worker"
     },
     "workerHostingPlanType": {
       "value": "FlexConsumption"
@@ -23,11 +23,20 @@
     "workerInstanceMemoryMB": {
       "value": 2048
     },
+    "workerConcurrentRequests": {
+      "value": 15
+    },
+    "workerMinimumInstanceCount": {
+      "value": 0
+    },
     "workerMaximumInstanceCount": {
       "value": 5
     },
-    "workerConcurrentRequests": {
-      "value": 15
+    "location": {
+      "value": "eastus"
+    },
+    "pythonVersion": {
+      "value": "3.12"
     },
     "gtiTimeoutSeconds": {
       "value": 480

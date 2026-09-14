@@ -10,15 +10,34 @@
 // main.bicep directly via `az deployment group create` instead.
 // =============================================================================
 
+// ---------------------------------------------------------------------------
+// Ingest Function App
+// ---------------------------------------------------------------------------
+
 @description('Name of the Ingest Function App (the messaging endpoint Azure Bot calls).')
 param ingestFunctionAppName string = 'gti-teams-bot-ingest'
 
+@description('Maximum concurrent HTTP requests processed per Ingest instance, and the matching Python thread-pool size.')
+@minValue(1)
+@maxValue(32)
+param ingestConcurrentRequests int = 20
+
+@description('Minimum instance count for the Ingest Function App. Classic Consumption plan scales to zero when idle (0).')
+@minValue(0)
+@maxValue(100)
+param ingestMinimumInstanceCount int = 0
+
+@description('Maximum scale-out instance count for the Ingest Function App (functionAppScaleLimit on Consumption plan).')
+@minValue(1)
+@maxValue(1000)
+param ingestMaximumInstanceCount int = 5
+
+// ---------------------------------------------------------------------------
+// Worker Function App
+// ---------------------------------------------------------------------------
+
 @description('Name of the Worker Function App (runs the actual GTI query).')
 param workerFunctionAppName string = 'gti-teams-bot-worker'
-
-@description('Google Threat Intelligence Agentic API key. Stored as a Key Vault secret, never as a plaintext app setting.')
-@secure()
-param gtiApiKey string
 
 @description('Hosting plan for the Worker Function App. Flex Consumption (default): modern serverless with configurable per-instance memory. Consumption: classic scale-to-zero.')
 @allowed([
@@ -35,20 +54,28 @@ param workerHostingPlanType string = 'FlexConsumption'
 ])
 param workerInstanceMemoryMB int = 2048
 
-@description('Requested maximum scale-out instance count for the Worker Function App. Azure enforces a hard floor of 40 for this on Flex Consumption specifically — a lower value here is silently raised to 40 only on that plan type (see the deployment\'s workerAppliedMaxInstanceCount output for what was actually applied).')
-@minValue(1)
-@maxValue(1000)
-param workerMaximumInstanceCount int = 5
-
 @description('Number of queue messages the Worker Function processes concurrently per instance, and the matching Python thread-pool size.')
 @minValue(1)
 @maxValue(32)
 param workerConcurrentRequests int = 15
 
-@description('Maximum concurrent HTTP requests processed per Ingest instance, and the matching Python thread-pool size.')
+@description('Minimum instance count for the Worker Function App. On Flex Consumption, setting a value > 0 keeps that number of always-ready instances pre-warmed for the queue trigger. Ignored on Consumption plan (scales to zero).')
+@minValue(0)
+@maxValue(100)
+param workerMinimumInstanceCount int = 0
+
+@description('Requested maximum scale-out instance count for the Worker Function App. Azure enforces a hard floor of 40 for this on Flex Consumption specifically — a lower value here is silently raised to 40 only on that plan type (see the deployment\'s workerAppliedMaxInstanceCount output for what was actually applied).')
 @minValue(1)
-@maxValue(32)
-param ingestConcurrentRequests int = 20
+@maxValue(1000)
+param workerMaximumInstanceCount int = 5
+
+// ---------------------------------------------------------------------------
+// GTI API Key & Bot Configuration
+// ---------------------------------------------------------------------------
+
+@description('Google Threat Intelligence Agentic API key. Stored as a Key Vault secret, never as a plaintext app setting.')
+@secure()
+param gtiApiKey string
 
 @description('Client-side read timeout (seconds) for a single GTI Agentic API call.')
 @minValue(30)
@@ -76,13 +103,16 @@ module main 'main.bicep' = {
   name: 'gti-teams-bot-queue-main'
   params: {
     ingestFunctionAppName: ingestFunctionAppName
+    ingestConcurrentRequests: ingestConcurrentRequests
+    ingestMinimumInstanceCount: ingestMinimumInstanceCount
+    ingestMaximumInstanceCount: ingestMaximumInstanceCount
     workerFunctionAppName: workerFunctionAppName
-    gtiApiKey: gtiApiKey
     workerHostingPlanType: workerHostingPlanType
     workerInstanceMemoryMB: workerInstanceMemoryMB
-    workerMaximumInstanceCount: workerMaximumInstanceCount
     workerConcurrentRequests: workerConcurrentRequests
-    ingestConcurrentRequests: ingestConcurrentRequests
+    workerMinimumInstanceCount: workerMinimumInstanceCount
+    workerMaximumInstanceCount: workerMaximumInstanceCount
+    gtiApiKey: gtiApiKey
     gtiTimeoutSeconds: gtiTimeoutSeconds
     maxJobAgeSeconds: maxJobAgeSeconds
     outputFormatInstructions: outputFormatInstructions

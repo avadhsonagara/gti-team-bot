@@ -91,13 +91,15 @@ param createIngestAppServicePlan bool = true
 @maxValue(32)
 param ingestConcurrentRequests int = 20
 
-// No minimum/maximum *instance* count parameter for the Ingest plan:
-// Consumption always scales to zero when idle (there is no "always ready
-// instances" concept to configure, unlike Flex Consumption/Premium), and
-// its maximum scale-out is left at the platform default (no
-// functionAppScaleLimit override) rather than an artificially low cap —
-// this endpoint is cheap per-invocation and benefits from scaling out
-// freely under bursty inbound Teams traffic.
+@description('Minimum instance count for the Ingest Function App. Classic Consumption plan scales to zero when idle (0).')
+@minValue(0)
+@maxValue(100)
+param ingestMinimumInstanceCount int = 0
+
+@description('Maximum scale-out instance count for the Ingest Function App (functionAppScaleLimit on Consumption plan).')
+@minValue(1)
+@maxValue(1000)
+param ingestMaximumInstanceCount int = 5
 
 // ---------------------------------------------------------------------------
 // Worker Function App — Consumption or Flex Consumption
@@ -124,15 +126,20 @@ param createWorkerAppServicePlan bool = true
 ])
 param workerInstanceMemoryMB int = 2048
 
-@description('Requested maximum scale-out instance count for the Worker Function App. On Consumption this becomes an exact functionAppScaleLimit cap (1 is a valid value there). On Flex Consumption, Azure enforces a hard platform floor of 40 on maximumInstanceCount regardless of what\'s requested here — a value below 40 is silently raised to 40 for that plan type only (see workerAppliedMaxInstanceCount output for the value actually applied).')
-@minValue(1)
-@maxValue(1000)
-param workerMaximumInstanceCount int = 5
-
 @description('Number of queue messages the Worker Function processes concurrently per instance (host.json\'s extensions.queues.batchSize, overridden here via AzureFunctionsJobHost__extensions__queues__batchSize so the deployed code\'s own host.json — which defaults to a conservative batchSize of 1 for safe standalone/manual deployment — is never edited). newBatchThreshold is set to half this value, mirroring Azure Functions\' own default 16/8 ratio. Also sets PYTHON_THREADPOOL_THREAD_COUNT to the same value.')
 @minValue(1)
 @maxValue(32)
 param workerConcurrentRequests int = 15
+
+@description('Minimum instance count for the Worker Function App. On Flex Consumption, setting a value > 0 keeps that number of always-ready instances pre-warmed for the queue trigger. Ignored on Consumption plan (scales to zero).')
+@minValue(0)
+@maxValue(100)
+param workerMinimumInstanceCount int = 0
+
+@description('Requested maximum scale-out instance count for the Worker Function App. On Consumption this becomes an exact functionAppScaleLimit cap (1 is a valid value there). On Flex Consumption, Azure enforces a hard platform floor of 40 on maximumInstanceCount regardless of what\'s requested here — a value below 40 is silently raised to 40 for that plan type only (see workerAppliedMaxInstanceCount output for the value actually applied).')
+@minValue(1)
+@maxValue(1000)
+param workerMaximumInstanceCount int = 5
 
 @description('Client-side read timeout (seconds) for a single GTI Agentic API call (GTI_TIMEOUT_SECONDS app setting). Keep this comfortably under the Worker Function App\'s own functionTimeout (baked into the deployed code\'s host.json) so the platform never force-kills an invocation before the GTI client\'s own timeout has a chance to raise a friendly error.')
 @minValue(30)
@@ -592,9 +599,8 @@ resource ingestFunctionApp 'Microsoft.Web/sites@2023-12-01' = {
       linuxFxVersion: 'PYTHON|${pythonVersion}'
       // Consumption plans scale to zero and reject alwaysOn=true.
       alwaysOn: false
-      // No functionAppScaleLimit set here: the platform default (no
-      // artificial cap) is deliberately left in place — see
-      // ingestConcurrentRequests' @description for why.
+      // Maximum scale-out instance count (functionAppScaleLimit) on Consumption plan.
+      functionAppScaleLimit: ingestMaximumInstanceCount
       appSettings: ingestAppSettings
     }
   }
@@ -671,6 +677,12 @@ resource workerFunctionAppFlex 'Microsoft.Web/sites@2023-12-01' = if (workerHost
         // Flex Consumption's real, enforced 40-instance floor.
         maximumInstanceCount: workerFlexMaximumInstanceCount
         instanceMemoryMB: workerInstanceMemoryMB
+        alwaysReady: workerMinimumInstanceCount > 0 ? [
+          {
+            name: 'function:process_query_job'
+            instanceCount: workerMinimumInstanceCount
+          }
+        ] : []
       }
       runtime: {
         name: 'python'
@@ -938,11 +950,14 @@ output ingestFunctionAppName string = ingestFunctionAppName
 output ingestFunctionAppDefaultHostName string = ingestFunctionApp.properties.defaultHostName
 output ingestMessagingEndpoint string = 'https://${ingestFunctionApp.properties.defaultHostName}/api/messages'
 output ingestConcurrentRequests int = ingestConcurrentRequests
+output ingestMinimumInstanceCount int = ingestMinimumInstanceCount
+output ingestMaximumInstanceCount int = ingestMaximumInstanceCount
 
 output workerFunctionAppName string = workerFunctionAppName
 output workerFunctionAppDefaultHostName string = workerFunctionAppHostName
 output workerHostingPlanType string = workerHostingPlanType
 output workerConcurrentRequests int = workerConcurrentRequests
+output workerMinimumInstanceCount int = workerMinimumInstanceCount
 output workerRequestedMaxInstanceCount int = workerMaximumInstanceCount
 // The value actually applied — differs from workerRequestedMaxInstanceCount
 // only when workerHostingPlanType is FlexConsumption and the request was

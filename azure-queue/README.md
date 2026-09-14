@@ -32,16 +32,39 @@ actual, possibly multi-minute query on its own timeout budget, completely
 decoupled from the inbound HTTP request/response cycle. This is what avoids
 needing a Premium/long-idle-timeout ingress anywhere in the stack.
 
+## Deploy to Azure
+
+[`bicep/`](bicep) provisions both apps in one deployment — the shared
+identity, storage account (job queue, Table Storage sessions, Blob
+output-format config), Key Vault, Application Insights, and the Azure Bot
+registration, plus the Teams app manifest and each app's code, all fetched
+from this repo automatically:
+
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Favadhsonagara%2Fgti-team-bot%2Fmain%2Fazure-queue%2Fbicep%2Fazuredeploy-button.json)
+
+You'll need a Google Threat Intelligence Agentic API key on hand. Everything
+else has a working default — see [`bicep/main.bicep`](bicep/main.bicep) for
+full control over every parameter (hosting plans, concurrency, custom
+naming, reusing existing resources, etc.) via `az deployment group create`
+instead of the button.
+
+After the deployment finishes, grant the identity it created the Graph
+permissions listed under "Requirements for both apps" below — the button
+does not (and cannot) automate that tenant-admin consent step — then
+sideload [`teams-app-manifest/`](gti-teams-bot/teams-app-manifest) into
+Teams.
+
 ## Why two separate Function Apps (not one app, two triggers)
 
 They could technically live in one Function App, but keeping them separate
 lets each run on the hosting plan that actually fits its workload:
 `bot-ingest-function` is simple, fast, high-concurrency HTTP traffic — a
-plain Consumption plan is fine. `bot-worker-function` runs long, expensive,
-one-at-a-time invocations (see host.json's `batchSize: 1` below) and may
-need Flex Consumption's longer `functionTimeout` ceiling depending on
-`GTI_TIMEOUT_SECONDS`. Scaling and billing them independently avoids paying
-for the worker's larger footprint on every inbound webhook call.
+plain Consumption plan is fine. `bot-worker-function` runs long, expensive
+invocations (deliberately kept few-at-a-time per instance — see host.json's
+`batchSize` below, and the `bicep/` deployment's own `workerConcurrentRequests`
+parameter) and may need Flex Consumption's longer `functionTimeout` ceiling
+depending on `GTI_TIMEOUT_SECONDS`. Scaling and billing them independently
+avoids paying for the worker's larger footprint on every inbound webhook call.
 
 ## Requirements for both apps
 
@@ -119,15 +142,20 @@ implementation's fallback (`frm.get("user") is None`, i.e. "no human
 sender") is required in addition to the text match, so only the bot's own
 posts are ever excluded. See the tests referenced below.
 
-## Worker concurrency: one job at a time per instance
+## Worker concurrency: few jobs at a time per instance
 
-`host.json`'s `extensions.queues.batchSize: 1` and `newBatchThreshold: 0`
-mean a single Function instance fully finishes (or fails) its current job
-before fetching another — appropriate since each job can run for several
-minutes and there's no benefit to one instance juggling several of them at
-once. This does NOT limit overall throughput: Azure Functions still scales
-out to multiple instances in parallel as the queue grows, so many users'
-queries are still processed concurrently — just one per instance.
+`host.json` ships with a conservative `extensions.queues.batchSize: 1` /
+`newBatchThreshold: 0` (safe default for a manual/standalone deploy — a
+single instance fully finishes or fails its current job before fetching
+another). The `bicep/` deployment overrides this at runtime via
+`workerConcurrentRequests` (default 15, also driving `PYTHON_THREADPOOL_
+THREAD_COUNT`) without editing the deployed code — see
+[`bicep/main.bicep`](bicep/main.bicep)'s own comment on that parameter for
+why queue-trigger concurrency has no separate ARM-level knob the way HTTP
+does. Either way, this bounds concurrency *per instance*, not overall
+throughput: Azure Functions still scales out to multiple instances in
+parallel as the queue grows, so many users' queries are still processed
+concurrently.
 
 ## Timeout harmonization
 

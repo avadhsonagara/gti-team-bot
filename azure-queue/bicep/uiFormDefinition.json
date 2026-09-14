@@ -7,7 +7,7 @@
       "steps": [
         {
           "name": "basics",
-          "label": "Bot Configuration",
+          "label": "Bot Ingest Configuration",
           "elements": [
             {
               "name": "resourceScope",
@@ -32,6 +32,51 @@
               "visible": true
             },
             {
+              "name": "ingestConcurrentRequests",
+              "type": "Microsoft.Common.TextBox",
+              "label": "Ingest Concurrent Requests",
+              "toolTip": "Maximum concurrent HTTP requests processed per Ingest instance, and the matching Python thread-pool size. Must be between 1 and 32.",
+              "defaultValue": "20",
+              "constraints": {
+                "required": true,
+                "regex": "^([1-9]|[1-2][0-9]|3[0-2])$",
+                "validationMessage": "Enter a whole number between 1 and 32."
+              },
+              "visible": true
+            },
+            {
+              "name": "ingestMinimumInstanceCount",
+              "type": "Microsoft.Common.TextBox",
+              "label": "Ingest Minimum Instance Count",
+              "toolTip": "Minimum instance count for the Ingest Function App. On Consumption plan, this is 0 (scales to zero when idle).",
+              "defaultValue": "0",
+              "constraints": {
+                "required": true,
+                "regex": "^(0|[1-9][0-9]?|100)$",
+                "validationMessage": "Enter a whole number between 0 and 100."
+              },
+              "visible": true
+            },
+            {
+              "name": "ingestMaximumInstanceCount",
+              "type": "Microsoft.Common.TextBox",
+              "label": "Ingest Maximum Instance Count",
+              "toolTip": "Maximum scale-out instance count for the Ingest Function App (functionAppScaleLimit on Consumption plan). Must be between 1 and 1000.",
+              "defaultValue": "5",
+              "constraints": {
+                "required": true,
+                "regex": "^([1-9][0-9]{0,2}|1000)$",
+                "validationMessage": "Enter a whole number between 1 and 1000."
+              },
+              "visible": true
+            }
+          ]
+        },
+        {
+          "name": "worker",
+          "label": "Worker Configuration",
+          "elements": [
+            {
               "name": "workerFunctionAppName",
               "type": "Microsoft.Common.TextBox",
               "label": "Worker Function App Name",
@@ -45,43 +90,9 @@
               "visible": true
             },
             {
-              "name": "gtiApiKey",
-              "type": "Microsoft.Common.PasswordBox",
-              "label": {
-                "password": "GTI API Key"
-              },
-              "toolTip": "Google Threat Intelligence Agentic API key. Stored as a Key Vault secret, never as a plaintext app setting.",
-              "constraints": {
-                "required": true
-              },
-              "options": {
-                "hideConfirmation": true
-              },
-              "visible": true
-            },
-            {
-              "name": "ingestConcurrentRequests",
-              "type": "Microsoft.Common.TextBox",
-              "label": "Ingest Concurrent Requests",
-              "toolTip": "Maximum concurrent HTTP requests processed per Ingest instance, and the matching Python thread-pool size. Must be between 1 and 32.",
-              "defaultValue": "20",
-              "constraints": {
-                "required": true,
-                "regex": "^([1-9]|[1-2][0-9]|3[0-2])$",
-                "validationMessage": "Enter a whole number between 1 and 32."
-              },
-              "visible": true
-            }
-          ]
-        },
-        {
-          "name": "worker",
-          "label": "Worker Configuration",
-          "elements": [
-            {
               "name": "workerHostingPlanType",
               "type": "Microsoft.Common.DropDown",
-              "label": "Worker Hosting Plan",
+              "label": "Worker Hosting Plan Type",
               "toolTip": "Flex Consumption (default): modern serverless with configurable per-instance memory. Consumption: classic scale-to-zero. Premium is not offered — the worker's cost model depends on paying only while a job is actually running.",
               "defaultValue": "Flex Consumption",
               "constraints": {
@@ -110,6 +121,32 @@
               "visible": "[equals(steps('worker').workerHostingPlanType, 'FlexConsumption')]"
             },
             {
+              "name": "workerConcurrentRequests",
+              "type": "Microsoft.Common.TextBox",
+              "label": "Worker Concurrent Requests",
+              "toolTip": "Number of queue messages the Worker Function processes concurrently per instance, and the matching Python thread-pool size. Must be between 1 and 32. Each job can run for several minutes, so keep this modest.",
+              "defaultValue": "15",
+              "constraints": {
+                "required": true,
+                "regex": "^([1-9]|[1-2][0-9]|3[0-2])$",
+                "validationMessage": "Enter a whole number between 1 and 32."
+              },
+              "visible": true
+            },
+            {
+              "name": "workerMinimumInstanceCount",
+              "type": "Microsoft.Common.TextBox",
+              "label": "Worker Minimum Instance Count",
+              "toolTip": "Minimum instance count for the Worker Function App. On Flex Consumption, setting a value > 0 keeps that number of always-ready instances pre-warmed for the queue trigger. Ignored on Consumption plan (scales to zero).",
+              "defaultValue": "0",
+              "constraints": {
+                "required": true,
+                "regex": "^(0|[1-9][0-9]?|100)$",
+                "validationMessage": "Enter a whole number between 0 and 100."
+              },
+              "visible": true
+            },
+            {
               "name": "workerMaximumInstanceCount",
               "type": "Microsoft.Common.TextBox",
               "label": "Worker Maximum Instance Count",
@@ -123,15 +160,17 @@
               "visible": true
             },
             {
-              "name": "workerConcurrentRequests",
-              "type": "Microsoft.Common.TextBox",
-              "label": "Worker Concurrent Requests",
-              "toolTip": "Number of queue messages the Worker Function processes concurrently per instance, and the matching Python thread-pool size. Must be between 1 and 32. Each job can run for several minutes, so keep this modest.",
-              "defaultValue": "15",
+              "name": "gtiApiKey",
+              "type": "Microsoft.Common.PasswordBox",
+              "label": {
+                "password": "GTI API Key"
+              },
+              "toolTip": "Google Threat Intelligence Agentic API key. Stored as a Key Vault secret, never as a plaintext app setting.",
               "constraints": {
-                "required": true,
-                "regex": "^([1-9]|[1-2][0-9]|3[0-2])$",
-                "validationMessage": "Enter a whole number between 1 and 32."
+                "required": true
+              },
+              "options": {
+                "hideConfirmation": true
               },
               "visible": true
             },
@@ -197,13 +236,16 @@
       "resourceGroupId": "[steps('basics').resourceScope.resourceGroup.id]",
       "parameters": {
         "ingestFunctionAppName": "[steps('basics').ingestFunctionAppName]",
-        "workerFunctionAppName": "[steps('basics').workerFunctionAppName]",
-        "gtiApiKey": "[steps('basics').gtiApiKey]",
         "ingestConcurrentRequests": "[int(steps('basics').ingestConcurrentRequests)]",
+        "ingestMinimumInstanceCount": "[int(steps('basics').ingestMinimumInstanceCount)]",
+        "ingestMaximumInstanceCount": "[int(steps('basics').ingestMaximumInstanceCount)]",
+        "workerFunctionAppName": "[steps('worker').workerFunctionAppName]",
         "workerHostingPlanType": "[steps('worker').workerHostingPlanType]",
         "workerInstanceMemoryMB": "[steps('worker').workerInstanceMemoryMB]",
-        "workerMaximumInstanceCount": "[int(steps('worker').workerMaximumInstanceCount)]",
         "workerConcurrentRequests": "[int(steps('worker').workerConcurrentRequests)]",
+        "workerMinimumInstanceCount": "[int(steps('worker').workerMinimumInstanceCount)]",
+        "workerMaximumInstanceCount": "[int(steps('worker').workerMaximumInstanceCount)]",
+        "gtiApiKey": "[steps('worker').gtiApiKey]",
         "gtiTimeoutSeconds": "[int(steps('worker').gtiTimeoutSeconds)]",
         "maxJobAgeSeconds": "[int(steps('worker').maxJobAgeSeconds)]",
         "outputFormatInstructions": "[steps('worker').outputFormatInstructions]",
