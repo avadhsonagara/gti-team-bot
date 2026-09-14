@@ -88,6 +88,24 @@ class GraphClient:
             self._token_expires_at = time.monotonic() + seconds_remaining
             return self._token
 
+    # ── Public API ───────────────────────────────────────────────────────────
+
+    def get(self, url: str, **kwargs) -> requests.Response:
+        """
+        Authenticated GET against Microsoft Graph, with this client's own
+        timeout applied unless the caller overrides it. Centralizes
+        token/session/timeout handling here so callers (app/teams/thread.py,
+        app/teams/attachments.py) never need to reach into this client's
+        internals (_get_token()/_get_session()) themselves — previously they
+        did, which also meant every one of those calls had no timeout at all
+        (requests defaults to blocking forever), letting a Graph network
+        stall hang the whole invocation until functionTimeout killed it.
+        """
+        kwargs.setdefault("timeout", self.timeout)
+        headers = dict(kwargs.pop("headers", None) or {})
+        headers.setdefault("Authorization", f"Bearer {self._get_token()}")
+        return self._get_session().get(url, headers=headers, **kwargs)
+
 
 # Shared client instance
 graph_client = GraphClient()

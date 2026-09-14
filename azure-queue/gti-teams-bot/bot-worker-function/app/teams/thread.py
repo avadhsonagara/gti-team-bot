@@ -172,14 +172,10 @@ def fetch_thread_messages(
     is_placeholder_message() — see this module's docstring for why that
     matters specifically in the queue architecture.
     """
-    token = graph_client._get_token()
-    session = graph_client._get_session()
-    headers = {"Authorization": f"Bearer {token}"}
-
     messages: list[dict[str, Any]] = []
 
     root_url = f"{_GRAPH_BASE_URL}/teams/{team_id}/channels/{channel_id}/messages/{thread_id}"
-    root_resp = session.get(root_url, headers=headers)
+    root_resp = graph_client.get(root_url)
     if root_resp.status_code == 200:
         messages.append(root_resp.json())
     elif root_resp.status_code == 404:
@@ -193,7 +189,7 @@ def fetch_thread_messages(
     # Cap pagination — a channel thread context window only needs the tail.
     pages_fetched = 0
     while replies_url and pages_fetched < 5:
-        resp = session.get(replies_url, headers=headers)
+        resp = graph_client.get(replies_url)
         if resp.status_code != 200:
             raise GraphError(f"Graph replies fetch failed ({resp.status_code}): {resp.text}")
         payload = resp.json()

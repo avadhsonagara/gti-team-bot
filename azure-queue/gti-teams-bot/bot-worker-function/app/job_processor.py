@@ -257,12 +257,21 @@ def process_job(raw_payload: dict, dequeue_count: int = 1) -> None:
         # to always ack 200 to Bot Framework), this MUST re-raise: the queue
         # trigger's own return value is what tells the Functions runtime
         # whether to retry (per host.json's maxDequeueCount) or leave the
-        # message alone. Swallowing it here would silently drop a job that
-        # deserved a retry. The user still sees a friendly card either way —
-        # this only decides whether the platform also retries.
+        # message alone.
+        #
+        # Deliberately does NOT deliver an error card here (unlike every
+        # named GTI* handler above, which are terminal — they never retry).
+        # This branch WILL be retried once more, and for a personal/group
+        # chat that means delete-and-repost: if this card were shown now and
+        # the retry also failed, the user would end up with this card, then
+        # a second copy of it from the retry, then a third, different card
+        # from poison_handler.py once maxDequeueCount is exhausted. Silently
+        # re-raising here means poison_handler.py is the ONLY place that
+        # ever tells the user about a truly-failed (all retries exhausted)
+        # unexpected error — exactly one message, not up to three. If the
+        # retry succeeds, the user never sees this branch at all, which is
+        # correct: nothing actually went wrong from their perspective.
         logger.exception("[ERROR] Unexpected error in GTI job processor.")
-        err_msg = "⚠️ **Something went wrong while processing your request.** Please try again."
-        deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg), edit_in_place=(scope == "channel"))
         raise
 
     finally:

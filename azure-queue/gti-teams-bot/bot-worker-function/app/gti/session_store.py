@@ -16,6 +16,7 @@ Schema per entity: PartitionKey="session", RowKey=<sanitized key>,
 session_id=<str>, team_id=<str, "" when None>, channel_id=<str, "" when None>
 """
 import logging
+import threading
 
 from azure.core.exceptions import ResourceExistsError, ResourceNotFoundError
 from azure.data.tables import TableClient
@@ -27,6 +28,12 @@ logger = logging.getLogger("gti-teams-bot")
 _TABLE_NAME = "GtiSessions"
 _PARTITION_KEY = "session"
 
+# create_table() only needs to succeed once per worker instance lifetime —
+# without this guard it was an extra HTTP round-trip to Table Storage on
+# every single get/set call.
+_table_ensured = False
+_table_ensured_lock = threading.Lock()
+
 
 def _sanitize_row_key(key: str) -> str:
     """Replace characters Table Storage forbids in a RowKey ('/', '\\', '#', '?')."""
@@ -36,13 +43,18 @@ def _sanitize_row_key(key: str) -> str:
 
 
 def _table_client(cfg: Settings):
+    global _table_ensured
     if not cfg.azure_web_jobs_storage:
         return None
     client = TableClient.from_connection_string(cfg.azure_web_jobs_storage, table_name=_TABLE_NAME)
-    try:
-        client.create_table()
-    except ResourceExistsError:
-        pass
+    if not _table_ensured:
+        with _table_ensured_lock:
+            if not _table_ensured:
+                try:
+                    client.create_table()
+                except ResourceExistsError:
+                    pass
+                _table_ensured = True
     return client
 
 

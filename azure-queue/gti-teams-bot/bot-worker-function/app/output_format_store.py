@@ -9,6 +9,7 @@ cursor blob — so the format is persisted the same way across the two apps.
 """
 import json
 import logging
+import threading
 
 from azure.core.exceptions import ResourceExistsError, ResourceNotFoundError
 from azure.storage.blob import BlobServiceClient
@@ -20,16 +21,27 @@ logger = logging.getLogger("gti-teams-bot")
 _CONTAINER_NAME = "bot-config"
 _BLOB_NAME = "output-format.json"
 
+# create_container() only needs to succeed once per worker instance
+# lifetime — without this guard it was an extra HTTP round-trip to Blob
+# Storage on every single job (get_output_format() runs on every message).
+_container_ensured = False
+_container_ensured_lock = threading.Lock()
+
 
 def _blob_client(settings: Settings):
+    global _container_ensured
     if not settings.azure_web_jobs_storage:
         return None
     service_client = BlobServiceClient.from_connection_string(settings.azure_web_jobs_storage)
     container_client = service_client.get_container_client(_CONTAINER_NAME)
-    try:
-        container_client.create_container()
-    except ResourceExistsError:
-        pass
+    if not _container_ensured:
+        with _container_ensured_lock:
+            if not _container_ensured:
+                try:
+                    container_client.create_container()
+                except ResourceExistsError:
+                    pass
+                _container_ensured = True
     return container_client.get_blob_client(_BLOB_NAME)
 
 

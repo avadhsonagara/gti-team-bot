@@ -76,10 +76,10 @@ def _share_token(content_url: str) -> str:
 
 def _download_graph_share(content_url: str) -> bytes:
     """Resolve a SharePoint/OneDrive contentUrl to bytes via the Graph Shares API."""
-    token = graph_client._get_token()
-    headers = {"Authorization": f"Bearer {token}"}
     url = f"{_GRAPH_BASE_URL}/shares/{_share_token(content_url)}/driveItem/content"
-    return _download(url, headers)
+    resp = graph_client.get(url, timeout=_DOWNLOAD_TIMEOUT)
+    resp.raise_for_status()
+    return resp.content
 
 
 def _parse_graph_datetime(value: str) -> Optional[datetime]:
@@ -120,15 +120,11 @@ def _select_matching_message(
 
 def _list_graph_chat_messages(chat_id: str, window_seconds: float) -> list[dict[str, Any]]:
     """List a group chat's recent messages via Graph, newest first."""
-    token = graph_client._get_token()
-    session = graph_client._get_session()
-    headers = {"Authorization": f"Bearer {token}"}
-
     messages: list[dict[str, Any]] = []
     url = f"{_GRAPH_BASE_URL}/chats/{chat_id}/messages?$top=50&$orderby=createdDateTime desc"
     pages_fetched = 0
     while url and pages_fetched < _MESSAGE_LIST_MAX_PAGES:
-        resp = session.get(url, headers=headers)
+        resp = graph_client.get(url)
         if resp.status_code != 200:
             logger.warning(
                 "[ATTACHMENT] Graph chat-messages list failed (%d) for chat=%s: %s",
@@ -148,13 +144,9 @@ def _list_graph_chat_messages(chat_id: str, window_seconds: float) -> list[dict[
 
 def _list_graph_channel_messages(team_id: str, channel_id: str, thread_id: str) -> list[dict[str, Any]]:
     """List a channel thread's root + reply messages via Graph, newest first."""
-    token = graph_client._get_token()
-    session = graph_client._get_session()
-    headers = {"Authorization": f"Bearer {token}"}
-
     messages: list[dict[str, Any]] = []
     root_url = f"{_GRAPH_BASE_URL}/teams/{team_id}/channels/{channel_id}/messages/{thread_id}"
-    root_resp = session.get(root_url, headers=headers)
+    root_resp = graph_client.get(root_url)
     if root_resp.status_code == 200:
         messages.append(root_resp.json())
     elif root_resp.status_code != 404:
@@ -166,7 +158,7 @@ def _list_graph_channel_messages(team_id: str, channel_id: str, thread_id: str) 
     )
     pages_fetched = 0
     while url and pages_fetched < _MESSAGE_LIST_MAX_PAGES:
-        resp = session.get(url, headers=headers)
+        resp = graph_client.get(url)
         if resp.status_code != 200:
             logger.warning("[ATTACHMENT] Graph channel-replies list failed (%d)", resp.status_code)
             break

@@ -235,15 +235,35 @@ class GTIAgenticClient:
                 response.raise_for_status()
                 return response.json()
 
-            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as exc:
-                logger.warning("[GTI] Connection/timeout error: %s", exc)
+            except requests.exceptions.ConnectionError as exc:
+                # Fails fast (DNS failure, connection refused, a
+                # ConnectTimeout within the 15s connect-timeout above) — cheap
+                # to retry, unlike a read timeout below.
+                logger.warning("[GTI] Connection error: %s", exc)
                 last_exc = exc
                 if attempt < self.max_retries:
                     delay = (self.retry_delay * (2 ** attempt)) + random.uniform(0.1, 0.5)
-                    logger.info("[GTI] Retrying network error in %.1fs...", delay)
+                    logger.info("[GTI] Retrying connection error in %.1fs...", delay)
                     time.sleep(delay)
                     continue
-                raise GTITimeoutError(f"GTI request timed out or network failed: {exc}") from exc
+                raise GTITimeoutError(f"GTI request failed after retries (connection error): {exc}") from exc
+
+            except requests.exceptions.Timeout as exc:
+                # A read timeout means GTI never responded within
+                # self.timeout — deliberately NOT retried, unlike the
+                # ConnectionError case above. Retrying would re-burn the full
+                # self.timeout budget again per attempt (up to
+                # settings.gti_timeout_seconds each), and across
+                # self.max_retries retries that can vastly exceed this
+                # Function App's own functionTimeout (host.json) — the
+                # platform would force-kill the invocation before this
+                # method ever got to raise GTITimeoutError, skipping the
+                # friendly "Request Timed Out" card entirely and falling back
+                # to the much slower retry-then-poison-queue recovery path
+                # instead. A single attempt at the full timeout, then fail
+                # fast, keeps total latency within functionTimeout's budget.
+                logger.warning("[GTI] Read timeout after %.0fs: %s", self.timeout, exc)
+                raise GTITimeoutError(f"GTI request timed out after {self.timeout:.0f}s: {exc}") from exc
 
             except (GTIAuthenticationError, GTISessionNotFoundError, GTIClientError):
                 # Don't retry client-side / permanent errors

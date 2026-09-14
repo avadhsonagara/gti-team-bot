@@ -30,6 +30,7 @@ ID) — the same security model as bot-worker-function/ and azure/azure-bot-func
 import json
 import logging
 import re
+import threading
 
 import azure.functions as func
 from azure.core.exceptions import ResourceExistsError
@@ -75,6 +76,12 @@ _JOB_TOO_LARGE_NOTICE = (
 _QUEUE_FAILURE_NOTICE = (
     "⚠️ **Something went wrong while queuing your request.** Please try again in a moment."
 )
+
+# create_queue() only needs to succeed once per instance lifetime — without
+# this guard it was an extra HTTP round-trip to Storage on every single
+# inbound message.
+_queue_ensured = False
+_queue_ensured_lock = threading.Lock()
 
 
 def _json_response(payload: dict, status_code: int = 200) -> func.HttpResponse:
@@ -239,14 +246,19 @@ def _enqueue_job(activity_body: dict, loading_activity_id, ctx: Ctx, scope: str)
         _deliver_error_notice(ctx, loading_activity_id, scope, _JOB_TOO_LARGE_NOTICE)
         return
 
+    global _queue_ensured
     try:
         queue_client = QueueClient.from_connection_string(
             settings.azure_web_jobs_storage, settings.job_queue_name,
         )
-        try:
-            queue_client.create_queue()
-        except ResourceExistsError:
-            pass
+        if not _queue_ensured:
+            with _queue_ensured_lock:
+                if not _queue_ensured:
+                    try:
+                        queue_client.create_queue()
+                    except ResourceExistsError:
+                        pass
+                    _queue_ensured = True
         # Sent as plain UTF-8 text (no base64/encoding policy) — the worker's
         # native queue_trigger binding (bot-worker-function/function_app.py)
         # reads it back the same way via msg.get_body().decode("utf-8"), so
