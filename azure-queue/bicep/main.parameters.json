@@ -47,15 +47,6 @@
     "threadContextMessageCount": {
       "value": 5
     },
-    "manifestSourceBaseUrl": {
-      "value": ""
-    },
-    "ingestCodeZipUrl": {
-      "value": ""
-    },
-    "workerCodeZipUrl": {
-      "value": ""
-    },
     "tags": {
       "value": {
         "app": "gti-teams-bot-queue",

@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.47.16.16243",
-      "templateHash": "9802883328823379963"
+      "templateHash": "686478328292993458"
     }
   },
   "parameters": {
@@ -29,9 +29,9 @@
       "type": "int",
       "defaultValue": 5,
       "minValue": 1,
-      "maxValue": 1000,
+      "maxValue": 100,
       "metadata": {
-        "description": "Maximum scale-out instance count for the Ingest Function App (functionAppScaleLimit on Consumption plan)."
+        "description": "Maximum scale-out instance count for the Ingest Function App (functionAppScaleLimit on Consumption plan). Capped at 100 — the real platform ceiling for a Linux Consumption app (Windows gets 200, but this is always Linux) — a value above that is rejected at deployment time."
       }
     },
     "workerFunctionAppName": {
@@ -61,7 +61,7 @@
         4096
       ],
       "metadata": {
-        "description": "Worker Instance Memory MB: per-instance memory for Flex Consumption. (Only applies when Worker Hosting Plan is FlexConsumption; ignored for Consumption)."
+        "description": "(Only Flex Consumption) Per-instance memory (MB) for the Worker Function App. Ignored when Worker Hosting Plan Type is Consumption."
       }
     },
     "workerConcurrentRequests": {
@@ -79,7 +79,7 @@
       "minValue": 0,
       "maxValue": 100,
       "metadata": {
-        "description": "Minimum instance count for the Worker Function App. On Flex Consumption, setting a value > 0 keeps that number of always-ready instances pre-warmed for the queue trigger. Ignored on Consumption plan (scales to zero)."
+        "description": "(Only Flex Consumption) Minimum instance count for the Worker Function App. Setting a value > 0 keeps that number of always-ready instances pre-warmed for the queue trigger. Ignored when Worker Hosting Plan Type is Consumption (always scales to zero)."
       }
     },
     "workerMaximumInstanceCount": {
@@ -88,7 +88,7 @@
       "minValue": 1,
       "maxValue": 1000,
       "metadata": {
-        "description": "Requested maximum scale-out instance count for the Worker Function App. Azure enforces a hard floor of 40 for this on Flex Consumption specifically — a lower value here is silently raised to 40 only on that plan type (see the deployment's workerAppliedMaxInstanceCount output for what was actually applied)."
+        "description": "Requested maximum scale-out instance count for the Worker Function App. Azure enforces a hard floor of 40 for this on Flex Consumption, and a real ceiling of 100 (Linux app) on Consumption — a value outside either plan's range is silently clamped to fit (see the deployment's workerAppliedMaxInstanceCount output for what was actually applied)."
       }
     },
     "gtiApiKey": {
@@ -193,7 +193,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.47.16.16243",
-              "templateHash": "484186207498436063"
+              "templateHash": "11791815128985513619"
             }
           },
           "parameters": {
@@ -281,9 +281,9 @@
               "type": "int",
               "defaultValue": 5,
               "minValue": 1,
-              "maxValue": 1000,
+              "maxValue": 100,
               "metadata": {
-                "description": "Maximum scale-out instance count for the Ingest Function App (functionAppScaleLimit on Consumption plan)."
+                "description": "Maximum scale-out instance count for the Ingest Function App (functionAppScaleLimit on Consumption plan). Azure's real platform ceiling for a Linux Consumption app (this is always Linux — see the plan section above) is 100, not the 200 Windows gets — a value above that is rejected at deployment time rather than passed through as-is."
               }
             },
             "workerHostingPlanType": {
@@ -320,7 +320,7 @@
                 4096
               ],
               "metadata": {
-                "description": "Per-instance memory (MB) for the Worker Function App when workerHostingPlanType is FlexConsumption. Ignored for Consumption."
+                "description": "(Only Flex Consumption) Per-instance memory (MB) for the Worker Function App. Ignored when Worker Hosting Plan Type is Consumption."
               }
             },
             "workerConcurrentRequests": {
@@ -338,7 +338,7 @@
               "minValue": 0,
               "maxValue": 100,
               "metadata": {
-                "description": "Minimum instance count for the Worker Function App. On Flex Consumption, setting a value > 0 keeps that number of always-ready instances pre-warmed for the queue trigger. Ignored on Consumption plan (scales to zero)."
+                "description": "(Only Flex Consumption) Minimum instance count for the Worker Function App. Setting a value > 0 keeps that number of always-ready instances pre-warmed for the queue trigger. Ignored when Worker Hosting Plan Type is Consumption (always scales to zero)."
               }
             },
             "workerMaximumInstanceCount": {
@@ -347,7 +347,7 @@
               "minValue": 1,
               "maxValue": 1000,
               "metadata": {
-                "description": "Requested maximum scale-out instance count for the Worker Function App. On Consumption this becomes an exact functionAppScaleLimit cap (1 is a valid value there). On Flex Consumption, Azure enforces a hard platform floor of 40 on maximumInstanceCount regardless of what's requested here — a value below 40 is silently raised to 40 for that plan type only (see workerAppliedMaxInstanceCount output for the value actually applied)."
+                "description": "Requested maximum scale-out instance count for the Worker Function App. On Flex Consumption, Azure enforces a hard platform floor of 40 on maximumInstanceCount — a value below 40 is silently raised to 40 on that plan type. On Consumption, the real platform ceiling for a Linux app is 100 (not the 1000 Flex allows) — a value above 100 is silently lowered to 100 on that plan type. See workerAppliedMaxInstanceCount output for the value actually applied either way."
               }
             },
             "gtiTimeoutSeconds": {
@@ -466,6 +466,7 @@
           "variables": {
             "workerDeploymentContainerName": "[format('app-package-{0}', toLower(parameters('workerFunctionAppName')))]",
             "workerFlexMaximumInstanceCount": "[max(parameters('workerMaximumInstanceCount'), 40)]",
+            "workerClassicMaximumInstanceCount": "[min(parameters('workerMaximumInstanceCount'), 100)]",
             "workerNewBatchThreshold": "[max(1, div(parameters('workerConcurrentRequests'), 2))]",
             "workerPlanSkuName": "[if(equals(parameters('workerHostingPlanType'), 'FlexConsumption'), 'FC1', 'Y1')]",
             "workerPlanSkuTier": "[if(equals(parameters('workerHostingPlanType'), 'FlexConsumption'), 'FlexConsumption', 'Dynamic')]",
@@ -737,7 +738,7 @@
                   "scaleAndConcurrency": {
                     "maximumInstanceCount": "[variables('workerFlexMaximumInstanceCount')]",
                     "instanceMemoryMB": "[parameters('workerInstanceMemoryMB')]",
-                    "alwaysReady": "[if(greater(parameters('workerMinimumInstanceCount'), 0), createArray(createObject('name', 'function:process_query_job', 'instanceCount', parameters('workerMinimumInstanceCount'))), createArray())]"
+                    "alwaysReady": "[if(greater(parameters('workerMinimumInstanceCount'), 0), createArray(createObject('name', 'function:process_query_job', 'instanceCount', min(parameters('workerMinimumInstanceCount'), variables('workerFlexMaximumInstanceCount')))), createArray())]"
                   },
                   "runtime": {
                     "name": "python",
@@ -775,7 +776,7 @@
                 "siteConfig": {
                   "linuxFxVersion": "[format('PYTHON|{0}', parameters('pythonVersion'))]",
                   "alwaysOn": false,
-                  "functionAppScaleLimit": "[parameters('workerMaximumInstanceCount')]",
+                  "functionAppScaleLimit": "[variables('workerClassicMaximumInstanceCount')]",
                   "appSettings": "[concat(concat(createArray(createObject('name', 'AzureWebJobsStorage', 'value', format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix={2}', parameters('storageAccountName'), listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').keys[0].value, environment().suffixes.storage)), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference(resourceId('Microsoft.Insights/components', parameters('appInsightsName')), '2020-02-02').ConnectionString), createObject('name', 'CLIENT_ID', 'value', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('ingestFunctionAppName'))), '2023-01-31').clientId), createObject('name', 'MANAGED_IDENTITY_CLIENT_ID', 'value', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('ingestFunctionAppName'))), '2023-01-31').clientId), createObject('name', 'JOB_QUEUE_NAME', 'value', parameters('jobQueueName'))), createArray(createObject('name', 'GTI_API_KEY', 'value', format('@Microsoft.KeyVault(SecretUri={0})', reference(resourceId('Microsoft.KeyVault/vaults/secrets', parameters('keyVaultName'), 'GtiApiKey'), '2023-07-01').secretUri)), createObject('name', 'GTI_TIMEOUT_SECONDS', 'value', string(parameters('gtiTimeoutSeconds'))), createObject('name', 'MAX_JOB_AGE_SECONDS', 'value', string(parameters('maxJobAgeSeconds'))), createObject('name', 'OUTPUT_FORMAT_INSTRUCTIONS', 'value', parameters('outputFormatInstructions')), createObject('name', 'THREAD_CONTEXT_MESSAGE_COUNT', 'value', string(parameters('threadContextMessageCount'))), createObject('name', 'AzureFunctionsJobHost__extensions__queues__batchSize', 'value', string(parameters('workerConcurrentRequests'))), createObject('name', 'AzureFunctionsJobHost__extensions__queues__newBatchThreshold', 'value', string(variables('workerNewBatchThreshold'))), createObject('name', 'PYTHON_THREADPOOL_THREAD_COUNT', 'value', string(parameters('workerConcurrentRequests'))))), variables('workerClassicPlanAppSettings'))]"
                 }
               },
@@ -1011,7 +1012,7 @@
             },
             "workerAppliedMaxInstanceCount": {
               "type": "int",
-              "value": "[if(equals(parameters('workerHostingPlanType'), 'FlexConsumption'), variables('workerFlexMaximumInstanceCount'), parameters('workerMaximumInstanceCount'))]"
+              "value": "[if(equals(parameters('workerHostingPlanType'), 'FlexConsumption'), variables('workerFlexMaximumInstanceCount'), variables('workerClassicMaximumInstanceCount'))]"
             },
             "storageAccountName": {
               "type": "string",

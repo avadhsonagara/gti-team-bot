@@ -91,9 +91,9 @@ param createIngestAppServicePlan bool = true
 @maxValue(32)
 param ingestConcurrentRequests int = 20
 
-@description('Maximum scale-out instance count for the Ingest Function App (functionAppScaleLimit on Consumption plan).')
+@description('Maximum scale-out instance count for the Ingest Function App (functionAppScaleLimit on Consumption plan). Azure\'s real platform ceiling for a Linux Consumption app (this is always Linux — see the plan section above) is 100, not the 200 Windows gets — a value above that is rejected at deployment time rather than passed through as-is.')
 @minValue(1)
-@maxValue(1000)
+@maxValue(100)
 param ingestMaximumInstanceCount int = 5
 
 // ---------------------------------------------------------------------------
@@ -113,7 +113,7 @@ param workerAppServicePlanName string = '${workerFunctionAppName}-plan'
 @description('Set to false to reuse an existing plan named workerAppServicePlanName in this resource group, instead of creating a new one. A Function App cannot move between plans of different types in-place, so this must be false when redeploying onto a worker that already exists on a different plan type.')
 param createWorkerAppServicePlan bool = true
 
-@description('Per-instance memory (MB) for the Worker Function App when workerHostingPlanType is FlexConsumption. Ignored for Consumption.')
+@description('(Only Flex Consumption) Per-instance memory (MB) for the Worker Function App. Ignored when Worker Hosting Plan Type is Consumption.')
 @allowed([
   512
   2048
@@ -126,12 +126,12 @@ param workerInstanceMemoryMB int = 2048
 @maxValue(32)
 param workerConcurrentRequests int = 15
 
-@description('Minimum instance count for the Worker Function App. On Flex Consumption, setting a value > 0 keeps that number of always-ready instances pre-warmed for the queue trigger. Ignored on Consumption plan (scales to zero).')
+@description('(Only Flex Consumption) Minimum instance count for the Worker Function App. Setting a value > 0 keeps that number of always-ready instances pre-warmed for the queue trigger. Ignored when Worker Hosting Plan Type is Consumption (always scales to zero).')
 @minValue(0)
 @maxValue(100)
 param workerMinimumInstanceCount int = 0
 
-@description('Requested maximum scale-out instance count for the Worker Function App. On Consumption this becomes an exact functionAppScaleLimit cap (1 is a valid value there). On Flex Consumption, Azure enforces a hard platform floor of 40 on maximumInstanceCount regardless of what\'s requested here — a value below 40 is silently raised to 40 for that plan type only (see workerAppliedMaxInstanceCount output for the value actually applied).')
+@description('Requested maximum scale-out instance count for the Worker Function App. On Flex Consumption, Azure enforces a hard platform floor of 40 on maximumInstanceCount — a value below 40 is silently raised to 40 on that plan type. On Consumption, the real platform ceiling for a Linux app is 100 (not the 1000 Flex allows) — a value above 100 is silently lowered to 100 on that plan type. See workerAppliedMaxInstanceCount output for the value actually applied either way.')
 @minValue(1)
 @maxValue(1000)
 param workerMaximumInstanceCount int = 5
@@ -236,10 +236,17 @@ var workerDeploymentContainerName = 'app-package-${toLower(workerFunctionAppName
 // rejected at deployment time, not silently clamped by the platform itself,
 // so this template clamps it up-front instead of letting `az deployment
 // group create` fail with a confusing service-side error. Only applies to
-// the Flex Consumption resource below; the classic Consumption resource's
-// functionAppScaleLimit has no such floor and uses workerMaximumInstanceCount
-// directly.
+// the Flex Consumption resource below.
 var workerFlexMaximumInstanceCount = max(workerMaximumInstanceCount, 40)
+
+// workerMaximumInstanceCount's own @maxValue must allow up to 1000 (Flex
+// Consumption's real ceiling), but classic Consumption's real platform
+// ceiling for a Linux app (this is always Linux) is only 100 — clamped down
+// here rather than passed through as-is, the same reasoning as
+// ingestMaximumInstanceCount's own @maxValue(100) above (which can be
+// enforced directly on that parameter instead, since the Ingest app never
+// runs on Flex and so never needs to allow more than 100 in the first place).
+var workerClassicMaximumInstanceCount = min(workerMaximumInstanceCount, 100)
 
 var workerNewBatchThreshold = max(1, workerConcurrentRequests / 2)
 
@@ -670,10 +677,16 @@ resource workerFunctionAppFlex 'Microsoft.Web/sites@2023-12-01' = if (workerHost
         // Flex Consumption's real, enforced 40-instance floor.
         maximumInstanceCount: workerFlexMaximumInstanceCount
         instanceMemoryMB: workerInstanceMemoryMB
+        // Clamped to workerFlexMaximumInstanceCount: an always-ready count
+        // above the maximum instance count is a nonsensical request (more
+        // pinned-warm instances than the app is even allowed to scale to)
+        // that `az deployment group validate` does not itself reject —
+        // clamping here avoids relying on the resource provider to catch it
+        // at actual create time.
         alwaysReady: workerMinimumInstanceCount > 0 ? [
           {
             name: 'function:process_query_job'
-            instanceCount: workerMinimumInstanceCount
+            instanceCount: min(workerMinimumInstanceCount, workerFlexMaximumInstanceCount)
           }
         ] : []
       }
@@ -707,8 +720,10 @@ resource workerFunctionAppClassic 'Microsoft.Web/sites@2023-12-01' = if (workerH
       linuxFxVersion: 'PYTHON|${pythonVersion}'
       alwaysOn: false
       // Unlike Flex Consumption, classic Consumption's functionAppScaleLimit
-      // has no enforced minimum — workerMaximumInstanceCount is used as-is.
-      functionAppScaleLimit: workerMaximumInstanceCount
+      // has no enforced minimum — but it does have a real 100-instance
+      // ceiling for Linux apps, hence workerClassicMaximumInstanceCount
+      // rather than workerMaximumInstanceCount used as-is.
+      functionAppScaleLimit: workerClassicMaximumInstanceCount
       appSettings: concat(workerAppSettingsBase, workerClassicPlanAppSettings)
     }
   }
@@ -952,9 +967,10 @@ output workerConcurrentRequests int = workerConcurrentRequests
 output workerMinimumInstanceCount int = workerMinimumInstanceCount
 output workerRequestedMaxInstanceCount int = workerMaximumInstanceCount
 // The value actually applied — differs from workerRequestedMaxInstanceCount
-// only when workerHostingPlanType is FlexConsumption and the request was
-// below the platform's enforced 40-instance floor.
-output workerAppliedMaxInstanceCount int = workerHostingPlanType == 'FlexConsumption' ? workerFlexMaximumInstanceCount : workerMaximumInstanceCount
+// when workerHostingPlanType is FlexConsumption and the request was below
+// the platform's enforced 40-instance floor, or when it's Consumption and
+// the request was above the real 100-instance ceiling for a Linux app.
+output workerAppliedMaxInstanceCount int = workerHostingPlanType == 'FlexConsumption' ? workerFlexMaximumInstanceCount : workerClassicMaximumInstanceCount
 
 output storageAccountName string = storageAccount.name
 output jobQueueName string = jobQueueName

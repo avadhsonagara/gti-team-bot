@@ -22,9 +22,9 @@ param ingestFunctionAppName string = 'gti-teams-bot-ingest'
 @maxValue(32)
 param ingestConcurrentRequests int = 20
 
-@description('Maximum scale-out instance count for the Ingest Function App (functionAppScaleLimit on Consumption plan).')
+@description('Maximum scale-out instance count for the Ingest Function App (functionAppScaleLimit on Consumption plan). Capped at 100 — the real platform ceiling for a Linux Consumption app (Windows gets 200, but this is always Linux) — a value above that is rejected at deployment time.')
 @minValue(1)
-@maxValue(1000)
+@maxValue(100)
 param ingestMaximumInstanceCount int = 5
 
 // ---------------------------------------------------------------------------
@@ -41,7 +41,7 @@ param workerFunctionAppName string = 'gti-teams-bot-worker'
 ])
 param workerHostingPlanType string = 'FlexConsumption'
 
-@description('Worker Instance Memory MB: per-instance memory for Flex Consumption. (Only applies when Worker Hosting Plan is FlexConsumption; ignored for Consumption).')
+@description('(Only Flex Consumption) Per-instance memory (MB) for the Worker Function App. Ignored when Worker Hosting Plan Type is Consumption.')
 @allowed([
   512
   2048
@@ -54,12 +54,12 @@ param workerInstanceMemoryMB int = 2048
 @maxValue(32)
 param workerConcurrentRequests int = 15
 
-@description('Minimum instance count for the Worker Function App. On Flex Consumption, setting a value > 0 keeps that number of always-ready instances pre-warmed for the queue trigger. Ignored on Consumption plan (scales to zero).')
+@description('(Only Flex Consumption) Minimum instance count for the Worker Function App. Setting a value > 0 keeps that number of always-ready instances pre-warmed for the queue trigger. Ignored when Worker Hosting Plan Type is Consumption (always scales to zero).')
 @minValue(0)
 @maxValue(100)
 param workerMinimumInstanceCount int = 0
 
-@description('Requested maximum scale-out instance count for the Worker Function App. Azure enforces a hard floor of 40 for this on Flex Consumption specifically — a lower value here is silently raised to 40 only on that plan type (see the deployment\'s workerAppliedMaxInstanceCount output for what was actually applied).')
+@description('Requested maximum scale-out instance count for the Worker Function App. Azure enforces a hard floor of 40 for this on Flex Consumption, and a real ceiling of 100 (Linux app) on Consumption — a value outside either plan\'s range is silently clamped to fit (see the deployment\'s workerAppliedMaxInstanceCount output for what was actually applied).')
 @minValue(1)
 @maxValue(1000)
 param workerMaximumInstanceCount int = 5
