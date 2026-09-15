@@ -76,24 +76,15 @@ avoids paying for the worker's larger footprint on every inbound webhook call.
   queue name** (`JOB_QUEUE_NAME`, default `gti-query-jobs`) — the ingest
   function only ever writes to this queue, the worker only ever reads from
   it.
-- The worker's Managed Identity additionally needs these Graph APPLICATION
-  permissions (tenant-admin consent), discovered by exercising each scenario
-  against a real deployment rather than assumed up front:
-  - `ChannelMessage.Read.All` — channel thread context (same as the
-    reference bot).
-  - `Chat.Read.All` — locating a group-chat message that references an
-    *existing* shared file (`app/teams/attachments.py`'s Graph fallback).
-    Not needed for personal/1:1 chats (those attachments come straight off
-    the Bot Framework activity) or for fresh file uploads in any scope.
-  - `Files.ReadWrite.All` — actually downloading that file's bytes via
-    Graph's Shares API (`/shares/{token}/driveItem/content`). Per
-    [Microsoft's own docs](https://learn.microsoft.com/en-us/graph/api/shares-get?view=graph-rest-1.0),
-    this is the *least*-privileged application permission Graph offers for
-    that endpoint — there is no read-only option at the application-permission
-    level, even though the bot only ever reads. Skipping this permission is a
-    safe choice if that's an unacceptable trade-off: the code degrades
-    gracefully (proceeds without the attachment, GTI is told no file was
-    attached) rather than erroring.
+- The worker's Managed Identity additionally needs this Graph APPLICATION
+  permission (tenant-admin consent): `ChannelMessage.Read.All` — channel
+  thread context (`app/teams/thread.py`).
+- Only directly-uploaded files/images are fetched (`app/teams/attachments.py`)
+  — works the same in personal, group, and channel chats. A user picking an
+  *existing* SharePoint/OneDrive file from the attachment picker's
+  "OneDrive"/"Browse Teams Files" option is skipped rather than resolved via
+  Graph; Teams gives the bot no usable file reference for that case at all.
+  GTI is simply told no file was attached, same as if the message had none.
 
 See each app's `.env.example` for the full settings list.
 

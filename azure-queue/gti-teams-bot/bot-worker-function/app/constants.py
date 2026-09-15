@@ -89,19 +89,12 @@ GRAPH_API_TIMEOUT_SECONDS = 30.0
 
 # =============================================================================
 # Attachment downloads (app/teams/attachments.py) — Bot Framework Connector
-# downloadUrl/content_url ONLY. The Microsoft Graph Shares API download uses
-# GRAPH_API_TIMEOUT_SECONDS above instead, like every other Graph call.
+# downloadUrl/content_url. Only directly-uploaded files are fetched; an
+# existing SharePoint/OneDrive file share is skipped (no Graph fallback).
 # =============================================================================
 
 # (connect, read) timeout seconds for downloading one attachment's bytes.
 ATTACHMENT_DOWNLOAD_TIMEOUT = (10.0, 30.0)
-
-# Pages of $top=50 recent chat/channel messages to fetch when locating the
-# inbound message via Graph (the attachment fallback) — page 1 covers
-# virtually every real case. This is the ONLY cutoff on how much history is
-# searched — matching (app/teams/attachments.py::_select_matching_message)
-# considers every message fetched, with no separate time-based cutoff.
-GRAPH_MESSAGE_LIST_MAX_PAGES = 3
 
 
 # =============================================================================
