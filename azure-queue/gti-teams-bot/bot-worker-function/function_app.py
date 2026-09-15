@@ -26,11 +26,12 @@ import logging
 import azure.functions as func
 
 from app.config import settings
+from app.installation_handler import process_installation_removed
 from app.job_processor import process_job
 from app.logging_config import setup_logging
 from app.observability import clear_request
 from app.poison_handler import process_poison_job
-from app.queue_job import InvalidJobPayload
+from app.queue_job import InvalidJobPayload, get_job_kind
 
 setup_logging()
 
@@ -53,7 +54,10 @@ def process_query_job(msg: func.QueueMessage) -> None:
     """Main job queue trigger — processes one GTI query end-to-end."""
     try:
         raw = json.loads(msg.get_body().decode("utf-8"))
-        process_job(raw, dequeue_count=msg.dequeue_count)
+        if get_job_kind(raw) == "installationUpdateRemove":
+            process_installation_removed(raw)
+        else:
+            process_job(raw, dequeue_count=msg.dequeue_count)
     except InvalidJobPayload:
         # A message that was never a valid job of ours (shouldn't happen —
         # only bot-ingest-function ever writes to this queue — but this is

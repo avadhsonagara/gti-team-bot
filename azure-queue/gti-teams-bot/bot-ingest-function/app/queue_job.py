@@ -8,6 +8,11 @@ so both copies must be updated together if this shape ever changes.
 
 Schema:
 {
+  "kind": str,                       # "message" (default — a GTI query job)
+                                     # or "installationUpdateRemove" (the bot
+                                     # was uninstalled from a team; the
+                                     # worker deletes that team's stored GTI
+                                     # sessions instead of running a query).
   "activity": {...},                # the raw inbound Bot Framework Activity
                                      # JSON exactly as POSTed by the Bot
                                      # Framework Connector — the worker
@@ -27,8 +32,9 @@ from datetime import datetime, timezone
 from typing import Optional
 
 
-def build_job_payload(activity_body: dict, loading_activity_id: Optional[str]) -> dict:
+def build_job_payload(activity_body: dict, loading_activity_id: Optional[str], kind: str = "message") -> dict:
     return {
+        "kind": kind,
         "activity": activity_body,
         "loadingActivityId": loading_activity_id,
         "enqueuedAt": datetime.now(timezone.utc).isoformat(),

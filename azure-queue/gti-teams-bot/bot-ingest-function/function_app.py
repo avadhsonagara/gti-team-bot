@@ -157,8 +157,20 @@ def messages(req: func.HttpRequest) -> func.HttpResponse:
         logger.warning("[AUTH] Rejected /api/messages request: %s", exc)
         return _json_response({"error": "Unauthorized"}, 401)
 
+    if body.get("type") == "installationUpdate" and body.get("action") == "remove":
+        # The bot was uninstalled from a team — enqueue a cleanup job so the
+        # Worker Function App can delete that team's stored GTI sessions
+        # (app/gti/session_store.py) instead of leaving them in Table
+        # Storage forever. No placeholder, no user reply — nothing to say
+        # for an uninstall event.
+        try:
+            _enqueue_installation_removed(body)
+        except Exception:
+            logger.exception("[ERROR] Failed to enqueue installationUpdate removal.")
+        return func.HttpResponse(status_code=200)
+
     if body.get("type") != "message":
-        # conversationUpdate, typing, installationUpdate, etc. — nothing to do.
+        # conversationUpdate, typing, etc. — nothing to do.
         logger.info("[EVENT] Ignoring non-message activity | type=%s", body.get("type"))
         return func.HttpResponse(status_code=200)
 
@@ -253,6 +265,22 @@ def _deliver_error_notice(ctx: Ctx, loading_activity_id, scope: str, text: str) 
         logger.exception("[ERROR] Failed to deliver error notice to the user.")
 
 
+def _get_queue_client() -> QueueClient:
+    global _queue_client_instance
+    if _queue_client_instance is None:
+        with _queue_client_lock:
+            if _queue_client_instance is None:
+                client = QueueClient.from_connection_string(
+                    settings.azure_web_jobs_storage, settings.job_queue_name,
+                )
+                try:
+                    client.create_queue()
+                except ResourceExistsError:
+                    pass
+                _queue_client_instance = client
+    return _queue_client_instance
+
+
 def _enqueue_job(activity_body: dict, loading_activity_id, ctx: Ctx, scope: str, t_start: float) -> None:
     payload = build_job_payload(activity_body, loading_activity_id)
     encoded = json.dumps(payload)
@@ -266,21 +294,9 @@ def _enqueue_job(activity_body: dict, loading_activity_id, ctx: Ctx, scope: str,
         _deliver_error_notice(ctx, loading_activity_id, scope, _JOB_TOO_LARGE_NOTICE)
         return
 
-    global _queue_client_instance
     try:
         t_q = time.perf_counter()
-        if _queue_client_instance is None:
-            with _queue_client_lock:
-                if _queue_client_instance is None:
-                    client = QueueClient.from_connection_string(
-                        settings.azure_web_jobs_storage, settings.job_queue_name,
-                    )
-                    try:
-                        client.create_queue()
-                    except ResourceExistsError:
-                        pass
-                    _queue_client_instance = client
-        queue_client = _queue_client_instance
+        queue_client = _get_queue_client()
         # Sent as plain UTF-8 text (no base64/encoding policy) — the worker's
         # native queue_trigger binding (bot-worker-function/function_app.py)
         # reads it back the same way via msg.get_body().decode("utf-8"), so
@@ -297,3 +313,11 @@ def _enqueue_job(activity_body: dict, loading_activity_id, ctx: Ctx, scope: str,
     except Exception:
         logger.exception("[INGEST] Failed to enqueue job after %.0fms — notifying user.", (time.perf_counter() - t_start) * 1000)
         _deliver_error_notice(ctx, loading_activity_id, scope, _QUEUE_FAILURE_NOTICE)
+
+
+def _enqueue_installation_removed(activity_body: dict) -> None:
+    """Enqueue a small cleanup job so the worker can delete this team's stored GTI sessions."""
+    payload = build_job_payload(activity_body, None, kind="installationUpdateRemove")
+    queue_client = _get_queue_client()
+    queue_client.send_message(json.dumps(payload))
+    logger.info("[INGEST] Enqueued installationUpdate removal for cleanup.")

@@ -17,6 +17,14 @@ from typing import Any
 import requests
 
 from app.config import settings
+from app.constants import (
+    GTI_CONNECT_TIMEOUT_SECONDS,
+    GTI_JITTER_RANGE,
+    GTI_MAX_RETRIES,
+    GTI_RATE_LIMIT_BACKOFF_MULTIPLIERS,
+    GTI_RATE_LIMIT_RETRY_DELAY_SECONDS,
+    GTI_RETRY_DELAY_SECONDS,
+)
 
 logger = logging.getLogger("gti-teams-bot")
 
@@ -88,9 +96,11 @@ class GTIAgenticClient:
         # GTI_TIMEOUT_SECONDS for a Flex Consumption deployment (see
         # app/config.py) automatically flows through here.
         self.timeout = timeout if timeout is not None else settings.gti_timeout_seconds
-        self.max_retries = max_retries if max_retries is not None else 3
-        self.retry_delay = retry_delay if retry_delay is not None else 2.0
-        self.rate_limit_retry_delay = rate_limit_retry_delay if rate_limit_retry_delay is not None else 5.0
+        self.max_retries = max_retries if max_retries is not None else GTI_MAX_RETRIES
+        self.retry_delay = retry_delay if retry_delay is not None else GTI_RETRY_DELAY_SECONDS
+        self.rate_limit_retry_delay = (
+            rate_limit_retry_delay if rate_limit_retry_delay is not None else GTI_RATE_LIMIT_RETRY_DELAY_SECONDS
+        )
         self._session: requests.Session | None = None
 
     def _get_session(self) -> requests.Session:
@@ -178,7 +188,7 @@ class GTIAgenticClient:
                     url,
                     files=files,
                     data=data,
-                    timeout=(15.0, self.timeout),
+                    timeout=(GTI_CONNECT_TIMEOUT_SECONDS, self.timeout),
                 )
 
                 if response.status_code == 200:
@@ -202,16 +212,17 @@ class GTIAgenticClient:
                         # Check Retry-After header or use 10s, 20s, 30s backoff schedule (+ jitter)
                         retry_after = response.headers.get("Retry-After")
                         if retry_after and retry_after.strip().isdigit():
-                            backoff = float(retry_after.strip()) + random.uniform(0.5, 1.5)
+                            backoff = float(retry_after.strip()) + random.uniform(*GTI_JITTER_RANGE)
                         else:
-                            # rate_limit_retry_delay * (2, 4, 6) — with the
-                            # default rate_limit_retry_delay=5.0 this is the
-                            # same 10s/20s/30s schedule as before, but now
-                            # actually driven by the constructor parameter
-                            # instead of a hardcoded literal that ignored it.
-                            delays = [self.rate_limit_retry_delay * m for m in (2, 4, 6)]
+                            # rate_limit_retry_delay * GTI_RATE_LIMIT_BACKOFF_MULTIPLIERS
+                            # — with the default rate_limit_retry_delay=5.0
+                            # this is the same 10s/20s/30s schedule as before,
+                            # but now actually driven by the constructor
+                            # parameter instead of a hardcoded literal that
+                            # ignored it.
+                            delays = [self.rate_limit_retry_delay * m for m in GTI_RATE_LIMIT_BACKOFF_MULTIPLIERS]
                             base_delay = delays[min(attempt, len(delays) - 1)]
-                            backoff = base_delay + random.uniform(0.5, 2.0)
+                            backoff = base_delay + random.uniform(*GTI_JITTER_RANGE)
 
                         logger.warning(
                             "[GTI] 429 Rate Limit backoff: waiting %.1fs before retry (attempt %d/%d)...",
@@ -224,7 +235,7 @@ class GTIAgenticClient:
                 if response.status_code in (500, 502, 503, 504):
                     logger.warning("[GTI] Transient server error (%d): %s", response.status_code, response.text)
                     if attempt < self.max_retries:
-                        delay = (self.retry_delay * (2 ** attempt)) + random.uniform(0.1, 0.5)
+                        delay = (self.retry_delay * (2 ** attempt)) + random.uniform(*GTI_JITTER_RANGE)
                         logger.info("[GTI] Retrying in %.1fs...", delay)
                         time.sleep(delay)
                         continue
@@ -244,7 +255,7 @@ class GTIAgenticClient:
                 # to retry, unlike a read timeout below.
                 logger.warning("[GTI] Connection error: %s", exc)
                 if attempt < self.max_retries:
-                    delay = (self.retry_delay * (2 ** attempt)) + random.uniform(0.1, 0.5)
+                    delay = (self.retry_delay * (2 ** attempt)) + random.uniform(*GTI_JITTER_RANGE)
                     logger.info("[GTI] Retrying connection error in %.1fs...", delay)
                     time.sleep(delay)
                     continue
@@ -279,7 +290,7 @@ class GTIAgenticClient:
             except Exception as exc:
                 logger.warning("[GTI] Unexpected error: %s", exc)
                 if attempt < self.max_retries:
-                    delay = (self.retry_delay * (2 ** attempt)) + random.uniform(0.1, 0.5)
+                    delay = (self.retry_delay * (2 ** attempt)) + random.uniform(*GTI_JITTER_RANGE)
                     time.sleep(delay)
                     continue
                 raise GTIServiceError(f"GTI request failed: {exc}") from exc

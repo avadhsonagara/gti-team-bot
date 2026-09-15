@@ -13,7 +13,7 @@ anyway; catching it here at least gets it logged.
 import logging
 
 from app.observability import bind_request
-from app.queue_job import InvalidJobPayload, parse_job_payload
+from app.queue_job import InvalidJobPayload, get_job_kind, parse_job_payload
 from app.teams.activity import parse_activity
 from app.teams.cards import build_status_card
 from app.teams.context import Ctx
@@ -28,6 +28,14 @@ _POISON_NOTICE = (
 
 
 def process_poison_job(raw_payload: dict) -> None:
+    if get_job_kind(raw_payload) == "installationUpdateRemove":
+        # A cleanup job, not a user query — there's no placeholder to
+        # replace and, having just been uninstalled, likely no conversation
+        # left to post into either. Already logged by installation_handler.py
+        # each time it failed; nothing further to notify anyone about.
+        logger.error("[POISON] installationUpdateRemove cleanup job permanently failed after exhausting retries.")
+        return
+
     try:
         activity_body, loading_activity_id, _ = parse_job_payload(raw_payload)
     except InvalidJobPayload:

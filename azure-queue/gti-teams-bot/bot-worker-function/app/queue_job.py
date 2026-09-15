@@ -13,6 +13,11 @@ class InvalidJobPayload(Exception):
     """Raised when a dequeued message doesn't match the expected job shape."""
 
 
+def get_job_kind(raw: dict) -> str:
+    """"message" (default — a GTI query job) or "installationUpdateRemove"."""
+    return raw.get("kind") or "message"
+
+
 def parse_job_payload(raw: dict) -> tuple[dict, Optional[str], datetime]:
     """Returns (activity_body, loading_activity_id, enqueued_at)."""
     activity_body = raw.get("activity")

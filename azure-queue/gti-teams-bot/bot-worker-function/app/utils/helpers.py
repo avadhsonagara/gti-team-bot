@@ -52,9 +52,18 @@ def parse_adaptive_card(raw_text: str | None) -> tuple[Optional[dict], str]:
         isn't a valid AdaptiveCard shape.
     """
     text = (raw_text or "").strip()
-    if text.startswith("```"):
-        text = re.sub(r"^```[a-zA-Z]*\n?", "", text)
-        text = re.sub(r"\n?```$", "", text).strip()
+    # Strip a code fence anywhere in the text (not just at the start), in
+    # case the model prefaces the JSON with prose. Falls back to stripping
+    # just a leading fence when there's no matching close (e.g. output
+    # truncated before the closing ```) — a matched pair is preferred
+    # whenever both exist.
+    fence_start = text.find("```")
+    if fence_start != -1:
+        fence_end = text.rfind("```")
+        if fence_end > fence_start:
+            text = re.sub(r"^[a-zA-Z]*\n?", "", text[fence_start + 3:fence_end]).strip()
+        elif text.startswith("```"):
+            text = re.sub(r"^```[a-zA-Z]*\n?", "", text).strip()
     try:
         data = json.loads(text)
     except json.JSONDecodeError:
@@ -129,7 +138,18 @@ GENERIC_DELIVERY_FAILURE_NOTICE = (
 
 
 def _looks_like_size_limit_error(exc: Exception) -> bool:
-    """Heuristic for payload too large errors."""
+    """
+    Detect a payload-too-large failure delivering to Teams. Checks the HTTP
+    status code first (bot_client.py's send/update/delete all raise via
+    response.raise_for_status(), which carries the real status on
+    exc.response) and falls back to a text heuristic for exceptions that
+    don't carry a response (e.g. connection errors).
+    """
+    response = getattr(exc, "response", None)
+    status_code = getattr(response, "status_code", None)
+    if status_code is not None:
+        return status_code == 413
+
     text = str(exc).lower()
     return any(
         kw in text

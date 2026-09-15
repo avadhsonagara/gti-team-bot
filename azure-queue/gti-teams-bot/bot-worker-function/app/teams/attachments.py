@@ -37,6 +37,7 @@ from typing import Any, Optional
 
 import requests
 
+from app.constants import ATTACHMENT_DOWNLOAD_TIMEOUT, GRAPH_MESSAGE_LIST_MAX_PAGES
 from app.graph.client import GraphError, graph_client
 from app.teams.bot_client import get_bot_token
 from app.teams.thread import get_channel_id, get_team_id, get_thread_root_id
@@ -46,11 +47,6 @@ logger = logging.getLogger("gti-teams-bot")
 _FILE_DOWNLOAD_INFO = "application/vnd.microsoft.teams.file.download.info"
 _NON_FILE_PREFIXES = ("text/html", "application/vnd.microsoft.card.")
 _GRAPH_BASE_URL = "https://graph.microsoft.com/v1.0"
-_DOWNLOAD_TIMEOUT = (10.0, 30.0)  # (connect, read) seconds
-
-# Graph message-listing/matching for the fallback path.
-_MESSAGE_LIST_MAX_PAGES = 3       # $top=50/page — page 1 covers virtually every real case
-_MESSAGE_MATCH_WINDOW_SECONDS = 120.0
 
 
 def _is_user_file(content_type: str) -> bool:
@@ -61,7 +57,7 @@ def _is_user_file(content_type: str) -> bool:
 
 def _download(url: str, headers: Optional[dict[str, str]] = None) -> bytes:
     """Blocking GET."""
-    resp = requests.get(url, headers=headers, timeout=_DOWNLOAD_TIMEOUT)
+    resp = requests.get(url, headers=headers, timeout=ATTACHMENT_DOWNLOAD_TIMEOUT)
     resp.raise_for_status()
     return resp.content
 
@@ -75,9 +71,14 @@ def _share_token(content_url: str) -> str:
 
 
 def _download_graph_share(content_url: str) -> bytes:
-    """Resolve a SharePoint/OneDrive contentUrl to bytes via the Graph Shares API."""
+    """
+    Resolve a SharePoint/OneDrive contentUrl to bytes via the Graph Shares
+    API. Uses graph_client's own default timeout (GRAPH_API_TIMEOUT_SECONDS)
+    like every other Graph call, rather than ATTACHMENT_DOWNLOAD_TIMEOUT —
+    this is a Graph API call, not a Bot Framework Connector download.
+    """
     url = f"{_GRAPH_BASE_URL}/shares/{_share_token(content_url)}/driveItem/content"
-    resp = graph_client.get(url, timeout=_DOWNLOAD_TIMEOUT)
+    resp = graph_client.get(url)
     resp.raise_for_status()
     return resp.content
 
@@ -93,12 +94,13 @@ def _select_matching_message(
     messages: list[dict[str, Any]],
     sender_aad_id: Optional[str],
     activity_timestamp: Optional[datetime],
-    window_seconds: float,
 ) -> Optional[dict[str, Any]]:
     """
     Pick the chatMessage that best matches the inbound activity: has
-    attachments, same sender (when known), createdDateTime closest to (and
-    within window_seconds of) the activity's own timestamp.
+    attachments, same sender (when known), createdDateTime closest to the
+    activity's own timestamp. No time cutoff — every message fetched (across
+    however many pages GRAPH_MESSAGE_LIST_MAX_PAGES allows) is eligible;
+    "closest in time" only breaks ties when more than one candidate matches.
     """
     best, best_delta = None, None
     for msg in messages:
@@ -111,19 +113,17 @@ def _select_matching_message(
         if created is None:
             continue
         delta = abs((activity_timestamp - created).total_seconds()) if activity_timestamp else 0.0
-        if delta > window_seconds:
-            continue
         if best is None or delta < best_delta:
             best, best_delta = msg, delta
     return best
 
 
-def _list_graph_chat_messages(chat_id: str, window_seconds: float) -> list[dict[str, Any]]:
+def _list_graph_chat_messages(chat_id: str) -> list[dict[str, Any]]:
     """List a group chat's recent messages via Graph, newest first."""
     messages: list[dict[str, Any]] = []
     url = f"{_GRAPH_BASE_URL}/chats/{chat_id}/messages?$top=50&$orderby=createdDateTime desc"
     pages_fetched = 0
-    while url and pages_fetched < _MESSAGE_LIST_MAX_PAGES:
+    while url and pages_fetched < GRAPH_MESSAGE_LIST_MAX_PAGES:
         resp = graph_client.get(url)
         if resp.status_code != 200:
             logger.warning(
@@ -132,11 +132,7 @@ def _list_graph_chat_messages(chat_id: str, window_seconds: float) -> list[dict[
             )
             break
         payload = resp.json()
-        page = payload.get("value") or []
-        messages.extend(page)
-        oldest_on_page = _parse_graph_datetime(min((m.get("createdDateTime") or "" for m in page), default=""))
-        if oldest_on_page and (datetime.now(oldest_on_page.tzinfo) - oldest_on_page).total_seconds() > window_seconds:
-            break  # createdDateTime-desc — nothing further back can still be in-window
+        messages.extend(payload.get("value") or [])
         url = payload.get("@odata.nextLink")
         pages_fetched += 1
     return messages
@@ -157,7 +153,7 @@ def _list_graph_channel_messages(team_id: str, channel_id: str, thread_id: str) 
         f"/replies?$top=50&$orderby=createdDateTime desc"
     )
     pages_fetched = 0
-    while url and pages_fetched < _MESSAGE_LIST_MAX_PAGES:
+    while url and pages_fetched < GRAPH_MESSAGE_LIST_MAX_PAGES:
         resp = graph_client.get(url)
         if resp.status_code != 200:
             logger.warning("[ATTACHMENT] Graph channel-replies list failed (%d)", resp.status_code)
@@ -199,9 +195,9 @@ def _fetch_graph_message_attachments(activity, scope: str) -> list[dict[str, Any
                 return []
             messages = _list_graph_channel_messages(team_id, channel_id, thread_id)
         else:  # groupChat
-            messages = _list_graph_chat_messages(conv_id, _MESSAGE_MATCH_WINDOW_SECONDS)
+            messages = _list_graph_chat_messages(conv_id)
 
-        match = _select_matching_message(messages, sender_aad_id, activity_timestamp, _MESSAGE_MATCH_WINDOW_SECONDS)
+        match = _select_matching_message(messages, sender_aad_id, activity_timestamp)
         if not match:
             logger.warning(
                 "[ATTACHMENT] Graph fallback found no matching message with attachments (scope=%s)", scope,

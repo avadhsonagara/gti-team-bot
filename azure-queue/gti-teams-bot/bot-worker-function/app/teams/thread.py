@@ -31,7 +31,7 @@ import re
 from typing import Any, Optional
 
 from app.config import settings
-from app.constants import PLACEHOLDER_TEXT
+from app.constants import PLACEHOLDER_TEXT, THREAD_CONTEXT_MAX_PAGES
 from app.graph.client import GraphError, graph_client
 from app.utils.helpers import extract_text_from_card
 
@@ -197,7 +197,7 @@ def fetch_thread_messages(
     )
     # Cap pagination — a channel thread context window only needs the tail.
     pages_fetched = 0
-    while replies_url and pages_fetched < 5:
+    while replies_url and pages_fetched < THREAD_CONTEXT_MAX_PAGES:
         resp = graph_client.get(replies_url)
         if resp.status_code != 200:
             raise GraphError(f"Graph replies fetch failed ({resp.status_code}): {resp.text}")
@@ -243,18 +243,24 @@ def get_thread_root_id(conversation_id: str) -> str:
     return match.group(1) if match else ""
 
 
-def get_session_key(activity, scope: str) -> str:
+def get_team_post_id(activity) -> str:
     """
-    Return the key used to persist/look up the GTI session_id for this
-    conversation: the channel thread's root Post ID when available, otherwise
-    the Conversation ID (personal/group chats, or a channel message that
-    isn't part of a thread yet).
+    Return the channel thread's root Post ID — used as the session table's
+    RowKey. Channel-only; callers must not use this for personal/group
+    chats, which have no thread concept and never persist a session.
+
+    A reply's own conversation.id carries the root id directly
+    (";messageid=<rootId>", extracted by get_thread_root_id()). The root
+    post itself has no such suffix on ITS OWN conversation.id — but its own
+    activity.id IS that root id, so it's used as the fallback. Without this
+    fallback, the opening post of a new thread and its first reply would
+    resolve to two different ids (the opening post's own conversation.id vs.
+    the reply's parsed root id) and never find each other's stored session.
     """
-    if scope == "channel":
-        thread_id = get_thread_root_id(activity.conversation.id)
-        if thread_id:
-            return thread_id
-    return activity.conversation.id or ""
+    thread_id = get_thread_root_id(activity.conversation.id)
+    if thread_id:
+        return thread_id
+    return getattr(activity, "id", None) or ""
 
 
 def get_team_id(activity) -> str:
@@ -266,9 +272,20 @@ def get_team_id(activity) -> str:
 
 
 def get_channel_id(activity) -> str:
-    """Return the Teams channel id for this activity, or "" outside channels."""
+    """
+    Return the Teams channel id for this activity, or "" outside channels.
+
+    Falls back to parsing it from conversation.id when channelData.channel
+    is missing (Teams doesn't always populate it, e.g. on some mobile clients).
+    """
     channel = getattr(activity, "channel", None)
-    return (getattr(channel, "id", None) if channel else None) or ""
+    channel_id = (getattr(channel, "id", None) if channel else None) or ""
+    if channel_id:
+        return channel_id
+    conv_id = getattr(getattr(activity, "conversation", None), "id", "") or ""
+    if conv_id.startswith("19:") and "@thread." in conv_id:
+        return conv_id.split(";")[0]
+    return ""
 
 
 # ── Orchestration ────────────────────────────────────────────────────────────

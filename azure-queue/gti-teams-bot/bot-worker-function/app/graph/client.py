@@ -20,11 +20,11 @@ import requests
 from azure.identity import ManagedIdentityCredential
 
 from app.config import settings
+from app.constants import GRAPH_API_TIMEOUT_SECONDS, TOKEN_EXPIRY_SAFETY_SECONDS
 
 logger = logging.getLogger("gti-teams-bot")
 
 _GRAPH_SCOPE = "https://graph.microsoft.com/.default"
-_TOKEN_EXPIRY_SAFETY_SECONDS = 60
 
 
 class GraphError(Exception):
@@ -37,7 +37,7 @@ class GraphClient:
     def __init__(
         self,
         managed_identity_client_id: str | None = None,
-        timeout: float = 15.0,
+        timeout: float = GRAPH_API_TIMEOUT_SECONDS,
     ) -> None:
         self.managed_identity_client_id = managed_identity_client_id or settings.managed_identity_client_id
         self.timeout = timeout
@@ -69,7 +69,7 @@ class GraphClient:
 
     def _get_token(self) -> str:
         """Return a cached app-only Graph token, refreshing it if near expiry."""
-        if self._token and time.monotonic() < self._token_expires_at - _TOKEN_EXPIRY_SAFETY_SECONDS:
+        if self._token and time.monotonic() < self._token_expires_at - TOKEN_EXPIRY_SAFETY_SECONDS:
             return self._token
 
         # graph_client is a module-level singleton shared across whatever
@@ -77,7 +77,7 @@ class GraphClient:
         # running — without this lock, two overlapping requests can both see
         # an expired token above and both refresh it concurrently.
         with self._lock:
-            if self._token and time.monotonic() < self._token_expires_at - _TOKEN_EXPIRY_SAFETY_SECONDS:
+            if self._token and time.monotonic() < self._token_expires_at - TOKEN_EXPIRY_SAFETY_SECONDS:
                 return self._token
 
             if not self.managed_identity_client_id:

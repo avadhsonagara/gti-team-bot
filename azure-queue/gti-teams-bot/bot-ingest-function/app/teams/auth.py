@@ -13,11 +13,12 @@ import logging
 
 import jwt
 
+from app.constants import JWT_LEEWAY_SECONDS
+
 logger = logging.getLogger("gti-teams-bot")
 
 _JWKS_URI = "https://login.botframework.com/v1/.well-known/keys"
 _TOKEN_ISSUER = "https://api.botframework.com"
-_LEEWAY_SECONDS = 300  # matches Bot Framework's documented allowed clock skew
 
 _jwks_client: "jwt.PyJWKClient | None" = None
 
@@ -70,7 +71,7 @@ def validate_bot_framework_token(authorization_header: str, app_id: str, claimed
                 "verify_exp": True,
                 "verify_iat": True,
             },
-            leeway=_LEEWAY_SECONDS,
+            leeway=JWT_LEEWAY_SECONDS,
         )
     except jwt.PyJWTError as exc:
         # Covers both real validation failures (InvalidTokenError and its

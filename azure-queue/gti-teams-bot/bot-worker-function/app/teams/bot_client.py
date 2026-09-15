@@ -19,11 +19,11 @@ from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
 
 from app.config import settings
+from app.constants import BOT_CONNECTOR_TIMEOUT, TOKEN_EXPIRY_SAFETY_SECONDS
 
 logger = logging.getLogger("gti-teams-bot")
 
 _BOTFRAMEWORK_SCOPE = "https://api.botframework.com/.default"
-_TOKEN_EXPIRY_SAFETY_SECONDS = 60
 
 _session = requests.Session()
 # Retry.DEFAULT_ALLOWED_METHODS (the default here, left unset deliberately)
@@ -55,14 +55,14 @@ def _fetch_token_via_managed_identity() -> tuple[str, float]:
 def get_bot_token() -> str:
     """Return a cached app-only Bot Framework Connector token, refreshing it if near expiry."""
     global _bot_token, _bot_token_expires_at
-    if _bot_token and time.monotonic() < _bot_token_expires_at - _TOKEN_EXPIRY_SAFETY_SECONDS:
+    if _bot_token and time.monotonic() < _bot_token_expires_at - TOKEN_EXPIRY_SAFETY_SECONDS:
         return _bot_token
 
     # Azure Functions can run a request pool with more than one worker thread
     # per instance — without this lock, two overlapping requests can both see
     # an expired token above and both refresh it concurrently.
     with _token_lock:
-        if _bot_token and time.monotonic() < _bot_token_expires_at - _TOKEN_EXPIRY_SAFETY_SECONDS:
+        if _bot_token and time.monotonic() < _bot_token_expires_at - TOKEN_EXPIRY_SAFETY_SECONDS:
             return _bot_token
 
         if not settings.managed_identity_client_id:
@@ -81,7 +81,7 @@ def _headers() -> dict:
 def send_activity(service_url: str, conversation_id: str, activity: dict) -> dict:
     """POST a new activity to a conversation. Returns the Connector API response (includes 'id')."""
     url = f"{service_url.rstrip('/')}/v3/conversations/{conversation_id}/activities"
-    resp = _session.post(url, headers=_headers(), json=activity, timeout=(10.0, 30.0))
+    resp = _session.post(url, headers=_headers(), json=activity, timeout=BOT_CONNECTOR_TIMEOUT)
     resp.raise_for_status()
     return resp.json() if resp.content else {}
 
@@ -89,7 +89,7 @@ def send_activity(service_url: str, conversation_id: str, activity: dict) -> dic
 def update_activity(service_url: str, conversation_id: str, activity_id: str, activity: dict) -> dict:
     """PUT (edit in place) an existing activity."""
     url = f"{service_url.rstrip('/')}/v3/conversations/{conversation_id}/activities/{activity_id}"
-    resp = _session.put(url, headers=_headers(), json=activity, timeout=(10.0, 30.0))
+    resp = _session.put(url, headers=_headers(), json=activity, timeout=BOT_CONNECTOR_TIMEOUT)
     resp.raise_for_status()
     return resp.json() if resp.content else {}
 
@@ -97,5 +97,5 @@ def update_activity(service_url: str, conversation_id: str, activity_id: str, ac
 def delete_activity(service_url: str, conversation_id: str, activity_id: str) -> None:
     """DELETE an existing activity."""
     url = f"{service_url.rstrip('/')}/v3/conversations/{conversation_id}/activities/{activity_id}"
-    resp = _session.delete(url, headers=_headers(), timeout=(10.0, 30.0))
+    resp = _session.delete(url, headers=_headers(), timeout=BOT_CONNECTOR_TIMEOUT)
     resp.raise_for_status()

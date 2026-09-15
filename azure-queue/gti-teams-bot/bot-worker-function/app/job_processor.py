@@ -12,6 +12,7 @@ App (bot-ingest-function/) before this job ever reached the queue.
 import logging
 import re
 import time
+from contextlib import nullcontext
 from datetime import datetime, timezone
 
 from app.config import settings
@@ -27,7 +28,7 @@ from app.gti.client import (
     GTITimeoutError,
     gti_client,
 )
-from app.gti.session_store import get_session_id, set_session_id
+from app.gti.session_store import get_session_id, session_lock, set_session_id
 from app.observability import bind_request
 from app.output_format_store import get_output_format
 from app.queue_job import parse_job_payload
@@ -35,7 +36,7 @@ from app.teams.activity import parse_activity
 from app.teams.attachments import download_attachments
 from app.teams.cards import build_gti_response_card, build_status_card, inject_quote_into_card
 from app.teams.context import Ctx
-from app.teams.thread import get_channel_id, get_session_key, get_team_id, get_thread_context
+from app.teams.thread import get_channel_id, get_team_id, get_team_post_id, get_thread_context
 from app.utils.helpers import (
     build_custom_format_section,
     build_thread_context_section,
@@ -175,32 +176,45 @@ def process_job(raw_payload: dict, dequeue_count: int = 1) -> None:
             user_query=user_text, thread_context=thread_context, output_format=output_format,
         )
 
+        # Session persistence (and therefore thread continuity) only applies
+        # to channel messages — personal/group chats always start a fresh
+        # GTI session per message, and nothing is ever written to
+        # app/gti/session_store.py for those scopes.
         if scope == "channel":
-            session_key = get_session_key(activity, scope)
             team_id = get_team_id(activity)
             channel_id = get_channel_id(activity)
-            existing_session_id = get_session_id(session_key)
+            team_post_id = get_team_post_id(activity)
+            have_session_key = bool(team_id and channel_id and team_post_id)
+            lock_ctx = session_lock(team_id, channel_id, team_post_id) if have_session_key else nullcontext()
         else:
-            session_key = ""
-            team_id = ""
-            channel_id = ""
-            existing_session_id = None
+            team_id = channel_id = team_post_id = ""
+            have_session_key = False
+            lock_ctx = nullcontext()
 
-        t_gti = time.perf_counter()
-        logger.info(
-            "[WORKER 3/4] Dispatching query to GTI Agentic API | mode=%s session_id=%s prompt_chars=%d",
-            "continue" if existing_session_id else "new", existing_session_id or "-", len(initial_msg),
-        )
-        session_id, response_text, _ = gti_client.send_message(
-            message=initial_msg, session_id=existing_session_id, files=attachments,
-        )
-        bind_request(session_id=session_id)
-        if session_key:
-            set_session_id(session_key, session_id, team_id or None, channel_id or None)
-        logger.info(
-            "[WORKER 3/4] GTI query completed in %.2fs | session_id=%s response_chars=%d",
-            time.perf_counter() - t_gti, session_id, len(response_text),
-        )
+        # Held around read-session -> maybe-create-in-GTI -> write-session so
+        # two concurrent requests for the SAME thread can't both read "no
+        # session yet", both create a GTI session, and have one write
+        # silently orphan the other. No-op lock for personal/group chats
+        # (and for a channel activity missing team_id/channel_id), which
+        # have no persisted key to race on.
+        with lock_ctx:
+            existing_session_id = get_session_id(team_id, channel_id, team_post_id) if have_session_key else None
+
+            t_gti = time.perf_counter()
+            logger.info(
+                "[WORKER 3/4] Dispatching query to GTI Agentic API | mode=%s session_id=%s prompt_chars=%d",
+                "continue" if existing_session_id else "new", existing_session_id or "-", len(initial_msg),
+            )
+            session_id, response_text, _ = gti_client.send_message(
+                message=initial_msg, session_id=existing_session_id, files=attachments,
+            )
+            bind_request(session_id=session_id)
+            if have_session_key:
+                set_session_id(team_id, channel_id, team_post_id, session_id)
+            logger.info(
+                "[WORKER 3/4] GTI query completed in %.2fs | session_id=%s response_chars=%d",
+                time.perf_counter() - t_gti, session_id, len(response_text),
+            )
 
         # ── Step 4: Format & Deliver ────────────────────────────────────────
         t_del = time.perf_counter()
