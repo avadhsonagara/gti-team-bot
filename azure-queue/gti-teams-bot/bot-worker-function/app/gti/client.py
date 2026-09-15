@@ -140,7 +140,12 @@ class GTIAgenticClient:
         if not events:
             raise GTIEmptyResponseError("GTI API returned no session events.")
 
-        # Scan events in reverse to find the latest AGENT_FINAL_RESPONSE
+        # Scan events in reverse to find the latest AGENT_FINAL_RESPONSE. The
+        # `if text_parts: return ...` must be inside this `if`, not after —
+        # otherwise, when the LATEST final-response event has no text (e.g.
+        # a chart/table-only widget), the loop would silently keep scanning
+        # backwards and return an OLDER turn's text as if it answered the
+        # current question, instead of raising.
         for event in reversed(events):
             if event.get("message_type") == "AGENT_FINAL_RESPONSE":
                 final_resp = event.get("agent_final_response", {})
@@ -153,6 +158,7 @@ class GTIAgenticClient:
                             text_parts.append(md_text.strip())
                 if text_parts:
                     return "\n\n".join(text_parts)
+                break
 
         raise GTIEmptyResponseError("GTI API completed the request but produced no displayable text.")
 
