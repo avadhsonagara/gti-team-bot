@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.47.16.16243",
-      "templateHash": "13766137064415232363"
+      "templateHash": "16022942671834693607"
     }
   },
   "parameters": {
@@ -278,7 +278,7 @@
       "type": "string",
       "defaultValue": "1",
       "metadata": {
-        "description": "Only needed if a redeploy to this SAME resource group fails with \"RoleAssignmentUpdateNotPermitted\". Microsoft.Authorization/roleAssignments are immutable, and their name here is a hash that includes deployIdentity/botIdentity's resource id — but NOT their principalId (Azure AD-assigned, only known once the identity actually exists, so ARM forbids using it in a resource name). If deployIdentity or botIdentity was ever deleted and recreated between deployments, it keeps the same resource id but gets a brand-new principalId, and this deployment then tries to repoint the OLD role assignment at the new principal, which ARM rejects outright. Changing this value (e.g. \"1\" -> \"2\") changes the computed role-assignment name, so a fresh one gets created instead of colliding with the stale one — no Microsoft.Authorization/roleAssignments/delete permission needed. The old, now-orphaned role assignment is harmless (it grants a role to a principal that no longer exists) and can be left in place or cleaned up later by someone with sufficient rights."
+        "description": "Only needed if a redeploy to this SAME resource group fails with \"RoleAssignmentUpdateNotPermitted\" on deployIdentityWebsiteContributor. That role assignment's name is a hash that includes deployIdentity's resource id — but NOT its principalId (Azure AD-assigned, only known once the identity actually exists, so ARM forbids using it in a resource name). If deployIdentity was ever deleted and recreated between deployments, it keeps the same resource id but gets a brand-new principalId, and this deployment then tries to repoint the OLD role assignment at the new principal, which ARM rejects outright. Changing this value (e.g. \"1\" -> \"2\") changes the computed role-assignment name, so a fresh one gets created instead of colliding with the stale one — no Microsoft.Authorization/roleAssignments/delete permission needed. The old, now-orphaned role assignment is harmless (it grants a role to a principal that no longer exists) and can be left in place or cleaned up later by someone with sufficient rights. Only used by deployIdentityWebsiteContributor — kvSecretsUserRoleAssignment deliberately does not use this, see its own comment."
       }
     }
   },
@@ -436,7 +436,7 @@
       "type": "Microsoft.Authorization/roleAssignments",
       "apiVersion": "2022-04-01",
       "scope": "[resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName'))]",
-      "name": "[guid(resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName')), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('ingestFunctionAppName'))), parameters('roleAssignmentSalt'), 'KeyVaultSecretsUser')]",
+      "name": "[guid(resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName')), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('ingestFunctionAppName'))), 'KeyVaultSecretsUser')]",
       "properties": {
         "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')]",
         "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('ingestFunctionAppName'))), '2023-01-31').principalId]",

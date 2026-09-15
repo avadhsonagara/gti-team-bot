@@ -223,7 +223,7 @@ param ingestCodeZipUrl string = 'https://raw.githubusercontent.com/avadhsonagara
 @description('URL to a pre-built bot-worker-function code zip. Leave empty to skip automatic code deployment and publish it yourself.')
 param workerCodeZipUrl string = 'https://raw.githubusercontent.com/avadhsonagara/gti-team-bot/main/azure-queue/gti-teams-bot/bot-worker-function/code.zip'
 
-@description('Only needed if a redeploy to this SAME resource group fails with "RoleAssignmentUpdateNotPermitted". Microsoft.Authorization/roleAssignments are immutable, and their name here is a hash that includes deployIdentity/botIdentity\'s resource id — but NOT their principalId (Azure AD-assigned, only known once the identity actually exists, so ARM forbids using it in a resource name). If deployIdentity or botIdentity was ever deleted and recreated between deployments, it keeps the same resource id but gets a brand-new principalId, and this deployment then tries to repoint the OLD role assignment at the new principal, which ARM rejects outright. Changing this value (e.g. "1" -> "2") changes the computed role-assignment name, so a fresh one gets created instead of colliding with the stale one — no Microsoft.Authorization/roleAssignments/delete permission needed. The old, now-orphaned role assignment is harmless (it grants a role to a principal that no longer exists) and can be left in place or cleaned up later by someone with sufficient rights.')
+@description('Only needed if a redeploy to this SAME resource group fails with "RoleAssignmentUpdateNotPermitted" on deployIdentityWebsiteContributor. That role assignment\'s name is a hash that includes deployIdentity\'s resource id — but NOT its principalId (Azure AD-assigned, only known once the identity actually exists, so ARM forbids using it in a resource name). If deployIdentity was ever deleted and recreated between deployments, it keeps the same resource id but gets a brand-new principalId, and this deployment then tries to repoint the OLD role assignment at the new principal, which ARM rejects outright. Changing this value (e.g. "1" -> "2") changes the computed role-assignment name, so a fresh one gets created instead of colliding with the stale one — no Microsoft.Authorization/roleAssignments/delete permission needed. The old, now-orphaned role assignment is harmless (it grants a role to a principal that no longer exists) and can be left in place or cleaned up later by someone with sufficient rights. Only used by deployIdentityWebsiteContributor — kvSecretsUserRoleAssignment deliberately does not use this, see its own comment.')
 param roleAssignmentSalt string = '1'
 
 // ---------------------------------------------------------------------------
@@ -538,9 +538,17 @@ resource kvSecretGtiApiKey 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
 }
 
 resource kvSecretsUserRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  // roleAssignmentSalt — same reasoning as deployIdentityWebsiteContributor
-  // above: covers botIdentity being deleted and recreated between deploys.
-  name: guid(keyVault.id, botIdentity.id, roleAssignmentSalt, 'KeyVaultSecretsUser')
+  // Deliberately NOT salted with roleAssignmentSalt (unlike
+  // deployIdentityWebsiteContributor above) — botIdentity is never deleted
+  // and recreated by this template the way deployIdentity can be, so this
+  // name has no history of drifting from botIdentity's actual principalId.
+  // Adding an unused salt here would do nothing but generate a NEW name on
+  // every redeploy where guid()'s argument count changed, colliding with
+  // the already-correct existing assignment under the old name
+  // (RoleAssignmentExists) instead of leaving it alone. If botIdentity ever
+  // does get recreated in a way that breaks this, salt it then, the same
+  // way deployIdentityWebsiteContributor was fixed.
+  name: guid(keyVault.id, botIdentity.id, 'KeyVaultSecretsUser')
   scope: keyVault
   properties: {
     // Built-in "Key Vault Secrets User" role — read-only access to secret
