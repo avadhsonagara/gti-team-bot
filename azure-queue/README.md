@@ -225,3 +225,18 @@ the GTI prompt is built — verified with a test asserting the literal
   tenant — that would be the natural next step before a production
   deployment (this task covered application code, not infrastructure/IaC
   for this new layout).
+
+## Automated tests
+
+[`gti-teams-bot/tests/`](gti-teams-bot/tests) — see its own
+[README](gti-teams-bot/tests/README.md) for why it's three separate suites
+(`tests/ingest`, `tests/worker`, `tests/cross_app`) rather than one. Covers:
+inbound JWT auth including the missing-`serviceUrl` rejection, the
+`build_job_payload`/`parse_job_payload` wire-format contract between the two
+apps, `is_placeholder_message`'s five cases, delivery-failure handling in
+`process_job` (including that it now raises instead of silently dropping the
+job — see `job_processor.py`'s `DeliveryFailedError`), stale-job handling,
+the Bot Framework Connector retry policy (and that `POST`/`send_activity` is
+deliberately excluded from it), channel-thread pagination once a thread
+exceeds 250 replies, and a parity check that fails if the files meant to
+stay byte-identical between the two apps ever diverge.

@@ -183,8 +183,17 @@ def fetch_thread_messages(
     else:
         raise GraphError(f"Graph root message fetch failed ({root_resp.status_code}): {root_resp.text}")
 
+    # $orderby=createdDateTime desc (also used in attachments.py's own Graph
+    # replies fetch) so the capped pagination below walks from the NEWEST
+    # reply backwards. Without it, Graph's default ascending order means a
+    # thread with more than 250 replies (5 pages x 50) would only ever see
+    # its oldest 250 — silently returning stale context instead of the
+    # actual most-recent messages. The final sort()+[-limit:] below still
+    # re-orders these chronologically before slicing, so this only changes
+    # WHICH replies get fetched, not how they're presented.
     replies_url: Optional[str] = (
-        f"{_GRAPH_BASE_URL}/teams/{team_id}/channels/{channel_id}/messages/{thread_id}/replies?$top=50"
+        f"{_GRAPH_BASE_URL}/teams/{team_id}/channels/{channel_id}/messages/{thread_id}"
+        f"/replies?$top=50&$orderby=createdDateTime desc"
     )
     # Cap pagination — a channel thread context window only needs the tail.
     pages_fetched = 0

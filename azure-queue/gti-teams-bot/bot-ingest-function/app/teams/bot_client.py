@@ -15,6 +15,8 @@ import time
 
 import requests
 from azure.identity import ManagedIdentityCredential
+from requests.adapters import HTTPAdapter
+from urllib3.util import Retry
 
 from app.config import settings
 
@@ -24,6 +26,19 @@ _BOTFRAMEWORK_SCOPE = "https://api.botframework.com/.default"
 _TOKEN_EXPIRY_SAFETY_SECONDS = 60
 
 _session = requests.Session()
+# Retry.DEFAULT_ALLOWED_METHODS (the default here, left unset deliberately)
+# excludes POST — send_activity() below is the only POST caller, and it
+# creates a brand-new message, so retrying it on an ambiguous failure (e.g.
+# a 503 where the request may have already been processed) risks double-
+# posting to the user. update_activity()/delete_activity() (PUT/DELETE) are
+# idempotent and safe to retry, and are covered by the default method set.
+_retry_strategy = Retry(
+    total=3,
+    backoff_factor=0.5,
+    status_forcelist=[429, 500, 502, 503, 504],
+    raise_on_status=False,
+)
+_session.mount("https://", HTTPAdapter(max_retries=_retry_strategy))
 _bot_token: str | None = None
 _bot_token_expires_at: float = 0.0
 _token_lock = threading.Lock()

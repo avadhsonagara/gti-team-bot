@@ -46,6 +46,11 @@ from app.utils.helpers import (
 
 logger = logging.getLogger("gti-teams-bot")
 
+
+class DeliveryFailedError(Exception):
+    """Raised when deliver_message() exhausts every delivery fallback."""
+
+
 _STALE_JOB_NOTICE = (
     "⏱️ **Request Timed Out**\n\n"
     "Due to high activity, your request could not be processed in time. Please ask your question again."
@@ -219,10 +224,17 @@ def process_job(raw_payload: dict, dequeue_count: int = 1) -> None:
         )
 
         total_elapsed = time.perf_counter() - t_worker_start
-        if delivered:
-            logger.info("[WORKER DONE] Job finished successfully in %.2fs", total_elapsed, extra={"status": "delivered"})
-        else:
+        if not delivered:
+            # deliver_message() already exhausted every fallback (card, plain
+            # text, generic notice, delete+resend) — this is a hard delivery
+            # failure (e.g. Bot Framework outage), not something retrying
+            # in-process would fix. Raising here — same as the generic
+            # except Exception branch below — lets the queue's own
+            # retry/poison mechanism take over instead of the runtime
+            # treating this as success and deleting the message.
             logger.error("[WORKER DONE] Delivery failed after %.2fs", total_elapsed, extra={"status": "failed"})
+            raise DeliveryFailedError(f"All delivery attempts failed for activity {activity.id}")
+        logger.info("[WORKER DONE] Job finished successfully in %.2fs", total_elapsed, extra={"status": "delivered"})
 
     except GTIAuthenticationError as exc:
         logger.error("[WORKER ERROR] GTI API key authentication failed after %.2fs: %s", time.perf_counter() - t_worker_start, exc)
@@ -274,6 +286,14 @@ def process_job(raw_payload: dict, dequeue_count: int = 1) -> None:
         logger.error("[WORKER ERROR] GTI completed the request but returned no displayable result after %.2fs: %s", time.perf_counter() - t_worker_start, exc)
         err_msg = "🤔 **No Results Found**\n\nNo threat intelligence results were returned for this query. Try rephrasing your question or providing more details."
         deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg), edit_in_place=(scope == "channel"))
+
+    except DeliveryFailedError:
+        # Already logged above at the raise site. Deliberately does NOT
+        # attempt another delivery here — every fallback deliver_message()
+        # has already failed once this invocation, so retrying in-process
+        # would just fail the same way. Re-raising lets the queue's own
+        # retry (and eventual poison-queue routing) take over instead.
+        raise
 
     except Exception:
         # Deliberately does NOT deliver an error card here (unlike every

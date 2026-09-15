@@ -35,16 +35,6 @@ class LibraryTagFilter(logging.Filter):
         return True
 
 
-class SuppressLibraryTracebacksFilter(logging.Filter):
-    """Strips unnecessary tracebacks from third-party libraries."""
-
-    def filter(self, record: logging.LogRecord) -> bool:
-        if not record.name.startswith("gti-teams-bot") and record.exc_info:
-            record.exc_info = None
-            record.exc_text = None
-        return True
-
-
 def setup_logging() -> None:
     """Configure root logging for local or Azure Functions execution."""
     stream_handler = logging.StreamHandler()
@@ -55,6 +45,10 @@ def setup_logging() -> None:
 
     stream_handler.addFilter(RequestContextFilter())
     stream_handler.addFilter(LibraryTagFilter())
-    stream_handler.addFilter(SuppressLibraryTracebacksFilter())
+    # No traceback-suppressing filter here: a third-party library (azure.*,
+    # urllib3) logging an exception with exc_info is exactly the kind of
+    # unexpected infra failure (network, auth, TLS) an operator needs the
+    # real stack trace for — stripping it would trade that diagnostic
+    # capability for slightly quieter logs.
 
     logging.basicConfig(level=logging.INFO, handlers=[stream_handler], force=True)

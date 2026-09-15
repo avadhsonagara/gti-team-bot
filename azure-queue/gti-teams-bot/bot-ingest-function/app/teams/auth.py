@@ -43,8 +43,10 @@ def validate_bot_framework_token(authorization_header: str, app_id: str, claimed
 
     Returns the decoded token payload on success. Raises BotFrameworkAuthError
     on any failure: missing/malformed header, bad signature, wrong issuer or
-    audience, expired token, a JWKS lookup failure, or a serviceUrl mismatch
-    between the token and the activity body.
+    audience, expired token, a JWKS lookup failure, a missing serviceUrl in
+    the activity body, or a serviceUrl mismatch between the token and the
+    activity body — a missing serviceUrl is rejected rather than skipped so a
+    token replayed without one can't bypass this check entirely.
     """
     if not app_id:
         raise BotFrameworkAuthError("No CLIENT_ID configured — refusing all inbound requests.")
@@ -76,11 +78,12 @@ def validate_bot_framework_token(authorization_header: str, app_id: str, claimed
         # is a subclass of the other, and both mean "reject this request".
         raise BotFrameworkAuthError(f"Token validation failed: {exc}") from exc
 
-    if claimed_service_url:
-        token_service_url = (payload.get("serviceurl") or "").rstrip("/")
-        if token_service_url != claimed_service_url.rstrip("/"):
-            raise BotFrameworkAuthError(
-                f"serviceUrl mismatch: token claims {token_service_url!r}, activity body says {claimed_service_url!r}"
-            )
+    if not claimed_service_url:
+        raise BotFrameworkAuthError("Missing serviceUrl in request body.")
+    token_service_url = (payload.get("serviceurl") or "").rstrip("/")
+    if token_service_url != claimed_service_url.rstrip("/"):
+        raise BotFrameworkAuthError(
+            f"serviceUrl mismatch: token claims {token_service_url!r}, activity body says {claimed_service_url!r}"
+        )
 
     return payload
