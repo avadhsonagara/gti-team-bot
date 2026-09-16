@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.47.16.16243",
-      "templateHash": "8494687290585333270"
+      "templateHash": "14982525992210632164"
     }
   },
   "parameters": {
@@ -130,13 +130,6 @@
       "metadata": {
         "description": "Number of most-recent channel-thread messages to fetch as context for each query. Requires the bot's identity to be granted the Graph APPLICATION permission ChannelMessage.Read.All with tenant-admin consent — a manual one-time step. No effect outside channels."
       }
-    },
-    "roleAssignmentSalt": {
-      "type": "string",
-      "defaultValue": "2",
-      "metadata": {
-        "description": "Leave at the default unless this deployment just failed with \"RoleAssignmentUpdateNotPermitted\". That means a role assignment from a PREVIOUS deployment to this same resource group is stuck pointing at an identity that no longer exists (e.g. it was deleted and recreated outside this template). Changing this value to anything else (e.g. \"3\") and deploying again creates a fresh role assignment instead of colliding with the stuck one — no extra Azure permissions needed."
-      }
     }
   },
   "resources": [
@@ -191,9 +184,6 @@
           },
           "threadContextMessageCount": {
             "value": "[parameters('threadContextMessageCount')]"
-          },
-          "roleAssignmentSalt": {
-            "value": "[parameters('roleAssignmentSalt')]"
           }
         },
         "template": {
@@ -203,7 +193,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.47.16.16243",
-              "templateHash": "8698837344252175620"
+              "templateHash": "5514622842297412522"
             }
           },
           "parameters": {
@@ -471,13 +461,6 @@
               "metadata": {
                 "description": "URL to a pre-built bot-worker-function code zip. Leave empty to skip automatic code deployment and publish it yourself."
               }
-            },
-            "roleAssignmentSalt": {
-              "type": "string",
-              "defaultValue": "2",
-              "metadata": {
-                "description": "Only needed if a redeploy to this SAME resource group fails with \"RoleAssignmentUpdateNotPermitted\" on deployIdentityWebsiteContributor. That role assignment's name is a hash that includes deployIdentity's resource id — but NOT its principalId (Azure AD-assigned, only known once the identity actually exists, so ARM forbids using it in a resource name). If deployIdentity was ever deleted and recreated between deployments, it keeps the same resource id but gets a brand-new principalId, and this deployment then tries to repoint the OLD role assignment at the new principal, which ARM rejects outright. Changing this value (e.g. \"1\" -> \"2\") changes the computed role-assignment name, so a fresh one gets created instead of colliding with the stale one — no Microsoft.Authorization/roleAssignments/delete permission needed. The old, now-orphaned role assignment is harmless (it grants a role to a principal that no longer exists) and can be left in place or cleaned up later by someone with sufficient rights. Only used by deployIdentityWebsiteContributor — kvSecretsUserRoleAssignment deliberately does not use this, see its own comment."
-              }
             }
           },
           "variables": {
@@ -582,24 +565,16 @@
             },
             {
               "condition": "[variables('codeAutoDeployEnabled')]",
-              "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
-              "apiVersion": "2023-01-31",
-              "name": "[format('{0}-deploy-identity', parameters('ingestFunctionAppName'))]",
-              "location": "[parameters('location')]",
-              "tags": "[parameters('tags')]"
-            },
-            {
-              "condition": "[variables('codeAutoDeployEnabled')]",
               "type": "Microsoft.Authorization/roleAssignments",
               "apiVersion": "2022-04-01",
-              "name": "[guid(resourceGroup().id, resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-deploy-identity', parameters('ingestFunctionAppName'))), parameters('roleAssignmentSalt'), 'WebsiteContributor')]",
+              "name": "[guid(resourceGroup().id, resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('ingestFunctionAppName'))), 'WebsiteContributor')]",
               "properties": {
                 "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'de139f84-1756-47ae-9be6-808fbbe84772')]",
-                "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-deploy-identity', parameters('ingestFunctionAppName'))), '2023-01-31').principalId]",
+                "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('ingestFunctionAppName'))), '2023-01-31').principalId]",
                 "principalType": "ServicePrincipal"
               },
               "dependsOn": [
-                "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-deploy-identity', parameters('ingestFunctionAppName')))]"
+                "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('ingestFunctionAppName')))]"
               ]
             },
             {
@@ -911,7 +886,7 @@
               "identity": {
                 "type": "UserAssigned",
                 "userAssignedIdentities": {
-                  "[format('{0}', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-deploy-identity', parameters('ingestFunctionAppName'))))]": {}
+                  "[format('{0}', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('ingestFunctionAppName'))))]": {}
                 }
               },
               "properties": {
@@ -937,8 +912,8 @@
                 "scriptContent": "[variables('codeDeployScriptContent')]"
               },
               "dependsOn": [
-                "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-deploy-identity', parameters('ingestFunctionAppName')))]",
-                "[resourceId('Microsoft.Authorization/roleAssignments', guid(resourceGroup().id, resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-deploy-identity', parameters('ingestFunctionAppName'))), parameters('roleAssignmentSalt'), 'WebsiteContributor'))]",
+                "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('ingestFunctionAppName')))]",
+                "[resourceId('Microsoft.Authorization/roleAssignments', guid(resourceGroup().id, resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('ingestFunctionAppName'))), 'WebsiteContributor'))]",
                 "[resourceId('Microsoft.Web/sites', parameters('ingestFunctionAppName'))]"
               ]
             },
@@ -953,7 +928,7 @@
               "identity": {
                 "type": "UserAssigned",
                 "userAssignedIdentities": {
-                  "[format('{0}', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-deploy-identity', parameters('ingestFunctionAppName'))))]": {}
+                  "[format('{0}', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('ingestFunctionAppName'))))]": {}
                 }
               },
               "properties": {
@@ -979,8 +954,8 @@
                 "scriptContent": "[variables('codeDeployScriptContent')]"
               },
               "dependsOn": [
-                "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-deploy-identity', parameters('ingestFunctionAppName')))]",
-                "[resourceId('Microsoft.Authorization/roleAssignments', guid(resourceGroup().id, resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-deploy-identity', parameters('ingestFunctionAppName'))), parameters('roleAssignmentSalt'), 'WebsiteContributor'))]",
+                "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('ingestFunctionAppName')))]",
+                "[resourceId('Microsoft.Authorization/roleAssignments', guid(resourceGroup().id, resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('ingestFunctionAppName'))), 'WebsiteContributor'))]",
                 "[resourceId('Microsoft.Web/sites', parameters('workerFunctionAppName'))]",
                 "[resourceId('Microsoft.Web/sites', parameters('workerFunctionAppName'))]"
               ]

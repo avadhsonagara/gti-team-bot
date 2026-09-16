@@ -90,9 +90,6 @@ param outputFormatInstructions string = ''
 @maxValue(50)
 param threadContextMessageCount int = 5
 
-@description('Leave at the default unless this deployment just failed with "RoleAssignmentUpdateNotPermitted". That means a role assignment from a PREVIOUS deployment to this same resource group is stuck pointing at an identity that no longer exists (e.g. it was deleted and recreated outside this template). Changing this value to anything else (e.g. "3") and deploying again creates a fresh role assignment instead of colliding with the stuck one — no extra Azure permissions needed.')
-param roleAssignmentSalt string = '2'
-
 // ---------------------------------------------------------------------------
 // Delegate everything else to main.bicep's own defaults
 // ---------------------------------------------------------------------------
@@ -114,7 +111,6 @@ module main 'main.bicep' = {
     maxJobAgeSeconds: maxJobAgeSeconds
     outputFormatInstructions: outputFormatInstructions
     threadContextMessageCount: threadContextMessageCount
-    roleAssignmentSalt: roleAssignmentSalt
   }
 }
 

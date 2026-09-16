@@ -223,9 +223,6 @@ param ingestCodeZipUrl string = 'https://raw.githubusercontent.com/avadhsonagara
 @description('URL to a pre-built bot-worker-function code zip. Leave empty to skip automatic code deployment and publish it yourself.')
 param workerCodeZipUrl string = 'https://raw.githubusercontent.com/avadhsonagara/gti-team-bot/main/azure-queue/gti-teams-bot/bot-worker-function/code.zip'
 
-@description('Only needed if a redeploy to this SAME resource group fails with "RoleAssignmentUpdateNotPermitted" on deployIdentityWebsiteContributor. That role assignment\'s name is a hash that includes deployIdentity\'s resource id — but NOT its principalId (Azure AD-assigned, only known once the identity actually exists, so ARM forbids using it in a resource name). If deployIdentity was ever deleted and recreated between deployments, it keeps the same resource id but gets a brand-new principalId, and this deployment then tries to repoint the OLD role assignment at the new principal, which ARM rejects outright. Changing this value (e.g. "1" -> "2") changes the computed role-assignment name, so a fresh one gets created instead of colliding with the stale one — no Microsoft.Authorization/roleAssignments/delete permission needed. The old, now-orphaned role assignment is harmless (it grants a role to a principal that no longer exists) and can be left in place or cleaned up later by someone with sufficient rights. Only used by deployIdentityWebsiteContributor — kvSecretsUserRoleAssignment deliberately does not use this, see its own comment.')
-param roleAssignmentSalt string = '2'
-
 // ---------------------------------------------------------------------------
 // Variables
 // ---------------------------------------------------------------------------
@@ -479,40 +476,30 @@ resource botIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-3
   tags: tags
 }
 
-// A second, dedicated identity solely for the code-deploy deployment
-// scripts below — kept separate from botIdentity (the bot's own runtime
-// credential, trusted by Teams/Graph/GTI) so the Website Contributor role
-// needed to zip-deploy code never ends up on the identity the bot
-// authenticates as.
-resource deployIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = if (codeAutoDeployEnabled) {
-  name: '${ingestFunctionAppName}-deploy-identity'
-  location: location
-  tags: tags
-}
-
-resource deployIdentityWebsiteContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (codeAutoDeployEnabled) {
-  // roleAssignmentSalt is here so a stale role assignment left behind by a
-  // deleted-and-recreated deployIdentity can be worked around by bumping a
-  // parameter instead of needing Microsoft.Authorization/roleAssignments/
-  // delete rights — see that parameter's own @description for the full story.
-  //
-  // Naming this from deployIdentity's principalId instead (a genuinely
-  // unique value that would change if the identity were ever recreated) was
-  // tried and does NOT work: ARM rejects it outright (BCP120) because a
-  // resource's name must be computable before deployment starts, and
-  // principalId is only assigned once the identity actually deploys. The
-  // salt-based workaround below is the correct, ARM-compatible mitigation
-  // for this — not a stopgap for a better fix that turned out unavailable.
-  name: guid(resourceGroup().id, deployIdentity!.id, roleAssignmentSalt, 'WebsiteContributor')
+// Code-deploy (ingestCodeDeploy/workerCodeDeploy below) reuses botIdentity
+// rather than a separate dedicated identity — a previous design used a
+// second "deployIdentity" specifically so the Website Contributor grant
+// never touched the bot's own runtime credential. That identity turned out
+// to get deleted and recreated between deployments (root cause unconfirmed
+// — Azure Activity Log showed no record of it), which left its role
+// assignment permanently stuck pointing at a principal that no longer
+// exists (RoleAssignmentUpdateNotPermitted) — happened twice in the same
+// resource group. botIdentity has never exhibited this. Trade-off: the
+// Website Contributor role now sits on the same identity the bot
+// authenticates to Teams/Graph/GTI as, instead of an isolated one.
+resource botIdentityWebsiteContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (codeAutoDeployEnabled) {
+  // Deliberately not salted — see kvSecretsUserRoleAssignment's comment
+  // below: botIdentity itself has no history of being deleted/recreated by
+  // this template, so there's nothing here for a salt to work around.
+  name: guid(resourceGroup().id, botIdentity.id, 'WebsiteContributor')
   scope: resourceGroup()
   properties: {
     // Built-in "Website Contributor" role, scoped to this resource group —
     // lets this identity zip-deploy code (via the SCM /api/zipdeploy
     // endpoint, Azure AD-authenticated, no publish profile/basic-auth
-    // credentials needed) to the Function Apps this deployment creates,
-    // without granting access to storage, Key Vault, or botIdentity itself.
+    // credentials needed) to the Function Apps this deployment creates.
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'de139f84-1756-47ae-9be6-808fbbe84772')
-    principalId: deployIdentity!.properties.principalId
+    principalId: botIdentity.properties.principalId
     principalType: 'ServicePrincipal'
   }
 }
@@ -546,18 +533,14 @@ resource kvSecretGtiApiKey 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
 }
 
 resource kvSecretsUserRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  // Deliberately NOT salted with roleAssignmentSalt (unlike
-  // deployIdentityWebsiteContributor above) — botIdentity is never deleted
-  // and recreated by this template the way deployIdentity can be, so this
-  // name has no history of drifting from botIdentity's actual principalId.
-  // Adding an unused salt here would do nothing but generate a NEW name on
-  // every redeploy where guid()'s argument count changed, colliding with
-  // the already-correct existing assignment under the old name
-  // (RoleAssignmentExists) instead of leaving it alone. If botIdentity ever
-  // does get recreated in a way that breaks this, salt it then, the same
-  // way deployIdentityWebsiteContributor was fixed. (Naming this from
-  // botIdentity.properties.principalId instead was considered and rejected —
-  // see deployIdentityWebsiteContributor's comment: ARM forbids it (BCP120).)
+  // Named from botIdentity's resourceId (.id), not its principalId — a
+  // resource's name must be computable before deployment starts, and
+  // principalId is only assigned once the identity actually deploys, so ARM
+  // rejects using it here outright (BCP120). This is fine in practice: it
+  // would only matter if botIdentity itself were ever deleted and
+  // recreated, and (unlike the deploy-identity previously used for code
+  // deployment — see botIdentityWebsiteContributor's comment above)
+  // botIdentity has never exhibited that in this codebase's history.
   name: guid(keyVault.id, botIdentity.id, 'KeyVaultSecretsUser')
   scope: keyVault
   properties: {
@@ -911,7 +894,7 @@ resource ingestCodeDeploy 'Microsoft.Resources/deploymentScripts@2023-08-01' = i
   identity: {
     type: 'UserAssigned'
     userAssignedIdentities: {
-      '${deployIdentity.id}': {}
+      '${botIdentity.id}': {}
     }
   }
   properties: {
@@ -938,7 +921,7 @@ resource ingestCodeDeploy 'Microsoft.Resources/deploymentScripts@2023-08-01' = i
   }
   dependsOn: [
     ingestFunctionApp
-    deployIdentityWebsiteContributor
+    botIdentityWebsiteContributor
   ]
 }
 
@@ -954,7 +937,7 @@ resource workerCodeDeploy 'Microsoft.Resources/deploymentScripts@2023-08-01' = i
   identity: {
     type: 'UserAssigned'
     userAssignedIdentities: {
-      '${deployIdentity.id}': {}
+      '${botIdentity.id}': {}
     }
   }
   properties: {
@@ -982,7 +965,7 @@ resource workerCodeDeploy 'Microsoft.Resources/deploymentScripts@2023-08-01' = i
   dependsOn: [
     workerFunctionAppFlex
     workerFunctionAppClassic
-    deployIdentityWebsiteContributor
+    botIdentityWebsiteContributor
   ]
 }
 
