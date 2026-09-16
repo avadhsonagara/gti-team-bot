@@ -1,0 +1,36 @@
+{
+  "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.30/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.30",
+  "version": "1.0.1",
+  "id": "f70543c9-6644-46de-8f83-792c437f7e30",
+  "developer": {
+    "name": "Google",
+    "websiteUrl": "https://example.com",
+    "privacyUrl": "https://example.com/privacy",
+    "termsOfUseUrl": "https://example.com/terms"
+  },
+  "icons": {
+    "color": "color.png",
+    "outline": "outline.png"
+  },
+  "name": {
+    "short": "GTI Agent (Perf Test)",
+    "full": "Google Threat Intelligence Agent — Performance Test"
+  },
+  "description": {
+    "short": "PERFORMANCE TEST build — fixed 180s stub response, not real GTI.",
+    "full": "Performance-testing build of the GTI Agentic Bot for Microsoft Teams. Every query gets a fixed, canned response after a simulated 180s delay — no real Google Threat Intelligence API call is made. For load-testing the queue architecture only."
+  },
+  "accentColor": "#2D1B4D",
+  "bots": [
+    {
+      "botId": "f70543c9-6644-46de-8f83-792c437f7e30",
+      "scopes": ["personal", "team", "groupChat"],
+      "supportsFiles": true,
+      "isNotificationOnly": false
+    }
+  ],
+  "permissions": ["identity", "messageTeamMembers"],
+  "validDomains": [],
+  "supportsChannelFeatures": "tier1"
+} 

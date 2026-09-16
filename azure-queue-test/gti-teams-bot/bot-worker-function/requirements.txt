@@ -1,0 +1,42 @@
+# =============================================================================
+# GTI MS Teams Bot (Agentic) — Worker Function — Dependencies
+# =============================================================================
+
+# Azure Functions Python worker (v2 programming model), including the
+# native queue_trigger binding this app is invoked by (function_app.py) —
+# requires host.json's extensionBundle, unlike the ingest function.
+azure-functions>=1.21.0
+
+# HTTP client for everything that talks to an external API: the GTI Agentic
+# API, Microsoft Graph, and the Bot Framework Connector API itself
+# (delivering/editing/deleting Teams messages) — see app/gti/client.py,
+# app/graph/client.py, app/teams/bot_client.py, app/teams/attachments.py.
+requests>=2.31.0
+
+# User-Assigned Managed Identity authentication (production) for this app's
+# own Bot Framework Connector token and Microsoft Graph token — see
+# app/teams/bot_client.py, app/graph/client.py.
+azure-identity>=1.17.0
+
+# Type-safe, validated configuration from environment variables (Azure
+# Function App Application Settings are exposed as env vars at runtime).
+pydantic-settings>=2.0
+
+# Local development only — load .env file into environment when running a
+# script directly outside of `func start` (which reads local.settings.json
+# instead).
+python-dotenv>=1.0
+
+# Persists the configured output-format instructions as a JSON blob in the
+# Function App's own storage account (app/output_format_store.py).
+azure-storage-blob>=12.19.0
+
+# Persists per-thread GTI session IDs as Table Storage entities in the same
+# storage account (app/gti/session_store.py) — atomic per-row upserts avoid
+# a read-modify-write race a shared JSON blob would have.
+azure-data-tables>=12.5.0
+
+# JWT decoding and key verification is NOT needed here — inbound Bot
+# Framework auth is verified once, by the Ingest Function, before a job ever
+# reaches this queue. This app only ever authenticates OUTBOUND calls (Bot
+# Framework Connector, Microsoft Graph) via azure-identity above.
