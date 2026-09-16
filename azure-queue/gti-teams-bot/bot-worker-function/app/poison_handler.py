@@ -12,12 +12,13 @@ anyway; catching it here at least gets it logged.
 """
 import logging
 
+from app.job_processor import _quoted_query
 from app.observability import bind_request
 from app.queue_job import InvalidJobPayload, get_job_kind, parse_job_payload
 from app.teams.activity import parse_activity
 from app.teams.cards import build_status_card
 from app.teams.context import Ctx
-from app.utils.helpers import deliver_message
+from app.utils.helpers import deliver_message, strip_mentions
 
 logger = logging.getLogger("gti-teams-bot")
 
@@ -57,9 +58,13 @@ def process_poison_job(raw_payload: dict) -> None:
         "[POISON] Job permanently failed after exhausting retries | conversation=%s scope=%s loading_activity_id=%s",
         activity.conversation.id, scope, loading_activity_id,
     )
+    user_text = strip_mentions(activity.text or "").strip()
+    quoted_query = _quoted_query(user_text, scope)
     try:
         delivered = deliver_message(
-            ctx, loading_activity_id, _POISON_NOTICE, build_status_card(_POISON_NOTICE),
+            ctx, loading_activity_id,
+            f"{quoted_query}\n\n{_POISON_NOTICE}" if quoted_query else _POISON_NOTICE,
+            build_status_card(_POISON_NOTICE, quoted_query),
             edit_in_place=(scope == "channel"),
         )
         if delivered:

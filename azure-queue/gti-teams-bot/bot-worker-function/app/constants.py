@@ -73,6 +73,12 @@ TOKEN_EXPIRY_SAFETY_SECONDS = 60
 # (connect, read) timeout seconds for every Connector API call.
 BOT_CONNECTOR_TIMEOUT = (10.0, 30.0)
 
+# Retry policy for idempotent Connector calls (PUT/DELETE — see
+# app/teams/bot_client.py's own comment on why POST is deliberately excluded).
+BOT_CONNECTOR_RETRY_TOTAL = 3
+BOT_CONNECTOR_RETRY_BACKOFF_FACTOR = 0.5
+BOT_CONNECTOR_RETRY_STATUS_FORCELIST = (429, 500, 502, 503, 504)
+
 
 # =============================================================================
 # Microsoft Graph client (app/graph/client.py)

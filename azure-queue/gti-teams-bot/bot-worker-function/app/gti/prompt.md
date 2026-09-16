@@ -8,6 +8,8 @@ the result as a Microsoft Teams Adaptive Card JSON message.
 
 {{USER_QUERY}}
 
+Please provide all available GTI data and do not miss anything relevant to the query.
+
 ---
 
 ## SECURITY POLICY (read before every response)

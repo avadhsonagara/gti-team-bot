@@ -133,11 +133,35 @@ def build_gti_response_card(markdown_text: str, quoted_query: str = "") -> dict:
     }
 
 
-def build_status_card(text: str) -> dict:
+def build_status_card(text: str, quoted_query: str = "") -> dict:
     """
-    Wrap a plain warning or informational message in a standard Adaptive Card.
+    Wrap a plain warning or informational message (usage hints, and every
+    error-path notice in job_processor.py) in a standard Adaptive Card.
+
+    quoted_query mirrors build_gti_response_card's own handling: personal/
+    group chats have no inline preview of the original message the way
+    channel replies do, so without this an error card gives the user no clue
+    which question it's even about.
     """
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    body_elements: list[dict] = []
+    if quoted_query:
+        body_elements.append({
+            "type": "TextBlock",
+            "text": quoted_query,
+            "wrap": True,
+            "isSubtle": True,
+            "size": "Small",
+        })
+    body_elements.append({"type": "TextBlock", "wrap": True, "text": text})
+    body_elements.append({
+        "type": "TextBlock",
+        "wrap": True,
+        "isSubtle": True,
+        "size": "Small",
+        "text": f"GTI Teams Bot • {now}",
+        "spacing": "Small",
+    })
     return {
         "type": "AdaptiveCard",
         "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
@@ -145,15 +169,5 @@ def build_status_card(text: str) -> dict:
         "msteams": {
             "width": "full",
         },
-        "body": [
-            {"type": "TextBlock", "wrap": True, "text": text},
-            {
-                "type": "TextBlock",
-                "wrap": True,
-                "isSubtle": True,
-                "size": "Small",
-                "text": f"GTI Teams Bot • {now}",
-                "spacing": "Small",
-            },
-        ],
+        "body": body_elements,
     }

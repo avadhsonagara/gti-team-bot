@@ -116,6 +116,19 @@ def process_job(raw_payload: dict, dequeue_count: int = 1) -> None:
     if tenant_id:
         bind_request(tenant=tenant_id)
 
+    # Must mirror bot-ingest-function/function_app.py's own _strip_mentions +
+    # .strip() exactly: that function already computed a mention-stripped
+    # user_text once to decide whether to enqueue at all and to build the
+    # placeholder's quoted_query. Re-deriving it here from the same raw
+    # activity.text without stripping mentions would (a) send the GTI prompt
+    # an unstripped "<at>Bot Name</at> ..." query, and (b) show a quoted_query
+    # in the final response that doesn't match what the placeholder quoted.
+    # Computed before the stale-job check below so that notice can also
+    # carry the quote — every personal/group notice should, not just the
+    # ones from the GTI* handlers further down.
+    user_text = strip_mentions(activity.text or "").strip()
+    quoted_query = _quoted_query(user_text, scope)
+
     age_seconds = (datetime.now(timezone.utc) - enqueued_at).total_seconds()
     logger.info(
         "[WORKER START] Dequeued job | activity_id=%s scope=%s dequeue_count=%d queue_wait=%.1fs",
@@ -128,26 +141,18 @@ def process_job(raw_payload: dict, dequeue_count: int = 1) -> None:
             age_seconds, settings.max_job_age_seconds, dequeue_count,
         )
         deliver_message(
-            ctx, loading_activity_id, _STALE_JOB_NOTICE, build_status_card(_STALE_JOB_NOTICE),
+            ctx, loading_activity_id,
+            f"{quoted_query}\n\n{_STALE_JOB_NOTICE}" if quoted_query else _STALE_JOB_NOTICE,
+            build_status_card(_STALE_JOB_NOTICE, quoted_query),
             edit_in_place=(scope == "channel"),
         )
         return
 
-    # Must mirror bot-ingest-function/function_app.py's own _strip_mentions +
-    # .strip() exactly: that function already computed a mention-stripped
-    # user_text once to decide whether to enqueue at all and to build the
-    # placeholder's quoted_query. Re-deriving it here from the same raw
-    # activity.text without stripping mentions would (a) send the GTI prompt
-    # an unstripped "<at>Bot Name</at> ..." query, and (b) show a quoted_query
-    # in the final response that doesn't match what the placeholder quoted.
-    user_text = strip_mentions(activity.text or "").strip()
     # Ingest already stripped mentions and rejected empty queries before ever
     # enqueueing — this is just a defensive backstop, not the primary check.
     if not user_text or not re.search(r"\w", user_text, re.UNICODE):
         logger.warning("[WORKER] Dequeued job has no meaningful query text — dropping.")
         return
-
-    quoted_query = _quoted_query(user_text, scope)
 
     t_att = time.perf_counter()
     attachments = download_attachments(ctx)
@@ -253,22 +258,42 @@ def process_job(raw_payload: dict, dequeue_count: int = 1) -> None:
     except GTIAuthenticationError as exc:
         logger.error("[WORKER ERROR] GTI API key authentication failed after %.2fs: %s", time.perf_counter() - t_worker_start, exc)
         err_msg = "🔑 **Service Unavailable**\n\nUnable to authenticate with the threat intelligence service. Please contact your bot administrator."
-        deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg), edit_in_place=(scope == "channel"))
+        deliver_message(
+            ctx, loading_activity_id,
+            f"{quoted_query}\n\n{err_msg}" if quoted_query else err_msg,
+            build_status_card(err_msg, quoted_query),
+            edit_in_place=(scope == "channel"),
+        )
 
     except GTIRateLimitError as exc:
         logger.error("[WORKER ERROR] GTI rate limit exceeded after %.2fs: %s", time.perf_counter() - t_worker_start, exc)
         err_msg = "⚠️ **High Demand**\n\nThe service is currently experiencing high request volume. Please wait a moment and try your query again."
-        deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg), edit_in_place=(scope == "channel"))
+        deliver_message(
+            ctx, loading_activity_id,
+            f"{quoted_query}\n\n{err_msg}" if quoted_query else err_msg,
+            build_status_card(err_msg, quoted_query),
+            edit_in_place=(scope == "channel"),
+        )
 
     except GTITimeoutError as exc:
         logger.error("[WORKER ERROR] GTI request timed out after %.2fs: %s", time.perf_counter() - t_worker_start, exc)
         err_msg = "⏱️ **Request Timed Out**\n\nThe query took too long to complete. Please try asking a more specific question or narrowing down your search."
-        deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg), edit_in_place=(scope == "channel"))
+        deliver_message(
+            ctx, loading_activity_id,
+            f"{quoted_query}\n\n{err_msg}" if quoted_query else err_msg,
+            build_status_card(err_msg, quoted_query),
+            edit_in_place=(scope == "channel"),
+        )
 
     except GTIServiceError as exc:
         logger.error("[WORKER ERROR] GTI service unavailable after %.2fs: %s", time.perf_counter() - t_worker_start, exc)
         err_msg = "⚠️ **Service Temporarily Unavailable**\n\nThe threat intelligence service is currently unreachable. Please try again in a few moments."
-        deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg), edit_in_place=(scope == "channel"))
+        deliver_message(
+            ctx, loading_activity_id,
+            f"{quoted_query}\n\n{err_msg}" if quoted_query else err_msg,
+            build_status_card(err_msg, quoted_query),
+            edit_in_place=(scope == "channel"),
+        )
 
     except GTISessionNotFoundError as exc:
         logger.error("[WORKER ERROR] GTI session not found or expired after %.2fs: %s", time.perf_counter() - t_worker_start, exc)
@@ -277,7 +302,12 @@ def process_job(raw_payload: dict, dequeue_count: int = 1) -> None:
             "The conversation session for this channel thread has timed out. "
             "Please post your question again to start a fresh analysis."
         )
-        deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg), edit_in_place=(scope == "channel"))
+        deliver_message(
+            ctx, loading_activity_id,
+            f"{quoted_query}\n\n{err_msg}" if quoted_query else err_msg,
+            build_status_card(err_msg, quoted_query),
+            edit_in_place=(scope == "channel"),
+        )
 
     except GTIPayloadTooLargeError as exc:
         logger.error("[WORKER ERROR] GTI rejected the request — payload too large after %.2fs: %s", time.perf_counter() - t_worker_start, exc)
@@ -285,12 +315,22 @@ def process_job(raw_payload: dict, dequeue_count: int = 1) -> None:
             "📁 **File Too Large**\n\n"
             "The attached file(s) exceed the allowable upload size. Please try uploading a smaller file or fewer files at once."
         )
-        deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg), edit_in_place=(scope == "channel"))
+        deliver_message(
+            ctx, loading_activity_id,
+            f"{quoted_query}\n\n{err_msg}" if quoted_query else err_msg,
+            build_status_card(err_msg, quoted_query),
+            edit_in_place=(scope == "channel"),
+        )
 
     except GTIClientError as exc:
         logger.error("[WORKER ERROR] GTI rejected the request after %.2fs: %s", time.perf_counter() - t_worker_start, exc)
         err_msg = "🚫 **Unable to Process Request**\n\nWe couldn't process this request. Please try rephrasing your question or checking your input."
-        deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg), edit_in_place=(scope == "channel"))
+        deliver_message(
+            ctx, loading_activity_id,
+            f"{quoted_query}\n\n{err_msg}" if quoted_query else err_msg,
+            build_status_card(err_msg, quoted_query),
+            edit_in_place=(scope == "channel"),
+        )
 
     except GTIEmptyResponseError as exc:
         # GTI answered 200 OK but produced no usable result (e.g. a blocked
@@ -299,7 +339,12 @@ def process_job(raw_payload: dict, dequeue_count: int = 1) -> None:
         # most likely produce the same empty result again.
         logger.error("[WORKER ERROR] GTI completed the request but returned no displayable result after %.2fs: %s", time.perf_counter() - t_worker_start, exc)
         err_msg = "🤔 **No Results Found**\n\nNo threat intelligence results were returned for this query. Try rephrasing your question or providing more details."
-        deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg), edit_in_place=(scope == "channel"))
+        deliver_message(
+            ctx, loading_activity_id,
+            f"{quoted_query}\n\n{err_msg}" if quoted_query else err_msg,
+            build_status_card(err_msg, quoted_query),
+            edit_in_place=(scope == "channel"),
+        )
 
     except DeliveryFailedError:
         # Already logged above at the raise site. Deliberately does NOT

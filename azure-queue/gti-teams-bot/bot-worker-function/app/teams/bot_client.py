@@ -19,7 +19,13 @@ from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
 
 from app.config import settings
-from app.constants import BOT_CONNECTOR_TIMEOUT, TOKEN_EXPIRY_SAFETY_SECONDS
+from app.constants import (
+    BOT_CONNECTOR_RETRY_BACKOFF_FACTOR,
+    BOT_CONNECTOR_RETRY_STATUS_FORCELIST,
+    BOT_CONNECTOR_RETRY_TOTAL,
+    BOT_CONNECTOR_TIMEOUT,
+    TOKEN_EXPIRY_SAFETY_SECONDS,
+)
 
 logger = logging.getLogger("gti-teams-bot")
 
@@ -33,9 +39,9 @@ _session = requests.Session()
 # posting to the user. update_activity()/delete_activity() (PUT/DELETE) are
 # idempotent and safe to retry, and are covered by the default method set.
 _retry_strategy = Retry(
-    total=3,
-    backoff_factor=0.5,
-    status_forcelist=[429, 500, 502, 503, 504],
+    total=BOT_CONNECTOR_RETRY_TOTAL,
+    backoff_factor=BOT_CONNECTOR_RETRY_BACKOFF_FACTOR,
+    status_forcelist=list(BOT_CONNECTOR_RETRY_STATUS_FORCELIST),
     raise_on_status=False,
 )
 _session.mount("https://", HTTPAdapter(max_retries=_retry_strategy))

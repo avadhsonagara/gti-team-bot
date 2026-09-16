@@ -240,11 +240,13 @@ def _ingest_message(body: dict, t_start: float) -> None:
     except Exception as exc:
         logger.warning("[INGEST 2/3] Placeholder post failed (%.0fms): %s", (time.perf_counter() - t_ph) * 1000, exc)
 
-    _enqueue_job(body, loading_activity_id, ctx, scope, t_start)
+    _enqueue_job(body, loading_activity_id, ctx, scope, t_start, quoted_query)
 
 
-def _deliver_error_notice(ctx: Ctx, loading_activity_id, scope: str, text: str) -> None:
+def _deliver_error_notice(ctx: Ctx, loading_activity_id, scope: str, text: str, quoted_query: str = "") -> None:
     """Minimal, card-free error delivery — this function never needs the rich Adaptive Card path."""
+    if quoted_query:
+        text = f"{quoted_query}\n\n{text}"
     try:
         if loading_activity_id and scope == "channel":
             ctx.api.conversations.activities(ctx.activity.conversation.id).update(loading_activity_id, text)
@@ -281,7 +283,7 @@ def _get_queue_client() -> QueueClient:
     return _queue_client_instance
 
 
-def _enqueue_job(activity_body: dict, loading_activity_id, ctx: Ctx, scope: str, t_start: float) -> None:
+def _enqueue_job(activity_body: dict, loading_activity_id, ctx: Ctx, scope: str, t_start: float, quoted_query: str = "") -> None:
     payload = build_job_payload(activity_body, loading_activity_id)
     encoded = json.dumps(payload)
     encoded_bytes = encoded.encode("utf-8")
@@ -291,7 +293,7 @@ def _enqueue_job(activity_body: dict, loading_activity_id, ctx: Ctx, scope: str,
             "[INGEST] Job payload too large (%d bytes, limit %d) — notifying user instead of enqueueing.",
             len(encoded_bytes), settings.max_job_payload_bytes,
         )
-        _deliver_error_notice(ctx, loading_activity_id, scope, _JOB_TOO_LARGE_NOTICE)
+        _deliver_error_notice(ctx, loading_activity_id, scope, _JOB_TOO_LARGE_NOTICE, quoted_query)
         return
 
     try:
@@ -312,7 +314,7 @@ def _enqueue_job(activity_body: dict, loading_activity_id, ctx: Ctx, scope: str,
         )
     except Exception:
         logger.exception("[INGEST] Failed to enqueue job after %.0fms — notifying user.", (time.perf_counter() - t_start) * 1000)
-        _deliver_error_notice(ctx, loading_activity_id, scope, _QUEUE_FAILURE_NOTICE)
+        _deliver_error_notice(ctx, loading_activity_id, scope, _QUEUE_FAILURE_NOTICE, quoted_query)
 
 
 def _enqueue_installation_removed(activity_body: dict) -> None:
