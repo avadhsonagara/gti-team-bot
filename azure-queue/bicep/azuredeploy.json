@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.47.16.16243",
-      "templateHash": "16022942671834693607"
+      "templateHash": "8693968168634045782"
     }
   },
   "parameters": {
@@ -276,7 +276,7 @@
     },
     "roleAssignmentSalt": {
       "type": "string",
-      "defaultValue": "1",
+      "defaultValue": "2",
       "metadata": {
         "description": "Only needed if a redeploy to this SAME resource group fails with \"RoleAssignmentUpdateNotPermitted\" on deployIdentityWebsiteContributor. That role assignment's name is a hash that includes deployIdentity's resource id — but NOT its principalId (Azure AD-assigned, only known once the identity actually exists, so ARM forbids using it in a resource name). If deployIdentity was ever deleted and recreated between deployments, it keeps the same resource id but gets a brand-new principalId, and this deployment then tries to repoint the OLD role assignment at the new principal, which ARM rejects outright. Changing this value (e.g. \"1\" -> \"2\") changes the computed role-assignment name, so a fresh one gets created instead of colliding with the stale one — no Microsoft.Authorization/roleAssignments/delete permission needed. The old, now-orphaned role assignment is harmless (it grants a role to a principal that no longer exists) and can be left in place or cleaned up later by someone with sufficient rights. Only used by deployIdentityWebsiteContributor — kvSecretsUserRoleAssignment deliberately does not use this, see its own comment."
       }

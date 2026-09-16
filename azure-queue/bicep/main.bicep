@@ -224,7 +224,7 @@ param ingestCodeZipUrl string = 'https://raw.githubusercontent.com/avadhsonagara
 param workerCodeZipUrl string = 'https://raw.githubusercontent.com/avadhsonagara/gti-team-bot/main/azure-queue/gti-teams-bot/bot-worker-function/code.zip'
 
 @description('Only needed if a redeploy to this SAME resource group fails with "RoleAssignmentUpdateNotPermitted" on deployIdentityWebsiteContributor. That role assignment\'s name is a hash that includes deployIdentity\'s resource id — but NOT its principalId (Azure AD-assigned, only known once the identity actually exists, so ARM forbids using it in a resource name). If deployIdentity was ever deleted and recreated between deployments, it keeps the same resource id but gets a brand-new principalId, and this deployment then tries to repoint the OLD role assignment at the new principal, which ARM rejects outright. Changing this value (e.g. "1" -> "2") changes the computed role-assignment name, so a fresh one gets created instead of colliding with the stale one — no Microsoft.Authorization/roleAssignments/delete permission needed. The old, now-orphaned role assignment is harmless (it grants a role to a principal that no longer exists) and can be left in place or cleaned up later by someone with sufficient rights. Only used by deployIdentityWebsiteContributor — kvSecretsUserRoleAssignment deliberately does not use this, see its own comment.')
-param roleAssignmentSalt string = '1'
+param roleAssignmentSalt string = '2'
 
 // ---------------------------------------------------------------------------
 // Variables
@@ -495,6 +495,14 @@ resource deployIdentityWebsiteContributor 'Microsoft.Authorization/roleAssignmen
   // deleted-and-recreated deployIdentity can be worked around by bumping a
   // parameter instead of needing Microsoft.Authorization/roleAssignments/
   // delete rights — see that parameter's own @description for the full story.
+  //
+  // Naming this from deployIdentity's principalId instead (a genuinely
+  // unique value that would change if the identity were ever recreated) was
+  // tried and does NOT work: ARM rejects it outright (BCP120) because a
+  // resource's name must be computable before deployment starts, and
+  // principalId is only assigned once the identity actually deploys. The
+  // salt-based workaround below is the correct, ARM-compatible mitigation
+  // for this — not a stopgap for a better fix that turned out unavailable.
   name: guid(resourceGroup().id, deployIdentity!.id, roleAssignmentSalt, 'WebsiteContributor')
   scope: resourceGroup()
   properties: {
@@ -547,7 +555,9 @@ resource kvSecretsUserRoleAssignment 'Microsoft.Authorization/roleAssignments@20
   // the already-correct existing assignment under the old name
   // (RoleAssignmentExists) instead of leaving it alone. If botIdentity ever
   // does get recreated in a way that breaks this, salt it then, the same
-  // way deployIdentityWebsiteContributor was fixed.
+  // way deployIdentityWebsiteContributor was fixed. (Naming this from
+  // botIdentity.properties.principalId instead was considered and rejected —
+  // see deployIdentityWebsiteContributor's comment: ARM forbids it (BCP120).)
   name: guid(keyVault.id, botIdentity.id, 'KeyVaultSecretsUser')
   scope: keyVault
   properties: {
