@@ -1,12 +1,13 @@
 # Tests
 
-Both `bot-ingest-function/` and `bot-worker-function/` define their own
-top-level `app` package (correctly — they're deployed independently, each
-with its own `code.zip`, and neither imports from the other). That means
-`tests/ingest/` and `tests/worker/` **cannot be collected in the same pytest
-process** — whichever one imports `app` first "wins", and the other's tests
-fail with `ModuleNotFoundError`/`ImportError` for modules that very much do
-exist, just under the other app's `app` package.
+`bot-ingest-function/`, `bot-worker-function/`, and `rs-alerts-function/`
+each define their own top-level `app` package (correctly — they're deployed
+independently, each with its own `code.zip`, and none imports from the
+others). That means `tests/ingest/`, `tests/worker/`, and `tests/rs_alerts/`
+**cannot be collected in the same pytest process** — whichever one imports
+`app` first "wins", and the others' tests fail with
+`ModuleNotFoundError`/`ImportError` for modules that very much do exist,
+just under a different app's `app` package.
 
 Run each suite separately (each `conftest.py` puts the matching app's root on
 `sys.path` for you — no manual `PYTHONPATH` needed):
@@ -14,13 +15,14 @@ Run each suite separately (each `conftest.py` puts the matching app's root on
 ```bash
 pytest tests/ingest      # bot-ingest-function's app/ tests
 pytest tests/worker       # bot-worker-function's app/ tests
+pytest tests/rs_alerts    # rs-alerts-function's app/ tests
 pytest tests/cross_app    # loads both apps' queue_job.py under private
                           # module names via importlib (not "app.queue_job"),
                           # so this one's safe to run standalone or alongside
-                          # either of the above
+                          # any of the above
 ```
 
-Or all three in one go:
+Or all four in one go:
 
 ```bash
 ./tests/run_all.sh
@@ -43,5 +45,6 @@ copy, edit the other, or this test tells you so.
 python3 -m venv .venv && source .venv/bin/activate
 pip install pytest \
   -r bot-ingest-function/requirements.txt \
-  -r bot-worker-function/requirements.txt
+  -r bot-worker-function/requirements.txt \
+  -r rs-alerts-function/requirements.txt
 ```

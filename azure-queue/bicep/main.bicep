@@ -155,6 +155,64 @@ param outputFormatInstructions string = ''
 param threadContextMessageCount int = 5
 
 // ---------------------------------------------------------------------------
+// RS Alerts (optional, off by default) — a separate, timer-triggered
+// Function App that polls Google Threat Intelligence's List Alerts API and
+// posts new alerts to a Teams channel via the Bot Framework Connector API.
+// Independent of the bot/queue pipeline above: it reuses the same
+// botIdentity, Key Vault secret, storage account, and App Insights, but has
+// its own Function App, its own timer trigger (no queue involved), and its
+// own cursor state (a blob, not the queue or Table Storage).
+// ---------------------------------------------------------------------------
+
+@description('Set to true to provision RS Alerts: a background, timer-triggered Function App that posts new Google Threat Intelligence alerts to a Teams channel.')
+param enableRsAlerts bool = false
+
+@description('Name of the RS Alerts Function App. Only used when enableRsAlerts is true.')
+param rsAlertsFunctionAppName string = 'gti-teams-bot-rs-alerts'
+
+@description('Name of the RS Alerts App Service Plan. Only used when enableRsAlerts is true.')
+param rsAlertsAppServicePlanName string = '${rsAlertsFunctionAppName}-plan'
+
+@description('Teams channel link or ID (19:xxx@thread.tacv2) that RS Alerts posts GTI alerts into. Required when enableRsAlerts is true — the deployment does not validate this, but the Function App will fail at runtime without it.')
+param rsAlertsTeamsChannelId string = ''
+
+@description('RS Alerts\' GTI project ID: the GTI project polled for alerts, from the Alerts URL (...&project=projects/<id>). Required when enableRsAlerts is true.')
+param rsAlertsGtiProject string = ''
+
+@description('How often RS Alerts polls GTI for new alerts, in hours — converted internally to an NCRONTAB schedule that fires at the top of the hour, every N hours (e.g. 1 -> fires every hour, 6 -> every 6 hours). Default of 1 matches the canonical GTI alerts reference script\'s own hourly cadence.')
+@minValue(1)
+@maxValue(24)
+param rsAlertsPollingIntervalHours int = 1
+
+@description('Timezone for the RS Alerts schedule (WEBSITE_TIME_ZONE app setting).')
+param rsAlertsScheduleTimezone string = 'Etc/UTC'
+
+@description('Page size for the GTI List Alerts API (max 1000).')
+@minValue(1)
+@maxValue(1000)
+param rsAlertsPageSize int = 1000
+
+@description('Backfill window (days) used to seed the cursor on RS Alerts\' very first run (no persisted state yet) — bounds how much alert history a fresh deployment pulls in, instead of the project\'s entire history. Clamped to 1-7 at runtime by the app itself if set outside that range (see rs-alerts-function/app/job.py).')
+@minValue(1)
+@maxValue(7)
+param rsAlertsBackfillDays int = 7
+
+@description('Filter: Severity level (comma-separated LOW/MEDIUM/HIGH). Must resolve to at least one value — there is no "disable this dimension" option, matching the canonical GTI alerts reference script.')
+param rsAlertsFilterSeverityLevel string = 'MEDIUM,HIGH'
+
+@description('Filter: Priority level (comma-separated LOW/MEDIUM/HIGH/CRITICAL). Must resolve to at least one value.')
+param rsAlertsFilterPriorityLevel string = 'MEDIUM,HIGH,CRITICAL'
+
+@description('Filter: Relevance level (comma-separated LOW/MEDIUM/HIGH). Must resolve to at least one value.')
+param rsAlertsFilterRelevanceLevel string = 'MEDIUM,HIGH'
+
+@description('Filter: Relevance confidence (comma-separated LOW/MEDIUM/HIGH). Must resolve to at least one value.')
+param rsAlertsFilterRelevanceConfidence string = 'MEDIUM,HIGH'
+
+@description('URL to a pre-built RS Alerts code zip (host.json etc. at the zip root). Only used when enableRsAlerts is true. Leave empty to skip automatic code deployment for RS Alerts.')
+param rsAlertsCodeZipUrl string = 'https://raw.githubusercontent.com/avadhsonagara/gti-team-bot/main/azure-queue/gti-teams-bot/rs-alerts-function/code.zip'
+
+// ---------------------------------------------------------------------------
 // Bot identity & secrets
 // ---------------------------------------------------------------------------
 
@@ -278,7 +336,7 @@ PY
   echo "{\"deployed\": true}" > $AZ_SCRIPTS_OUTPUT_PATH
 '''
 
-var codeAutoDeployEnabled = !empty(ingestCodeZipUrl) || !empty(workerCodeZipUrl)
+var codeAutoDeployEnabled = !empty(ingestCodeZipUrl) || !empty(workerCodeZipUrl) || (enableRsAlerts && !empty(rsAlertsCodeZipUrl))
 
 // ---------------------------------------------------------------------------
 // Shared app settings
@@ -400,6 +458,114 @@ var workerClassicPlanAppSettings = [
   }
 ]
 
+// RS Alerts variables. Consumption only, deliberately — a timer job that
+// runs at most once an hour needs no scale-out and no Flex Consumption
+// memory tuning, so that whole axis of complexity (present on the Worker
+// Function App above, which genuinely needs it for queue concurrency) is
+// left out here entirely.
+var rsAlertsStateContainerName = 'rs-alerts-state'
+
+// NCRONTAB (sec min hour day month day-of-week): fires at the top of the
+// hour, every rsAlertsPollingIntervalHours-th hour. */1 is valid NCRONTAB
+// syntax equivalent to every hour, so this needs no special-casing for the
+// default.
+var rsAlertsSchedule = '0 0 */${rsAlertsPollingIntervalHours} * * *'
+
+var rsAlertsPlanAppSettings = [
+  {
+    name: 'FUNCTIONS_EXTENSION_VERSION'
+    value: '~4'
+  }
+  {
+    name: 'FUNCTIONS_WORKER_RUNTIME'
+    value: 'python'
+  }
+  {
+    name: 'SCM_DO_BUILD_DURING_DEPLOYMENT'
+    value: 'true'
+  }
+  {
+    name: 'ENABLE_ORYX_BUILD'
+    value: 'true'
+  }
+]
+
+// RS Alerts is a standalone Function App with its own runtime config — it
+// does NOT extend sharedCoreAppSettings (JOB_QUEUE_NAME is meaningless to a
+// timer-triggered job with no queue), but does reuse the same botIdentity,
+// storage account, and Key Vault secret as the bot's two Function Apps.
+var rsAlertsAppSettingsBase = [
+  {
+    name: 'AzureWebJobsStorage'
+    value: storageConnectionString
+  }
+  {
+    name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
+    value: appInsights.properties.ConnectionString
+  }
+  {
+    // Same identity as the bot — RS Alerts authenticates to the Bot
+    // Framework Connector API (and Microsoft Graph, for Teams app
+    // auto-install) as the same bot (app/bot_auth.py, app/graph_client.py
+    // in rs-alerts-function). No client-secret path exists — Managed
+    // Identity only.
+    name: 'CLIENT_ID'
+    value: botIdentity.properties.clientId
+  }
+  {
+    name: 'MANAGED_IDENTITY_CLIENT_ID'
+    value: botIdentity.properties.clientId
+  }
+  {
+    name: 'GTI_API_KEY'
+    value: '@Microsoft.KeyVault(SecretUri=${kvSecretGtiApiKey.properties.secretUri})'
+  }
+  {
+    name: 'GTI_RSA_PROJECT'
+    value: rsAlertsGtiProject
+  }
+  {
+    name: 'TEAMS_CHANNEL_ID'
+    value: rsAlertsTeamsChannelId
+  }
+  {
+    name: 'RS_ALERTS_SCHEDULE'
+    value: rsAlertsSchedule
+  }
+  {
+    name: 'PAGE_SIZE'
+    value: string(rsAlertsPageSize)
+  }
+  {
+    name: 'BACKFILL_DAYS'
+    value: string(rsAlertsBackfillDays)
+  }
+  {
+    name: 'WEBSITE_TIME_ZONE'
+    value: rsAlertsScheduleTimezone
+  }
+  {
+    name: 'FILTER_SEVERITY_LEVEL'
+    value: rsAlertsFilterSeverityLevel
+  }
+  {
+    name: 'FILTER_PRIORITY_LEVEL'
+    value: rsAlertsFilterPriorityLevel
+  }
+  {
+    name: 'FILTER_RELEVANCE_LEVEL'
+    value: rsAlertsFilterRelevanceLevel
+  }
+  {
+    name: 'FILTER_RELEVANCE_CONFIDENCE'
+    value: rsAlertsFilterRelevanceConfidence
+  }
+  {
+    name: 'STATE_CONTAINER_NAME'
+    value: rsAlertsStateContainerName
+  }
+]
+
 // ---------------------------------------------------------------------------
 // Storage account (shared: job queue, Table Storage sessions, Blob
 // output-format config, and each Function App's own deployment storage)
@@ -446,6 +612,18 @@ resource jobQueue 'Microsoft.Storage/storageAccounts/queueServices/queues@2023-0
 resource workerDeploymentContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-01-01' = if (workerHostingPlanType == 'FlexConsumption') {
   parent: blobServices
   name: workerDeploymentContainerName
+  properties: {
+    publicAccess: 'None'
+  }
+}
+
+// RS Alerts' cursor state container (rs-alerts-function/app/state_store.py)
+// — only created when enableRsAlerts is true. Consumption deploys via Oryx
+// remote build (like the Ingest Function App), so no deployment-package
+// blob container is needed here.
+resource rsAlertsStateContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-01-01' = if (enableRsAlerts) {
+  parent: blobServices
+  name: rsAlertsStateContainerName
   properties: {
     publicAccess: 'None'
   }
@@ -748,6 +926,50 @@ resource workerFunctionAppClassic 'Microsoft.Web/sites@2023-12-01' = if (workerH
 var workerFunctionAppHostName = workerHostingPlanType == 'FlexConsumption' ? workerFunctionAppFlex!.properties.defaultHostName : workerFunctionAppClassic!.properties.defaultHostName
 
 // ---------------------------------------------------------------------------
+// RS Alerts — App Service Plan + Function App (only when enableRsAlerts)
+// ---------------------------------------------------------------------------
+
+resource rsAlertsAppServicePlan 'Microsoft.Web/serverfarms@2023-12-01' = if (enableRsAlerts) {
+  name: rsAlertsAppServicePlanName
+  location: location
+  tags: tags
+  kind: 'functionapp'
+  sku: {
+    name: 'Y1'
+    tier: 'Dynamic'
+  }
+  properties: {
+    reserved: true
+  }
+}
+
+resource rsAlertsFunctionApp 'Microsoft.Web/sites@2023-12-01' = if (enableRsAlerts) {
+  name: rsAlertsFunctionAppName
+  location: location
+  tags: tags
+  kind: 'functionapp,linux'
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${botIdentity.id}': {}
+    }
+  }
+  properties: {
+    serverFarmId: rsAlertsAppServicePlan.id
+    httpsOnly: true
+    keyVaultReferenceIdentity: botIdentity.id
+    siteConfig: {
+      linuxFxVersion: 'PYTHON|${pythonVersion}'
+      alwaysOn: false
+      appSettings: concat(rsAlertsAppSettingsBase, rsAlertsPlanAppSettings)
+    }
+  }
+}
+
+// Empty string when RS Alerts isn't enabled at all.
+var rsAlertsFunctionAppHostName = enableRsAlerts ? rsAlertsFunctionApp!.properties.defaultHostName : ''
+
+// ---------------------------------------------------------------------------
 // Teams manifest — build and upload (only when manifestSourceBaseUrl is set)
 // ---------------------------------------------------------------------------
 
@@ -973,6 +1195,49 @@ resource workerCodeDeploy 'Microsoft.Resources/deploymentScripts@2023-08-01' = i
 }
 
 // ---------------------------------------------------------------------------
+// Automatic code deployment — RS Alerts (only when enableRsAlerts and rsAlertsCodeZipUrl is set)
+// ---------------------------------------------------------------------------
+
+resource rsAlertsCodeDeploy 'Microsoft.Resources/deploymentScripts@2023-08-01' = if (enableRsAlerts && !empty(rsAlertsCodeZipUrl)) {
+  name: '${rsAlertsFunctionAppName}-code-deploy'
+  location: location
+  tags: tags
+  kind: 'AzureCLI'
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${botIdentity.id}': {}
+    }
+  }
+  properties: {
+    azCliVersion: '2.60.0'
+    forceUpdateTag: forceUpdateTag
+    retentionInterval: 'PT1H'
+    timeout: 'PT15M'
+    cleanupPreference: 'OnSuccess'
+    environmentVariables: [
+      {
+        name: 'CODE_ZIP_URL'
+        value: rsAlertsCodeZipUrl
+      }
+      {
+        name: 'RESOURCE_GROUP'
+        value: resourceGroup().name
+      }
+      {
+        name: 'APP_NAME'
+        value: rsAlertsFunctionAppName
+      }
+    ]
+    scriptContent: codeDeployScriptContent
+  }
+  dependsOn: [
+    rsAlertsFunctionApp
+    botIdentityWebsiteContributor
+  ]
+}
+
+// ---------------------------------------------------------------------------
 // Outputs
 // ---------------------------------------------------------------------------
 
@@ -1007,3 +1272,8 @@ output manifestBlobUrl string = !empty(manifestSourceBaseUrl) ? '${storageAccoun
 
 output ingestCodeAutoDeployed bool = !empty(ingestCodeZipUrl)
 output workerCodeAutoDeployed bool = !empty(workerCodeZipUrl)
+
+output rsAlertsEnabled bool = enableRsAlerts
+output rsAlertsFunctionAppName string = enableRsAlerts ? rsAlertsFunctionAppName : ''
+output rsAlertsFunctionAppDefaultHostName string = rsAlertsFunctionAppHostName
+output rsAlertsCodeAutoDeployed bool = enableRsAlerts && !empty(rsAlertsCodeZipUrl)

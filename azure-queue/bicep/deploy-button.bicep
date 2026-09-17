@@ -91,6 +91,23 @@ param outputFormatInstructions string = ''
 param threadContextMessageCount int = 5
 
 // ---------------------------------------------------------------------------
+// RS Alerts (optional) — a separate, timer-triggered Function App that
+// posts new Google Threat Intelligence alerts to a Teams channel. Off by
+// default; everything besides these three basics (schedule, filters,
+// backfill window, hosting plan, ...) uses main.bicep's own defaults — use
+// main.bicep directly via the CLI for full control over those.
+// ---------------------------------------------------------------------------
+
+@description('Set to true to provision RS Alerts alongside the bot.')
+param enableRsAlerts bool = false
+
+@description('Teams channel link or ID that RS Alerts posts GTI alerts into. Required when Enable Rs Alerts is true.')
+param rsAlertsTeamsChannelId string = ''
+
+@description('RS Alerts\' GTI project ID, from the Alerts URL (...&project=projects/<id>). Required when Enable Rs Alerts is true.')
+param rsAlertsGtiProject string = ''
+
+// ---------------------------------------------------------------------------
 // Delegate everything else to main.bicep's own defaults
 // ---------------------------------------------------------------------------
 
@@ -111,6 +128,9 @@ module main 'main.bicep' = {
     maxJobAgeSeconds: maxJobAgeSeconds
     outputFormatInstructions: outputFormatInstructions
     threadContextMessageCount: threadContextMessageCount
+    enableRsAlerts: enableRsAlerts
+    rsAlertsTeamsChannelId: rsAlertsTeamsChannelId
+    rsAlertsGtiProject: rsAlertsGtiProject
   }
 }
 
@@ -127,3 +147,5 @@ output botName string = main.outputs.botName
 output botAppId string = main.outputs.botAppId
 output keyVaultName string = main.outputs.keyVaultName
 output storageAccountName string = main.outputs.storageAccountName
+output rsAlertsEnabled bool = main.outputs.rsAlertsEnabled
+output rsAlertsFunctionAppName string = main.outputs.rsAlertsFunctionAppName
