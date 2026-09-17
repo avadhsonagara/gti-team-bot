@@ -59,6 +59,14 @@ class Settings(BaseSettings):
     # Channel-only — Teams has no equivalent thread concept for personal/
     # group chats.
     thread_context_enabled: bool = True
+    # Clamped to [1, 30] regardless of what's configured — see
+    # clamp_thread_context_message_count() below (bicep/main.bicep's own
+    # threadContextMessageCount parameter enforces the same [1, 30] range at
+    # deploy time, so this is a defense-in-depth floor, not the only guard).
+    # Higher values grow the prompt sent to GTI (more prior messages
+    # included), with no gain in Graph API calls either way (the whole
+    # thread is always fetched once, this only controls how much of it gets
+    # used).
     thread_context_message_count: int = 5
 
     # ── Queue hand-off from the Ingest Function App ──────────────────────────
@@ -85,6 +93,13 @@ class Settings(BaseSettings):
     def strip_secret(cls, v: str) -> str:
         """Trim whitespace from secret-like values."""
         return (v or "").strip()
+
+    @field_validator("thread_context_message_count")
+    @classmethod
+    def clamp_thread_context_message_count(cls, v: int) -> int:
+        """Cap at 30 and floor at 1 regardless of what's configured — a
+        misconfigured app setting can't blow up the prompt sent to GTI."""
+        return max(1, min(v, 30))
 
 
 settings = Settings()

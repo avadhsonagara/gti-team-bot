@@ -95,21 +95,40 @@ GRAPH_API_TIMEOUT_SECONDS = 30.0
 
 # =============================================================================
 # Attachment downloads (app/teams/attachments.py) — Bot Framework Connector
-# downloadUrl/content_url. Only directly-uploaded files are fetched; an
-# existing SharePoint/OneDrive file share is skipped (no Graph fallback).
+# downloadUrl/content_url for personal/group chats, Microsoft Graph fallback
+# for channel (and group chat's existing-file-share case), since Bot
+# Framework never includes a usable content_url on a channel message at all
+# — confirmed live, even for a freshly-uploaded file, not just an existing
+# SharePoint/OneDrive share.
 # =============================================================================
 
 # (connect, read) timeout seconds for downloading one attachment's bytes.
 ATTACHMENT_DOWNLOAD_TIMEOUT = (10.0, 30.0)
+
+# Safety ceiling on paginated Graph message-list fetches (channel replies, or
+# a group chat's recent messages) when locating the inbound message's real
+# attachment reference — NOT the primary stopping condition. That's
+# timestamp-based (see attachments.py's _page_reaches_target/target_timestamp): the
+# actual target message's own timestamp, so a very high-traffic channel
+# still gets found correctly no matter how many pages that takes. This cap
+# only guards against truly runaway pagination (e.g. a broken nextLink, or
+# a badly-skewed clock making the timestamp check never trigger) — set high
+# enough that it should never realistically be hit in ordinary use.
+ATTACHMENT_GRAPH_MESSAGE_LIST_MAX_PAGES = 50
 
 
 # =============================================================================
 # Channel thread context (app/teams/thread.py)
 # =============================================================================
 
-# Cap on paginated Graph /replies fetches when building thread context — a
-# context window only needs the most recent messages, not the whole thread.
-THREAD_CONTEXT_MAX_PAGES = 5
+# Safety ceiling on paginated Graph /replies fetches when building thread
+# context — NOT the primary stopping condition. That's timestamp-based (see
+# thread.py's _page_reaches_target/target_timestamp): the triggering
+# activity's own timestamp, so a long-running thread still gets its truly
+# most recent messages no matter how many pages that takes. This cap only
+# guards against truly runaway pagination — set high enough that it should
+# never realistically be hit in ordinary use.
+THREAD_CONTEXT_MAX_PAGES = 50
 
 
 # =============================================================================

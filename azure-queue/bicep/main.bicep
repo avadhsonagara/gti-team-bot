@@ -149,9 +149,9 @@ param maxJobAgeSeconds int = 480
 @description('Optional formatting instructions applied to every bot response (e.g. "Show severity as bold text instead of emoji"). Seeds a JSON config blob (bot-config/output-format.json) in the shared storage account on first read — after that the blob is the source of truth and this value is ignored. Leave empty to use the built-in formatting from app/gti/prompt.md.')
 param outputFormatInstructions string = ''
 
-@description('Number of most-recent channel-thread messages to fetch as context for each query (channel thread context via Microsoft Graph). Requires the bot\'s identity to be granted the Graph APPLICATION permission ChannelMessage.Read.All with tenant-admin consent — a manual one-time step. No effect outside channels.')
+@description('Number of most-recent channel-thread messages to fetch as context for each query (channel thread context via Microsoft Graph). Requires the bot\'s identity to be granted the Graph APPLICATION permission ChannelMessage.Read.All with tenant-admin consent — a manual one-time step. No effect outside channels. Capped at 30 to bound the prompt size sent to GTI (app/config.py clamps to the same [1, 30] range as defense-in-depth, in case this is ever set outside of a Bicep deployment, e.g. directly in Function App settings).')
 @minValue(1)
-@maxValue(50)
+@maxValue(30)
 param threadContextMessageCount int = 5
 
 // ---------------------------------------------------------------------------
@@ -483,24 +483,29 @@ resource botIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-3
 // to get deleted and recreated between deployments (root cause unconfirmed
 // — Azure Activity Log showed no record of it), which left its role
 // assignment permanently stuck pointing at a principal that no longer
-// exists (RoleAssignmentUpdateNotPermitted) — happened twice in the same
-// resource group. botIdentity has never exhibited this. Trade-off: the
-// Website Contributor role now sits on the same identity the bot
+// exists (RoleAssignmentUpdateNotPermitted) — happened repeatedly, and even
+// botIdentity itself was later observed to do the same thing. Trade-off:
+// the Website Contributor role now sits on the same identity the bot
 // authenticates to Teams/Graph/GTI as, instead of an isolated one.
-resource botIdentityWebsiteContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (codeAutoDeployEnabled) {
-  // Deliberately not salted — see kvSecretsUserRoleAssignment's comment
-  // below: botIdentity itself has no history of being deleted/recreated by
-  // this template, so there's nothing here for a salt to work around.
-  name: guid(resourceGroup().id, botIdentity.id, 'WebsiteContributor')
-  scope: resourceGroup()
-  properties: {
+//
+// The role assignment itself is a child module (modules/roleAssignment.bicep)
+// so its name can be keyed off botIdentity's actual principalId instead of
+// its resourceId — see that module's own comment for why this needs a
+// module at all (BCP120), and why it's what makes this resilient to the
+// identity being recreated in the future, whatever the previous root cause
+// turns out to be: verified by reproducing that exact scenario end-to-end
+// against a disposable test identity (delete + recreate + redeploy
+// succeeded, creating a fresh role assignment automatically).
+module botIdentityWebsiteContributor 'modules/roleAssignment.bicep' = if (codeAutoDeployEnabled) {
+  name: '${ingestFunctionAppName}-bot-identity-website-contributor'
+  params: {
     // Built-in "Website Contributor" role, scoped to this resource group —
     // lets this identity zip-deploy code (via the SCM /api/zipdeploy
     // endpoint, Azure AD-authenticated, no publish profile/basic-auth
     // credentials needed) to the Function Apps this deployment creates.
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'de139f84-1756-47ae-9be6-808fbbe84772')
     principalId: botIdentity.properties.principalId
-    principalType: 'ServicePrincipal'
+    roleAssignmentNameSeed: resourceGroup().id
   }
 }
 
@@ -532,24 +537,22 @@ resource kvSecretGtiApiKey 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   }
 }
 
-resource kvSecretsUserRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  // Named from botIdentity's resourceId (.id), not its principalId — a
-  // resource's name must be computable before deployment starts, and
-  // principalId is only assigned once the identity actually deploys, so ARM
-  // rejects using it here outright (BCP120). This is fine in practice: it
-  // would only matter if botIdentity itself were ever deleted and
-  // recreated, and (unlike the deploy-identity previously used for code
-  // deployment — see botIdentityWebsiteContributor's comment above)
-  // botIdentity has never exhibited that in this codebase's history.
-  name: guid(keyVault.id, botIdentity.id, 'KeyVaultSecretsUser')
-  scope: keyVault
-  properties: {
+// Child module (modules/keyVaultRoleAssignment.bicep), keyed off botIdentity's
+// principalId rather than its resourceId — same reasoning and same live
+// verification as botIdentityWebsiteContributor above, adapted for a
+// Key-Vault-scoped assignment (a module's own `scope:` can only target a
+// resourceGroup/subscription/etc., not an arbitrary resource — confirmed via
+// BCP134 — hence that module scoping to the vault via an `existing`
+// reference internally instead).
+module kvSecretsUserRoleAssignment 'modules/keyVaultRoleAssignment.bicep' = {
+  name: '${ingestFunctionAppName}-kv-secrets-user-role-assignment'
+  params: {
+    keyVaultName: keyVault.name
     // Built-in "Key Vault Secrets User" role — read-only access to secret
     // values. Only bot-worker-function actually reads GTI_API_KEY, but the
     // role is assigned to the one identity shared by both apps.
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')
     principalId: botIdentity.properties.principalId
-    principalType: 'ServicePrincipal'
   }
 }
 
@@ -851,7 +854,7 @@ resource bot 'Microsoft.BotService/botServices@2022-09-15' = {
   location: 'global'
   tags: tags
   sku: {
-    name: 'F0'
+    name: 'S1'
   }
   kind: 'azurebot'
   properties: {

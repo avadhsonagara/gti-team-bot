@@ -76,15 +76,33 @@ avoids paying for the worker's larger footprint on every inbound webhook call.
   queue name** (`JOB_QUEUE_NAME`, default `gti-query-jobs`) — the ingest
   function only ever writes to this queue, the worker only ever reads from
   it.
-- The worker's Managed Identity additionally needs this Graph APPLICATION
-  permission (tenant-admin consent): `ChannelMessage.Read.All` — channel
-  thread context (`app/teams/thread.py`).
-- Only directly-uploaded files/images are fetched (`app/teams/attachments.py`)
-  — works the same in personal, group, and channel chats. A user picking an
-  *existing* SharePoint/OneDrive file from the attachment picker's
-  "OneDrive"/"Browse Teams Files" option is skipped rather than resolved via
-  Graph; Teams gives the bot no usable file reference for that case at all.
-  GTI is simply told no file was attached, same as if the message had none.
+- The worker's Managed Identity additionally needs these Graph APPLICATION
+  permissions (tenant-admin consent), discovered by exercising each scenario
+  against a real deployment rather than assumed up front:
+  - `ChannelMessage.Read.All` — channel thread context (`app/teams/thread.py`),
+    and (below) the channel half of the attachment fallback.
+  - `Chat.Read.All` — locating the inbound message in a group chat, for the
+    attachment fallback below. Not needed for personal (1:1) chats, which
+    have no thread/message-list concept the bot needs Graph for.
+  - `Files.ReadWrite.All` — actually downloading a file's bytes via Graph's
+    Shares API (`/shares/{token}/driveItem/content`, `app/teams/attachments.py`).
+    Per [Microsoft's own docs](https://learn.microsoft.com/en-us/graph/api/shares-get?view=graph-rest-1.0),
+    this is the *least*-privileged application permission Graph offers for
+    that endpoint — there is no read-only option at the application-permission
+    level, even though the bot only ever reads.
+  - Attachments (`app/teams/attachments.py`): confirmed live that Bot
+    Framework never includes a usable `content_url` on a **channel** message
+    at all — not just when a user picks an *existing* SharePoint/OneDrive
+    file, but for a freshly-uploaded/pasted one too (Teams channels store
+    every file, existing or fresh, in the channel's own SharePoint document
+    library either way). Personal (1:1) and group chats get a real,
+    directly-usable `content_url` from Bot Framework for a fresh upload —
+    only a group chat's *existing*-file-share case needs the same Graph
+    fallback as channel always does.
+  - Skipping `Files.ReadWrite.All` is a safe choice if that permission is an
+    unacceptable trade-off: the code degrades gracefully (proceeds without
+    the attachment, GTI is told no file was attached) rather than erroring —
+    channel/group-chat attachment analysis just won't work without it.
 
 See each app's `.env.example` for the full settings list.
 

@@ -28,6 +28,7 @@ import html as html_lib
 import json
 import logging
 import re
+from datetime import datetime, timedelta
 from typing import Any, Optional
 
 from app.config import settings
@@ -152,6 +153,54 @@ def is_placeholder_message(msg: dict[str, Any], bot_app_id: str) -> bool:
 
 # ── Graph fetch ──────────────────────────────────────────────────────────────
 
+def _parse_graph_datetime(value: str) -> Optional[datetime]:
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        return None
+
+
+_CLOCK_SKEW_MARGIN = timedelta(seconds=60)
+
+
+def _detect_page_order(page: list[dict[str, Any]]) -> Optional[str]:
+    """
+    "asc" or "desc" read off a fetched page's own createdDateTime values, or
+    None when a single-message page makes that undeterminable.
+
+    Needed because $orderby can't be relied on here: confirmed live that
+    Graph rejects $orderby=createdDateTime desc on this /replies endpoint
+    outright with a 400 ("Query option 'OrderBy' is not allowed") — this
+    function used to request it, which meant thread context failed outright
+    for any channel thread with replies at all. Rather than assume the real
+    default order instead, it's read off each response directly.
+    """
+    if len(page) < 2:
+        return None
+    first = _parse_graph_datetime(page[0].get("createdDateTime") or "")
+    last = _parse_graph_datetime(page[-1].get("createdDateTime") or "")
+    if first is None or last is None:
+        return None
+    return "asc" if last >= first else "desc"
+
+
+def _page_reaches_target(page: list[dict[str, Any]], order: Optional[str], target: Optional[datetime]) -> bool:
+    """
+    True once a fetched page has reached target (+/- a clock-skew margin) in
+    whichever direction this listing actually runs — every message from here
+    on, in that direction, is even further from target, so whatever we're
+    looking for (if Graph has it at all) has already been fully covered by
+    the pages fetched so far, regardless of how many that took.
+    """
+    if target is None or not page or order is None:
+        return False
+    if order == "desc":
+        oldest_in_page = _parse_graph_datetime(page[-1].get("createdDateTime") or "")
+        return oldest_in_page is not None and oldest_in_page <= target - _CLOCK_SKEW_MARGIN
+    newest_in_page = _parse_graph_datetime(page[-1].get("createdDateTime") or "")
+    return newest_in_page is not None and newest_in_page >= target + _CLOCK_SKEW_MARGIN
+
+
 def fetch_thread_messages(
     team_id: str,
     channel_id: str,
@@ -159,6 +208,7 @@ def fetch_thread_messages(
     limit: int = 5,
     exclude_message_id: str = "",
     bot_app_id: str = "",
+    target_timestamp: Optional[datetime] = None,
 ) -> list[dict[str, Any]]:
     """
     Return up to `limit` most recent PRIOR messages (root + replies) in a
@@ -171,6 +221,14 @@ def fetch_thread_messages(
     messages. This bot's own placeholder/status messages are also dropped via
     is_placeholder_message() — see this module's docstring for why that
     matters specifically in the queue architecture.
+
+    `target_timestamp` (typically the triggering activity's own timestamp)
+    lets pagination stop once a fetched page has reached it (see
+    _page_reaches_target()) instead of relying on a fixed page count alone —
+    without it, a thread with more replies than THREAD_CONTEXT_MAX_PAGES x 50
+    could have its truly most recent messages fall outside the fetched
+    window depending on which direction Graph actually returns results in
+    (not requested via $orderby — see _detect_page_order()).
     """
     messages: list[dict[str, Any]] = []
 
@@ -183,28 +241,25 @@ def fetch_thread_messages(
     else:
         raise GraphError(f"Graph root message fetch failed ({root_resp.status_code}): {root_resp.text}")
 
-    # $orderby=createdDateTime desc (also used in attachments.py's own Graph
-    # replies fetch) so the capped pagination below walks from the NEWEST
-    # reply backwards. Without it, Graph's default ascending order means a
-    # thread with more than 250 replies (5 pages x 50) would only ever see
-    # its oldest 250 — silently returning stale context instead of the
-    # actual most-recent messages. The final sort()+[-limit:] below still
-    # re-orders these chronologically before slicing, so this only changes
-    # WHICH replies get fetched, not how they're presented.
     replies_url: Optional[str] = (
-        f"{_GRAPH_BASE_URL}/teams/{team_id}/channels/{channel_id}/messages/{thread_id}"
-        f"/replies?$top=50&$orderby=createdDateTime desc"
+        f"{_GRAPH_BASE_URL}/teams/{team_id}/channels/{channel_id}/messages/{thread_id}/replies?$top=50"
     )
-    # Cap pagination — a channel thread context window only needs the tail.
+    # THREAD_CONTEXT_MAX_PAGES is a safety ceiling against runaway
+    # pagination, not the primary stopping condition — see target_timestamp above.
     pages_fetched = 0
+    order: Optional[str] = None
     while replies_url and pages_fetched < THREAD_CONTEXT_MAX_PAGES:
         resp = graph_client.get(replies_url)
         if resp.status_code != 200:
             raise GraphError(f"Graph replies fetch failed ({resp.status_code}): {resp.text}")
         payload = resp.json()
-        messages.extend(payload.get("value", []))
+        page = payload.get("value", [])
+        messages.extend(page)
         replies_url = payload.get("@odata.nextLink")
         pages_fetched += 1
+        order = _detect_page_order(page) or order
+        if _page_reaches_target(page, order, target_timestamp):
+            break
 
     messages.sort(key=lambda m: m.get("createdDateTime") or "")
     messages = [
@@ -302,7 +357,13 @@ def get_thread_context(activity, scope: str) -> str:
 
     team_id = get_team_id(activity)
     channel_id = get_channel_id(activity)
-    thread_id = get_thread_root_id(activity.conversation.id)
+    # get_team_post_id(), not the raw get_thread_root_id(activity.conversation.id)
+    # — a reply's conversation.id carries the root id directly, but the
+    # thread's own opening post has no such suffix on ITS OWN conversation.id
+    # at all. Without get_team_post_id()'s root-post fallback (its own id IS
+    # the thread root id), thread context silently came back empty for the
+    # very first message of every new channel thread — confirmed live.
+    thread_id = get_team_post_id(activity)
 
     if not (team_id and channel_id and thread_id):
         return ""
@@ -313,6 +374,7 @@ def get_thread_context(activity, scope: str) -> str:
             limit=settings.thread_context_message_count,
             exclude_message_id=activity.id or "",
             bot_app_id=settings.client_id,
+            target_timestamp=getattr(activity, "timestamp", None),
         )
         # Count only — never the messages' authors or text, which is exactly
         # what this context is: other people's conversation content.

@@ -85,9 +85,9 @@ param maxJobAgeSeconds int = 480
 @description('Optional formatting instructions applied to every bot response (e.g. "Show severity as bold text instead of emoji"). Leave empty to use the bot\'s built-in formatting.')
 param outputFormatInstructions string = ''
 
-@description('Number of most-recent channel-thread messages to fetch as context for each query. Requires the bot\'s identity to be granted the Graph APPLICATION permission ChannelMessage.Read.All with tenant-admin consent — a manual one-time step. No effect outside channels.')
+@description('Number of most-recent channel-thread messages to fetch as context for each query. Requires the bot\'s identity to be granted the Graph APPLICATION permission ChannelMessage.Read.All with tenant-admin consent — a manual one-time step. No effect outside channels. Capped at 30 to bound the prompt size sent to GTI.')
 @minValue(1)
-@maxValue(50)
+@maxValue(30)
 param threadContextMessageCount int = 5
 
 // ---------------------------------------------------------------------------

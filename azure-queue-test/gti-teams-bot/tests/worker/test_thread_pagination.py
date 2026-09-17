@@ -1,17 +1,23 @@
 """
-Regression test for finding #6: fetch_thread_messages() must return the
-actual NEWEST replies once a channel thread exceeds 250 total replies (5
-pages x $top=50), not the oldest 250. The fix adds
-$orderby=createdDateTime desc to the /replies query (matching the pattern
-already used in attachments.py's own Graph replies fetch) so the capped
-5-page pagination walks backward from the newest reply instead of forward
-from the oldest.
+Regression test for finding #6 (and its own follow-up regression):
+fetch_thread_messages() must return the actual NEWEST replies in a very
+active channel thread, not an arbitrary window truncated by
+THREAD_CONTEXT_MAX_PAGES. The original fix requested
+$orderby=createdDateTime desc on /replies to make a capped pagination walk
+backward from the newest reply — but that's now confirmed live to make
+Graph reject the whole request with a 400 ("Query option 'OrderBy' is not
+allowed"), which silently broke thread context for every channel thread
+with any replies at all. The real fix detects whichever order Graph
+actually returns per page (_detect_page_order) and stops once a page
+reaches a target timestamp in that direction (_page_reaches_target),
+without ever requesting $orderby.
 """
 from datetime import datetime, timedelta
+from types import SimpleNamespace
 
 from app.teams import thread as thread_module
 
-_TOTAL_REPLIES = 300
+_TOTAL_REPLIES = 3000  # 60 pages of 50 — exceeds THREAD_CONTEXT_MAX_PAGES (50)
 _PAGE_SIZE = 50
 
 
@@ -40,11 +46,11 @@ class _FakeResponse:
 
 def _make_fake_get(requested_urls: list):
     """
-    Simulates Microsoft Graph's /replies pagination. Root n=0 is the oldest
-    message of all. Replies are n=1 (oldest) .. n=300 (newest). Honors
-    $orderby=createdDateTime desc when present in the URL — exactly like the
-    real Graph API does — so this only produces the newest-first ordering
-    the fix depends on if the fix is actually requesting it.
+    Simulates Microsoft Graph's real, confirmed-live /replies behavior:
+    newest-first pages, and a 400 if $orderby is ever requested (this is
+    what actually happens against real Graph — not a hypothetical). Root
+    n=0 is the oldest message of all. Replies are n=1 (oldest) .. n=3000
+    (newest).
     """
     state = {"page": 0}
 
@@ -53,41 +59,97 @@ def _make_fake_get(requested_urls: list):
         if "/replies" not in url:
             return _FakeResponse(200, _reply(0))
 
-        desc = "createdDateTime desc" in url or "createdDateTime+desc" in url
+        if "orderby" in url.lower():
+            return _FakeResponse(400, {"error": {"message": "Query option 'OrderBy' is not allowed."}})
+
         page = state["page"]
         state["page"] += 1
 
-        if desc:
-            start = _TOTAL_REPLIES - page * _PAGE_SIZE
-            ids = list(range(start, start - _PAGE_SIZE, -1))
-        else:
-            start = 1 + page * _PAGE_SIZE
-            ids = list(range(start, start + _PAGE_SIZE))
-        ids = [i for i in ids if 1 <= i <= _TOTAL_REPLIES]
+        start = _TOTAL_REPLIES - page * _PAGE_SIZE
+        ids = [i for i in range(start, start - _PAGE_SIZE, -1) if 1 <= i <= _TOTAL_REPLIES]
 
         next_page_start_ok = (page + 1) * _PAGE_SIZE < _TOTAL_REPLIES
-        next_link = f"https://graph.microsoft.com/v1.0/fake?page={page + 1}" if next_page_start_ok else None
+        next_link = f"https://graph.microsoft.com/v1.0/fake/replies?page={page + 1}" if next_page_start_ok else None
         return _FakeResponse(200, {"value": [_reply(i) for i in ids], "@odata.nextLink": next_link})
 
     return fake_get
 
 
-def test_returns_true_newest_replies_when_thread_exceeds_250(monkeypatch):
+def test_returns_true_newest_replies_without_requesting_orderby(monkeypatch):
     requested_urls: list = []
     monkeypatch.setattr(thread_module, "graph_client", type("_G", (), {"get": staticmethod(_make_fake_get(requested_urls))})())
 
+    # Target near page 3 of the (unrequested, but Graph-provided) descending
+    # stream — well before all 60 pages would otherwise need fetching.
+    target_n = _TOTAL_REPLIES - 3 * _PAGE_SIZE
+    target_timestamp = datetime.fromisoformat(_created(target_n).replace("Z", "+00:00"))
+
     result = thread_module.fetch_thread_messages(
         team_id="team1", channel_id="chan1", thread_id="thread1", limit=5, bot_app_id="bot1",
+        target_timestamp=target_timestamp,
     )
 
     ids = [m["id"] for m in result]
-    assert ids == ["r296", "r297", "r298", "r299", "r300"], (
-        "Expected the true newest 5 replies out of 300 total — got the oldest-page "
-        "slice instead, meaning the /replies query is missing $orderby=createdDateTime desc."
+    assert ids == [f"r{_TOTAL_REPLIES - 4}", f"r{_TOTAL_REPLIES - 3}", f"r{_TOTAL_REPLIES - 2}",
+                   f"r{_TOTAL_REPLIES - 1}", f"r{_TOTAL_REPLIES}"], (
+        "Expected the true newest 5 replies — pagination must have stopped short "
+        "of reaching them, or sorted them incorrectly."
     )
 
     replies_urls = [u for u in requested_urls if "/replies" in u]
     assert replies_urls, "Test setup error: no /replies requests were captured."
-    assert all("createdDateTime desc" in u for u in replies_urls), (
-        "fetch_thread_messages() must request $orderby=createdDateTime desc on /replies."
+    assert not any("orderby" in u.lower() for u in replies_urls), (
+        "fetch_thread_messages() must NOT request $orderby on /replies — confirmed live that "
+        "Graph rejects it outright with a 400 on this endpoint."
     )
+    assert len(replies_urls) < 10, (
+        f"expected target_timestamp-based pagination to stop well short of all 60 pages, "
+        f"made {len(replies_urls)} requests — early stopping isn't engaging."
+    )
+
+
+def test_thread_context_works_for_a_brand_new_root_post(monkeypatch):
+    """
+    Regression test: a channel thread's own OPENING post has no
+    ";messageid=" suffix on its own conversation.id at all (only a reply's
+    conversation.id carries one) — get_thread_root_id() alone returns "" for
+    it. get_thread_context() must use get_team_post_id() (which has the
+    root-post fallback: its own activity.id IS the thread root id), not the
+    raw get_thread_root_id(activity.conversation.id) — otherwise thread
+    context silently comes back empty for the very first message of every
+    new channel thread, confirmed live against a real deployment.
+    """
+    requested_urls: list = []
+
+    def fake_get(url, **kwargs):
+        requested_urls.append(url)
+        if "/replies" not in url:
+            # The root IS the current activity itself (id=999) — this is
+            # the query that triggered this fetch, correctly excluded from
+            # its own "history" below via exclude_message_id.
+            return _FakeResponse(200, {
+                "id": "999", "createdDateTime": "2026-01-01T00:00:00Z",
+                "from": {"user": {"displayName": "Alice"}},
+                "body": {"content": "the opening post"},
+            })
+        # A prior reply already sitting in the thread by the time this
+        # (root-post) activity's own context gets fetched — must show up.
+        return _FakeResponse(200, {"value": [
+            {"id": "888", "createdDateTime": "2025-12-31T23:59:00Z",
+             "from": {"user": {"displayName": "Bob"}}, "body": {"content": "an earlier reply"}},
+        ], "@odata.nextLink": None})
+
+    monkeypatch.setattr(thread_module, "graph_client", type("_G", (), {"get": staticmethod(fake_get)})())
+    monkeypatch.setattr(thread_module, "get_team_id", lambda activity: "team-1")
+    monkeypatch.setattr(thread_module, "get_channel_id", lambda activity: "channel-1")
+
+    activity = SimpleNamespace(
+        id="999",
+        conversation=SimpleNamespace(id="19:abc@thread.tacv2", conversation_type="channel"),
+    )
+
+    context = thread_module.get_thread_context(activity, "channel")
+
+    assert requested_urls, "bailed out before any Graph call — root-post thread id fallback isn't working"
+    assert "an earlier reply" in context
+    assert "the opening post" not in context  # excluded: it's the current activity, not history
