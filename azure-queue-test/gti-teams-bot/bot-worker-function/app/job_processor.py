@@ -12,7 +12,6 @@ App (bot-ingest-function/) before this job ever reached the queue.
 import logging
 import re
 import time
-from contextlib import nullcontext
 from datetime import datetime, timezone
 
 from app.config import settings
@@ -28,7 +27,7 @@ from app.gti.client import (
     GTITimeoutError,
     gti_client,
 )
-from app.gti.session_store import get_session_id, session_lock, set_session_id
+from app.gti.session_store import get_session_id, set_session_id
 from app.observability import bind_request
 from app.output_format_store import get_output_format
 from app.queue_job import parse_job_payload
@@ -190,36 +189,27 @@ def process_job(raw_payload: dict, dequeue_count: int = 1) -> None:
             channel_id = get_channel_id(activity)
             team_post_id = get_team_post_id(activity)
             have_session_key = bool(team_id and channel_id and team_post_id)
-            lock_ctx = session_lock(team_id, channel_id, team_post_id) if have_session_key else nullcontext()
         else:
             team_id = channel_id = team_post_id = ""
             have_session_key = False
-            lock_ctx = nullcontext()
 
-        # Held around read-session -> maybe-create-in-GTI -> write-session so
-        # two concurrent requests for the SAME thread can't both read "no
-        # session yet", both create a GTI session, and have one write
-        # silently orphan the other. No-op lock for personal/group chats
-        # (and for a channel activity missing team_id/channel_id), which
-        # have no persisted key to race on.
-        with lock_ctx:
-            existing_session_id = get_session_id(team_id, channel_id, team_post_id) if have_session_key else None
+        existing_session_id = get_session_id(team_id, channel_id, team_post_id) if have_session_key else None
 
-            t_gti = time.perf_counter()
-            logger.info(
-                "[WORKER 3/4] Dispatching query to GTI Agentic API | mode=%s session_id=%s prompt_chars=%d",
-                "continue" if existing_session_id else "new", existing_session_id or "-", len(initial_msg),
-            )
-            session_id, response_text, _ = gti_client.send_message(
-                message=initial_msg, session_id=existing_session_id, files=attachments,
-            )
-            bind_request(session_id=session_id)
-            if have_session_key:
-                set_session_id(team_id, channel_id, team_post_id, session_id)
-            logger.info(
-                "[WORKER 3/4] GTI query completed in %.2fs | session_id=%s response_chars=%d",
-                time.perf_counter() - t_gti, session_id, len(response_text),
-            )
+        t_gti = time.perf_counter()
+        logger.info(
+            "[WORKER 3/4] Dispatching query to GTI Agentic API | mode=%s session_id=%s prompt_chars=%d",
+            "continue" if existing_session_id else "new", existing_session_id or "-", len(initial_msg),
+        )
+        session_id, response_text, _ = gti_client.send_message(
+            message=initial_msg, session_id=existing_session_id, files=attachments,
+        )
+        bind_request(session_id=session_id)
+        if have_session_key:
+            set_session_id(team_id, channel_id, team_post_id, session_id)
+        logger.info(
+            "[WORKER 3/4] GTI query completed in %.2fs | session_id=%s response_chars=%d",
+            time.perf_counter() - t_gti, session_id, len(response_text),
+        )
 
         # ── Step 4: Format & Deliver ────────────────────────────────────────
         t_del = time.perf_counter()

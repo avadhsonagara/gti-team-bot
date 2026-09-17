@@ -75,11 +75,8 @@ class Settings(BaseSettings):
     # dequeued is treated as stale — a large backlog, or a message that was
     # retried after a transient failure and has now aged out its usefulness —
     # rather than run an expensive multi-minute GTI query for a request that
-    # old, the placeholder is edited to say so and no GTI call is made. Keep
-    # this comfortably under gti_timeout_seconds + the hosting plan's
-    # functionTimeout so a message already mid-processing is never declared
-    # stale by a separate check.
-    max_job_age_seconds: float = 900.0
+    # old, the placeholder is edited to say so and no GTI call is made.
+    max_job_age_seconds: float = 480.0
 
     @field_validator("gti_api_base_url", mode="before")
     @classmethod

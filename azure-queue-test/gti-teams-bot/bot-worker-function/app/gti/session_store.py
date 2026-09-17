@@ -44,14 +44,6 @@ _TABLE_NAME = "GtiSessions"
 _table_client_instance: TableClient | None = None
 _table_client_lock = threading.Lock()
 
-# Per-thread locks so two concurrent requests for the SAME channel thread
-# serialize around read-session -> maybe-create-in-GTI -> write-session,
-# instead of both reading "no session yet", both creating a GTI session, and
-# one write silently orphaning the other. Process-wide only (scoped to this
-# worker instance's memory, not distributed across instances).
-_session_locks: dict[str, threading.Lock] = {}
-_session_locks_guard = threading.Lock()
-
 
 def _sanitize(value: str) -> str:
     """Replace characters Table Storage forbids in a PartitionKey/RowKey ('/', '\\', '#', '?')."""
@@ -67,22 +59,6 @@ def _escape_odata_string(value: str) -> str:
 
 def _partition_key(team_id: str, channel_id: str) -> str:
     return f"{_sanitize(team_id)}:{_sanitize(channel_id)}"
-
-
-def session_lock(team_id: str, channel_id: str, team_post_id: str) -> threading.Lock:
-    """
-    Return a process-wide lock scoped to this channel thread. Hold it around
-    the read-session -> maybe-create-in-GTI -> write-session sequence so two
-    concurrent requests for the same thread can't both create a GTI session
-    and silently orphan one.
-    """
-    lock_key = f"{_partition_key(team_id, channel_id)}::{_sanitize(team_post_id)}"
-    with _session_locks_guard:
-        lock = _session_locks.get(lock_key)
-        if lock is None:
-            lock = threading.Lock()
-            _session_locks[lock_key] = lock
-        return lock
 
 
 def _table_client(cfg: Settings):
