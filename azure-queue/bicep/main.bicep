@@ -225,8 +225,14 @@ param keyVaultName string = toLower('kv-${take(replace(ingestFunctionAppName, '-
 // Observability
 // ---------------------------------------------------------------------------
 
-@description('Name of the Application Insights resource, shared by both Function Apps.')
+@description('Name of the Ingest Function App\'s own Application Insights resource.')
 param appInsightsName string = '${ingestFunctionAppName}-insights'
+
+@description('Name of the Worker Function App\'s own Application Insights resource.')
+param workerAppInsightsName string = '${workerFunctionAppName}-insights'
+
+@description('Name of the RS Alerts Function App\'s own Application Insights resource. Only used when enableRsAlerts is true.')
+param rsAlertsAppInsightsName string = '${rsAlertsFunctionAppName}-insights'
 
 // ---------------------------------------------------------------------------
 // Teams manifest (optional)
@@ -338,10 +344,6 @@ var sharedCoreAppSettings = [
     value: storageConnectionString
   }
   {
-    name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
-    value: appInsights.properties.ConnectionString
-  }
-  {
     // Both apps authenticate as the same bot: app/teams/auth.py (ingest)
     // validates inbound JWTs' audience against this; app/teams/bot_client.py
     // and app/graph/client.py (both apps) authenticate outbound calls via
@@ -360,6 +362,10 @@ var sharedCoreAppSettings = [
 ]
 
 var ingestAppSettings = concat(sharedCoreAppSettings, [
+  {
+    name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
+    value: ingestAppInsights.properties.ConnectionString
+  }
   {
     name: 'FUNCTIONS_EXTENSION_VERSION'
     value: '~4'
@@ -387,6 +393,10 @@ var ingestAppSettings = concat(sharedCoreAppSettings, [
 ])
 
 var workerAppSettingsBase = concat(sharedCoreAppSettings, [
+  {
+    name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
+    value: workerAppInsights.properties.ConnectionString
+  }
   {
     name: 'GTI_API_KEY'
     value: '@Microsoft.KeyVault(SecretUri=${kvSecretGtiApiKey.properties.secretUri})'
@@ -475,7 +485,9 @@ var rsAlertsPlanAppSettings = [
 // RS Alerts is a standalone Function App with its own runtime config — it
 // does NOT extend sharedCoreAppSettings (JOB_QUEUE_NAME is meaningless to a
 // timer-triggered job with no queue), but does reuse the same botIdentity,
-// storage account, and Key Vault secret as the bot's two Function Apps.
+// storage account, and Key Vault secret as the bot's two Function Apps. It
+// has its own dedicated Application Insights resource, though (rsAlertsAppInsights) —
+// each of the three Function Apps gets its own for clean log/cost isolation.
 var rsAlertsAppSettingsBase = [
   {
     name: 'AzureWebJobsStorage'
@@ -483,7 +495,7 @@ var rsAlertsAppSettingsBase = [
   }
   {
     name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
-    value: appInsights.properties.ConnectionString
+    value: enableRsAlerts ? rsAlertsAppInsights!.properties.ConnectionString : ''
   }
   {
     // Same identity as the bot — RS Alerts authenticates to the Bot
@@ -720,8 +732,32 @@ module kvSecretsUserRoleAssignment 'modules/keyVaultRoleAssignment.bicep' = {
 // Application Insights
 // ---------------------------------------------------------------------------
 
-resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
+resource ingestAppInsights 'Microsoft.Insights/components@2020-02-02' = {
   name: appInsightsName
+  location: location
+  tags: tags
+  kind: 'web'
+  properties: {
+    Application_Type: 'web'
+    Flow_Type: 'Bluefield'
+    Request_Source: 'rest'
+  }
+}
+
+resource workerAppInsights 'Microsoft.Insights/components@2020-02-02' = {
+  name: workerAppInsightsName
+  location: location
+  tags: tags
+  kind: 'web'
+  properties: {
+    Application_Type: 'web'
+    Flow_Type: 'Bluefield'
+    Request_Source: 'rest'
+  }
+}
+
+resource rsAlertsAppInsights 'Microsoft.Insights/components@2020-02-02' = if (enableRsAlerts) {
+  name: rsAlertsAppInsightsName
   location: location
   tags: tags
   kind: 'web'
@@ -1243,7 +1279,9 @@ output workerAppliedMaxInstanceCount int = workerHostingPlanType == 'FlexConsump
 
 output storageAccountName string = storageAccount.name
 output jobQueueName string = jobQueueName
-output appInsightsName string = appInsights.name
+output appInsightsName string = ingestAppInsights.name
+output workerAppInsightsName string = workerAppInsights.name
+output rsAlertsAppInsightsName string = enableRsAlerts ? rsAlertsAppInsights!.name : ''
 output keyVaultName string = keyVault.name
 
 output botName string = bot.name
