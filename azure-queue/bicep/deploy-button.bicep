@@ -93,9 +93,9 @@ param threadContextMessageCount int = 5
 // ---------------------------------------------------------------------------
 // RS Alerts (optional) — a separate, timer-triggered Function App that
 // posts new Google Threat Intelligence alerts to a Teams channel. Off by
-// default; everything besides these three basics (schedule, filters,
-// backfill window, hosting plan, ...) uses main.bicep's own defaults — use
-// main.bicep directly via the CLI for full control over those.
+// default; everything besides these basics (backfill window, hosting
+// plan, ...) uses main.bicep's own defaults — use main.bicep directly via
+// the CLI for full control over those.
 // ---------------------------------------------------------------------------
 
 @description('Set to true to provision RS Alerts alongside the bot.')
@@ -106,6 +106,23 @@ param rsAlertsTeamsChannelLinkOrId string = ''
 
 @description('RS Alerts\' GTI project ID, from the Alerts URL (...&project=projects/<id>). Required when Enable Rs Alerts is true.')
 param rsAlertsGtiProject string = ''
+
+@description('How often RS Alerts polls GTI for new alerts, in hours — converted internally to a schedule that fires at the top of the hour, every N hours (e.g. 1 -> fires every hour, 6 -> every 6 hours). Default of 1 matches the canonical GTI alerts reference script\'s own hourly cadence.')
+@minValue(1)
+@maxValue(24)
+param rsAlertsPollingIntervalHours int = 1
+
+@description('Filter: Severity level (comma-separated LOW/MEDIUM/HIGH). Must resolve to at least one value — there is no "disable this dimension" option, matching the canonical GTI alerts reference script.')
+param rsAlertsFilterSeverityLevel string = 'MEDIUM,HIGH'
+
+@description('Filter: Priority level (comma-separated LOW/MEDIUM/HIGH/CRITICAL). Must resolve to at least one value.')
+param rsAlertsFilterPriorityLevel string = 'MEDIUM,HIGH,CRITICAL'
+
+@description('Filter: Relevance level (comma-separated LOW/MEDIUM/HIGH). Must resolve to at least one value.')
+param rsAlertsFilterRelevanceLevel string = 'MEDIUM,HIGH'
+
+@description('Filter: Relevance confidence (comma-separated LOW/MEDIUM/HIGH). Must resolve to at least one value.')
+param rsAlertsFilterRelevanceConfidence string = 'MEDIUM,HIGH'
 
 // ---------------------------------------------------------------------------
 // Delegate everything else to main.bicep's own defaults
@@ -131,6 +148,11 @@ module main 'main.bicep' = {
     enableRsAlerts: enableRsAlerts
     rsAlertsTeamsChannelLinkOrId: rsAlertsTeamsChannelLinkOrId
     rsAlertsGtiProject: rsAlertsGtiProject
+    rsAlertsPollingIntervalHours: rsAlertsPollingIntervalHours
+    rsAlertsFilterSeverityLevel: rsAlertsFilterSeverityLevel
+    rsAlertsFilterPriorityLevel: rsAlertsFilterPriorityLevel
+    rsAlertsFilterRelevanceLevel: rsAlertsFilterRelevanceLevel
+    rsAlertsFilterRelevanceConfidence: rsAlertsFilterRelevanceConfidence
   }
 }
 
