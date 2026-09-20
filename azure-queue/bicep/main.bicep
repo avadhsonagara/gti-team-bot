@@ -174,7 +174,7 @@ param rsAlertsFunctionAppName string = 'gti-teams-bot-rs-alerts'
 param rsAlertsAppServicePlanName string = '${rsAlertsFunctionAppName}-plan'
 
 @description('Teams channel link or ID (19:xxx@thread.tacv2) that RS Alerts posts GTI alerts into. Required when enableRsAlerts is true — the deployment does not validate this, but the Function App will fail at runtime without it.')
-param rsAlertsTeamsChannelId string = ''
+param rsAlertsTeamsChannelLinkOrId string = ''
 
 @description('RS Alerts\' GTI project ID: the GTI project polled for alerts, from the Alerts URL (...&project=projects/<id>). Required when enableRsAlerts is true.')
 param rsAlertsGtiProject string = ''
@@ -210,7 +210,7 @@ param rsAlertsFilterRelevanceLevel string = 'MEDIUM,HIGH'
 param rsAlertsFilterRelevanceConfidence string = 'MEDIUM,HIGH'
 
 @description('URL to a pre-built RS Alerts code zip (host.json etc. at the zip root). Only used when enableRsAlerts is true. Leave empty to skip automatic code deployment for RS Alerts.')
-param rsAlertsCodeZipUrl string = 'https://raw.githubusercontent.com/avadhsonagara/gti-team-bot/main/azure-queue/gti-teams-bot/rs-alerts-function/code.zip'
+param rsAlertsCodeZipUrl string = 'https://raw.githubusercontent.com/avadhsonagara/gti-team-bot/main/azure-queue/rs-alerts-function/code.zip'
 
 // ---------------------------------------------------------------------------
 // Bot identity & secrets
@@ -525,8 +525,8 @@ var rsAlertsAppSettingsBase = [
     value: rsAlertsGtiProject
   }
   {
-    name: 'TEAMS_CHANNEL_ID'
-    value: rsAlertsTeamsChannelId
+    name: 'TEAMS_CHANNEL_LINK_OR_ID'
+    value: rsAlertsTeamsChannelLinkOrId
   }
   {
     name: 'RS_ALERTS_SCHEDULE'

@@ -3,8 +3,9 @@ from app.gti_client import list_alerts
 
 
 class _FakeResponse:
-    def __init__(self, payload: dict):
+    def __init__(self, payload: dict, status_code: int = 200):
         self._payload = payload
+        self.status_code = status_code
 
     def raise_for_status(self):
         pass
@@ -20,11 +21,12 @@ def test_pagination_follows_next_page_token_until_absent(monkeypatch):
     ]
     calls = []
 
-    def fake_get(url, headers=None, params=None, timeout=None):
+    def fake_request(method, url, headers=None, params=None, timeout=None):
+        assert method == "GET"
         calls.append(dict(params))
         return _FakeResponse(pages[len(calls) - 1])
 
-    monkeypatch.setattr("app.gti_client.requests.get", fake_get)
+    monkeypatch.setattr("app.gti_client.requests.request", fake_request)
 
     result = list(list_alerts("token", "proj", "some filter", page_size=50))
 
@@ -38,7 +40,7 @@ def test_pagination_follows_next_page_token_until_absent(monkeypatch):
 
 def test_empty_alerts_page_stops_without_error(monkeypatch):
     monkeypatch.setattr(
-        "app.gti_client.requests.get",
+        "app.gti_client.requests.request",
         lambda *a, **kw: _FakeResponse({"alerts": [], "nextPageToken": None}),
     )
     assert list(list_alerts("token", "proj", "filter", page_size=50)) == []

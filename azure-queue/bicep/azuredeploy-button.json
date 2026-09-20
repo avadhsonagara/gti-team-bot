@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.47.16.16243",
-      "templateHash": "12802581036952601030"
+      "templateHash": "11777305697993688868"
     }
   },
   "parameters": {
@@ -138,7 +138,7 @@
         "description": "Set to true to provision RS Alerts alongside the bot."
       }
     },
-    "rsAlertsTeamsChannelId": {
+    "rsAlertsTeamsChannelLinkOrId": {
       "type": "string",
       "defaultValue": "",
       "metadata": {
@@ -209,8 +209,8 @@
           "enableRsAlerts": {
             "value": "[parameters('enableRsAlerts')]"
           },
-          "rsAlertsTeamsChannelId": {
-            "value": "[parameters('rsAlertsTeamsChannelId')]"
+          "rsAlertsTeamsChannelLinkOrId": {
+            "value": "[parameters('rsAlertsTeamsChannelLinkOrId')]"
           },
           "rsAlertsGtiProject": {
             "value": "[parameters('rsAlertsGtiProject')]"
@@ -223,7 +223,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.47.16.16243",
-              "templateHash": "5761253634413692175"
+              "templateHash": "3686428214047349299"
             }
           },
           "parameters": {
@@ -435,7 +435,7 @@
                 "description": "Name of the RS Alerts App Service Plan. Only used when enableRsAlerts is true."
               }
             },
-            "rsAlertsTeamsChannelId": {
+            "rsAlertsTeamsChannelLinkOrId": {
               "type": "string",
               "defaultValue": "",
               "metadata": {
@@ -513,7 +513,7 @@
             },
             "rsAlertsCodeZipUrl": {
               "type": "string",
-              "defaultValue": "https://raw.githubusercontent.com/avadhsonagara/gti-team-bot/main/azure-queue/gti-teams-bot/rs-alerts-function/code.zip",
+              "defaultValue": "https://raw.githubusercontent.com/avadhsonagara/gti-team-bot/main/azure-queue/rs-alerts-function/code.zip",
               "metadata": {
                 "description": "URL to a pre-built RS Alerts code zip (host.json etc. at the zip root). Only used when enableRsAlerts is true. Leave empty to skip automatic code deployment for RS Alerts."
               }
@@ -954,7 +954,7 @@
                 "siteConfig": {
                   "linuxFxVersion": "[format('PYTHON|{0}', parameters('pythonVersion'))]",
                   "alwaysOn": false,
-                  "appSettings": "[concat(createArray(createObject('name', 'AzureWebJobsStorage', 'value', format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix={2}', parameters('storageAccountName'), listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').keys[0].value, environment().suffixes.storage)), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference(resourceId('Microsoft.Insights/components', parameters('appInsightsName')), '2020-02-02').ConnectionString), createObject('name', 'CLIENT_ID', 'value', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('ingestFunctionAppName'))), '2023-01-31').clientId), createObject('name', 'MANAGED_IDENTITY_CLIENT_ID', 'value', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('ingestFunctionAppName'))), '2023-01-31').clientId), createObject('name', 'GTI_API_KEY', 'value', format('@Microsoft.KeyVault(SecretUri={0})', reference(resourceId('Microsoft.KeyVault/vaults/secrets', parameters('keyVaultName'), 'GtiApiKey'), '2023-07-01').secretUri)), createObject('name', 'GTI_RSA_PROJECT', 'value', parameters('rsAlertsGtiProject')), createObject('name', 'TEAMS_CHANNEL_ID', 'value', parameters('rsAlertsTeamsChannelId')), createObject('name', 'RS_ALERTS_SCHEDULE', 'value', variables('rsAlertsSchedule')), createObject('name', 'PAGE_SIZE', 'value', string(parameters('rsAlertsPageSize'))), createObject('name', 'BACKFILL_DAYS', 'value', string(parameters('rsAlertsBackfillDays'))), createObject('name', 'WEBSITE_TIME_ZONE', 'value', parameters('rsAlertsScheduleTimezone')), createObject('name', 'FILTER_SEVERITY_LEVEL', 'value', parameters('rsAlertsFilterSeverityLevel')), createObject('name', 'FILTER_PRIORITY_LEVEL', 'value', parameters('rsAlertsFilterPriorityLevel')), createObject('name', 'FILTER_RELEVANCE_LEVEL', 'value', parameters('rsAlertsFilterRelevanceLevel')), createObject('name', 'FILTER_RELEVANCE_CONFIDENCE', 'value', parameters('rsAlertsFilterRelevanceConfidence')), createObject('name', 'STATE_CONTAINER_NAME', 'value', variables('rsAlertsStateContainerName'))), variables('rsAlertsPlanAppSettings'))]"
+                  "appSettings": "[concat(createArray(createObject('name', 'AzureWebJobsStorage', 'value', format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix={2}', parameters('storageAccountName'), listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').keys[0].value, environment().suffixes.storage)), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference(resourceId('Microsoft.Insights/components', parameters('appInsightsName')), '2020-02-02').ConnectionString), createObject('name', 'CLIENT_ID', 'value', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('ingestFunctionAppName'))), '2023-01-31').clientId), createObject('name', 'MANAGED_IDENTITY_CLIENT_ID', 'value', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('ingestFunctionAppName'))), '2023-01-31').clientId), createObject('name', 'GTI_API_KEY', 'value', format('@Microsoft.KeyVault(SecretUri={0})', reference(resourceId('Microsoft.KeyVault/vaults/secrets', parameters('keyVaultName'), 'GtiApiKey'), '2023-07-01').secretUri)), createObject('name', 'GTI_RSA_PROJECT', 'value', parameters('rsAlertsGtiProject')), createObject('name', 'TEAMS_CHANNEL_LINK_OR_ID', 'value', parameters('rsAlertsTeamsChannelLinkOrId')), createObject('name', 'RS_ALERTS_SCHEDULE', 'value', variables('rsAlertsSchedule')), createObject('name', 'PAGE_SIZE', 'value', string(parameters('rsAlertsPageSize'))), createObject('name', 'BACKFILL_DAYS', 'value', string(parameters('rsAlertsBackfillDays'))), createObject('name', 'WEBSITE_TIME_ZONE', 'value', parameters('rsAlertsScheduleTimezone')), createObject('name', 'FILTER_SEVERITY_LEVEL', 'value', parameters('rsAlertsFilterSeverityLevel')), createObject('name', 'FILTER_PRIORITY_LEVEL', 'value', parameters('rsAlertsFilterPriorityLevel')), createObject('name', 'FILTER_RELEVANCE_LEVEL', 'value', parameters('rsAlertsFilterRelevanceLevel')), createObject('name', 'FILTER_RELEVANCE_CONFIDENCE', 'value', parameters('rsAlertsFilterRelevanceConfidence')), createObject('name', 'STATE_CONTAINER_NAME', 'value', variables('rsAlertsStateContainerName'))), variables('rsAlertsPlanAppSettings'))]"
                 }
               },
               "dependsOn": [

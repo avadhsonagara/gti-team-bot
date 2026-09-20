@@ -33,7 +33,7 @@ def _alert(short_id: str, update_time: str) -> dict:
 def test_checkpoint_advances_once_per_sent_alert(monkeypatch):
     settings = Settings(
         _env_file=None,
-        teams_channel_id="19:abc@thread.tacv2",
+        teams_channel_link_or_id="19:abc@thread.tacv2",
         gti_api_key="key",
         gti_rsa_project="p",
         managed_identity_client_id="mi-client-id",
@@ -77,7 +77,7 @@ def test_missing_required_config_raises_before_any_gti_call(monkeypatch):
         job_module.run_job(settings)
         raise AssertionError("expected RuntimeError for missing required config")
     except RuntimeError as exc:
-        assert "TEAMS_CHANNEL_ID" in str(exc)
+        assert "TEAMS_CHANNEL_LINK_OR_ID" in str(exc)
         assert "GTI_API_KEY" in str(exc)
         assert "GTI_RSA_PROJECT" in str(exc)
 
@@ -87,7 +87,7 @@ def test_missing_required_config_raises_before_any_gti_call(monkeypatch):
 def test_missing_managed_identity_raises(monkeypatch):
     settings = Settings(
         _env_file=None,
-        teams_channel_id="19:abc@thread.tacv2",
+        teams_channel_link_or_id="19:abc@thread.tacv2",
         gti_api_key="key",
         gti_rsa_project="p",
         # managed_identity_client_id deliberately left unset
@@ -102,7 +102,7 @@ def test_missing_managed_identity_raises(monkeypatch):
 def test_backfill_days_out_of_range_falls_back_to_default(monkeypatch):
     settings = Settings(
         _env_file=None,
-        teams_channel_id="19:abc@thread.tacv2",
+        teams_channel_link_or_id="19:abc@thread.tacv2",
         gti_api_key="key",
         gti_rsa_project="p",
         managed_identity_client_id="mi-client-id",

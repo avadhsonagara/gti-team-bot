@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     managed_identity_client_id: str = ""
 
     # ── Microsoft Teams target ───────────────────────────────────────────────
-    teams_channel_id: str = ""
+    teams_channel_link_or_id: str = ""
     # Microsoft's own documented global routing alias for proactive messages
     # (RS Alerts always posts proactively, with no incoming activity to read
     # a region-specific serviceUrl from) — resolves the correct region

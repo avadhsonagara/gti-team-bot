@@ -102,7 +102,7 @@ param threadContextMessageCount int = 5
 param enableRsAlerts bool = false
 
 @description('Teams channel link or ID that RS Alerts posts GTI alerts into. Required when Enable Rs Alerts is true.')
-param rsAlertsTeamsChannelId string = ''
+param rsAlertsTeamsChannelLinkOrId string = ''
 
 @description('RS Alerts\' GTI project ID, from the Alerts URL (...&project=projects/<id>). Required when Enable Rs Alerts is true.')
 param rsAlertsGtiProject string = ''
@@ -129,7 +129,7 @@ module main 'main.bicep' = {
     outputFormatInstructions: outputFormatInstructions
     threadContextMessageCount: threadContextMessageCount
     enableRsAlerts: enableRsAlerts
-    rsAlertsTeamsChannelId: rsAlertsTeamsChannelId
+    rsAlertsTeamsChannelLinkOrId: rsAlertsTeamsChannelLinkOrId
     rsAlertsGtiProject: rsAlertsGtiProject
   }
 }
