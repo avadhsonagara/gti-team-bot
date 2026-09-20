@@ -113,7 +113,7 @@ param workerAppServicePlanName string = '${workerFunctionAppName}-plan'
 @description('Set to false to reuse an existing plan named workerAppServicePlanName in this resource group, instead of creating a new one. A Function App cannot move between plans of different types in-place, so this must be false when redeploying onto a worker that already exists on a different plan type.')
 param createWorkerAppServicePlan bool = true
 
-@description('(Only Flex Consumption) Per-instance memory (MB) for the Worker Function App. Ignored when Worker Hosting Plan Type is Consumption.')
+@description('Per-instance memory (MB) for the Worker Function App. Ignored when Worker Hosting Plan Type is Consumption. (Only Flex Consumption)')
 @allowed([
   512
   2048
@@ -126,7 +126,7 @@ param workerInstanceMemoryMB int = 2048
 @maxValue(32)
 param workerConcurrentRequests int = 15
 
-@description('(Only Flex Consumption) Minimum instance count for the Worker Function App. Setting a value > 0 keeps that number of always-ready instances pre-warmed for the queue trigger. Ignored when Worker Hosting Plan Type is Consumption (always scales to zero).')
+@description('Minimum instance count for the Worker Function App. Setting a value > 0 keeps that number of always-ready instances pre-warmed for the queue trigger. Ignored when Worker Hosting Plan Type is Consumption (always scales to zero). (Only Flex Consumption)')
 @minValue(0)
 @maxValue(100)
 param workerMinimumInstanceCount int = 0
@@ -135,16 +135,6 @@ param workerMinimumInstanceCount int = 0
 @minValue(1)
 @maxValue(1000)
 param workerMaximumInstanceCount int = 5
-
-@description('Client-side read timeout (seconds) for a single GTI Agentic API call (GTI_TIMEOUT_SECONDS app setting). Keep this comfortably under the Worker Function App\'s own functionTimeout (baked into the deployed code\'s host.json) so the platform never force-kills an invocation before the GTI client\'s own timeout has a chance to raise a friendly error.')
-@minValue(30)
-@maxValue(1800)
-param gtiTimeoutSeconds int = 480
-
-@description('A dequeued job older than this (seconds, MAX_JOB_AGE_SECONDS app setting) is treated as stale and dropped with an apology instead of running an expensive GTI query for it.')
-@minValue(60)
-@maxValue(1800)
-param maxJobAgeSeconds int = 480
 
 @description('Optional formatting instructions applied to every bot response (e.g. "Show severity as bold text instead of emoji"). Seeds a JSON config blob (bot-config/output-format.json) in the shared storage account on first read — after that the blob is the source of truth and this value is ignored. Leave empty to use the built-in formatting from app/gti/prompt.md.')
 param outputFormatInstructions string = ''
@@ -164,8 +154,8 @@ param threadContextMessageCount int = 5
 // own cursor state (a blob, not the queue or Table Storage).
 // ---------------------------------------------------------------------------
 
-@description('Set to true to provision RS Alerts: a background, timer-triggered Function App that posts new Google Threat Intelligence alerts to a Teams channel.')
-param enableRsAlerts bool = false
+@description('Set to false to skip provisioning RS Alerts: a background, timer-triggered Function App that posts new Google Threat Intelligence alerts to a Teams channel. Enabled by default — rsAlertsTeamsChannelLinkOrId and rsAlertsGtiProject must be set for it to actually run.')
+param enableRsAlerts bool = true
 
 @description('Name of the RS Alerts Function App. Only used when enableRsAlerts is true.')
 param rsAlertsFunctionAppName string = 'gti-teams-bot-rs-alerts'
@@ -400,14 +390,6 @@ var workerAppSettingsBase = concat(sharedCoreAppSettings, [
   {
     name: 'GTI_API_KEY'
     value: '@Microsoft.KeyVault(SecretUri=${kvSecretGtiApiKey.properties.secretUri})'
-  }
-  {
-    name: 'GTI_TIMEOUT_SECONDS'
-    value: string(gtiTimeoutSeconds)
-  }
-  {
-    name: 'MAX_JOB_AGE_SECONDS'
-    value: string(maxJobAgeSeconds)
   }
   {
     name: 'OUTPUT_FORMAT_INSTRUCTIONS'

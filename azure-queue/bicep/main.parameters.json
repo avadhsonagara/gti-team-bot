@@ -35,12 +35,6 @@
     "pythonVersion": {
       "value": "3.12"
     },
-    "gtiTimeoutSeconds": {
-      "value": 480
-    },
-    "maxJobAgeSeconds": {
-      "value": 480
-    },
     "outputFormatInstructions": {
       "value": ""
     },

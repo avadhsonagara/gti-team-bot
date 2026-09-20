@@ -121,7 +121,8 @@ See each app's `.env.example` for the full settings list.
    friendly message to the user instead of a raw error.
 
 2. **`bot-worker-function`** is triggered by the queue. It first checks the
-   job isn't stale (`MAX_JOB_AGE_SECONDS`, default 15 min) — a huge backlog
+   job isn't stale (`MAX_JOB_AGE_SECONDS`, default 8 min, fixed in `.env` —
+   not a Bicep deployment parameter) — a huge backlog
    or repeated retries could otherwise burn a multi-minute GTI query on a
    request the user has long since given up on. It then re-parses the
    activity, downloads any attachments, fetches channel thread context,
@@ -168,14 +169,15 @@ concurrently.
 
 ## Timeout harmonization
 
-`GTI_TIMEOUT_SECONDS` (worker, default 480s / 8 min) and `host.json`'s
-`functionTimeout` (default 9m30s) are deliberately staggered so a
-slow-but-still-processing GTI call is never killed mid-flight by the
-Functions host. Consumption's `functionTimeout` has a hard, Azure-enforced
-10-minute ceiling; if this app is deployed on Flex Consumption instead
-(30-minute ceiling), raise `GTI_TIMEOUT_SECONDS` and `host.json`'s
-`functionTimeout` (via the `AzureFunctionsJobHost__functionTimeout` app
-setting, so no redeploy is needed) together.
+`GTI_TIMEOUT_SECONDS` (worker, default 480s / 8 min, fixed in `.env` — not a
+Bicep deployment parameter) and `host.json`'s `functionTimeout` (default
+9m30s) are deliberately staggered so a slow-but-still-processing GTI call is
+never killed mid-flight by the Functions host. Consumption's
+`functionTimeout` has a hard, Azure-enforced 10-minute ceiling; if this app
+is deployed on Flex Consumption instead (30-minute ceiling), raise
+`GTI_TIMEOUT_SECONDS` and `host.json`'s `functionTimeout` (via the
+`AzureFunctionsJobHost__functionTimeout` app setting, so no redeploy is
+needed) together.
 
 Protection against a second instance picking up a job while the first is
 still working on it does **not** come from `extensions.queues.

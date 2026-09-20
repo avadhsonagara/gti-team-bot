@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.47.16.16243",
-      "templateHash": "3686428214047349299"
+      "templateHash": "6994698220107000377"
     }
   },
   "parameters": {
@@ -132,7 +132,7 @@
         4096
       ],
       "metadata": {
-        "description": "(Only Flex Consumption) Per-instance memory (MB) for the Worker Function App. Ignored when Worker Hosting Plan Type is Consumption."
+        "description": "Per-instance memory (MB) for the Worker Function App. Ignored when Worker Hosting Plan Type is Consumption. (Only Flex Consumption)"
       }
     },
     "workerConcurrentRequests": {
@@ -150,7 +150,7 @@
       "minValue": 0,
       "maxValue": 100,
       "metadata": {
-        "description": "(Only Flex Consumption) Minimum instance count for the Worker Function App. Setting a value > 0 keeps that number of always-ready instances pre-warmed for the queue trigger. Ignored when Worker Hosting Plan Type is Consumption (always scales to zero)."
+        "description": "Minimum instance count for the Worker Function App. Setting a value > 0 keeps that number of always-ready instances pre-warmed for the queue trigger. Ignored when Worker Hosting Plan Type is Consumption (always scales to zero). (Only Flex Consumption)"
       }
     },
     "workerMaximumInstanceCount": {
@@ -160,24 +160,6 @@
       "maxValue": 1000,
       "metadata": {
         "description": "Requested maximum scale-out instance count for the Worker Function App. On Flex Consumption, Azure enforces a hard platform floor of 40 on maximumInstanceCount — a value below 40 is silently raised to 40 on that plan type. On Consumption, the real platform ceiling for a Linux app is 100 (not the 1000 Flex allows) — a value above 100 is silently lowered to 100 on that plan type. See workerAppliedMaxInstanceCount output for the value actually applied either way."
-      }
-    },
-    "gtiTimeoutSeconds": {
-      "type": "int",
-      "defaultValue": 480,
-      "minValue": 30,
-      "maxValue": 1800,
-      "metadata": {
-        "description": "Client-side read timeout (seconds) for a single GTI Agentic API call (GTI_TIMEOUT_SECONDS app setting). Keep this comfortably under the Worker Function App's own functionTimeout (baked into the deployed code's host.json) so the platform never force-kills an invocation before the GTI client's own timeout has a chance to raise a friendly error."
-      }
-    },
-    "maxJobAgeSeconds": {
-      "type": "int",
-      "defaultValue": 480,
-      "minValue": 60,
-      "maxValue": 1800,
-      "metadata": {
-        "description": "A dequeued job older than this (seconds, MAX_JOB_AGE_SECONDS app setting) is treated as stale and dropped with an apology instead of running an expensive GTI query for it."
       }
     },
     "outputFormatInstructions": {
@@ -198,9 +180,9 @@
     },
     "enableRsAlerts": {
       "type": "bool",
-      "defaultValue": false,
+      "defaultValue": true,
       "metadata": {
-        "description": "Set to true to provision RS Alerts: a background, timer-triggered Function App that posts new Google Threat Intelligence alerts to a Teams channel."
+        "description": "Set to false to skip provisioning RS Alerts: a background, timer-triggered Function App that posts new Google Threat Intelligence alerts to a Teams channel. Enabled by default — rsAlertsTeamsChannelLinkOrId and rsAlertsGtiProject must be set for it to actually run."
       }
     },
     "rsAlertsFunctionAppName": {
@@ -633,7 +615,7 @@
         "httpsOnly": true,
         "keyVaultReferenceIdentity": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('ingestFunctionAppName')))]",
         "siteConfig": {
-          "appSettings": "[concat(concat(createArray(createObject('name', 'AzureWebJobsStorage', 'value', format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix={2}', parameters('storageAccountName'), listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').keys[0].value, environment().suffixes.storage)), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference(resourceId('Microsoft.Insights/components', parameters('appInsightsName')), '2020-02-02').ConnectionString), createObject('name', 'CLIENT_ID', 'value', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('ingestFunctionAppName'))), '2023-01-31').clientId), createObject('name', 'MANAGED_IDENTITY_CLIENT_ID', 'value', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('ingestFunctionAppName'))), '2023-01-31').clientId), createObject('name', 'JOB_QUEUE_NAME', 'value', parameters('jobQueueName'))), createArray(createObject('name', 'GTI_API_KEY', 'value', format('@Microsoft.KeyVault(SecretUri={0})', reference(resourceId('Microsoft.KeyVault/vaults/secrets', parameters('keyVaultName'), 'GtiApiKey'), '2023-07-01').secretUri)), createObject('name', 'GTI_TIMEOUT_SECONDS', 'value', string(parameters('gtiTimeoutSeconds'))), createObject('name', 'MAX_JOB_AGE_SECONDS', 'value', string(parameters('maxJobAgeSeconds'))), createObject('name', 'OUTPUT_FORMAT_INSTRUCTIONS', 'value', parameters('outputFormatInstructions')), createObject('name', 'THREAD_CONTEXT_MESSAGE_COUNT', 'value', string(parameters('threadContextMessageCount'))), createObject('name', 'AzureFunctionsJobHost__extensions__queues__batchSize', 'value', string(parameters('workerConcurrentRequests'))), createObject('name', 'AzureFunctionsJobHost__extensions__queues__newBatchThreshold', 'value', string(variables('workerNewBatchThreshold'))), createObject('name', 'PYTHON_THREADPOOL_THREAD_COUNT', 'value', string(parameters('workerConcurrentRequests'))))), createArray(createObject('name', 'DEPLOYMENT_STORAGE_CONNECTION_STRING', 'value', format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix={2}', parameters('storageAccountName'), listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').keys[0].value, environment().suffixes.storage))))]"
+          "appSettings": "[concat(concat(createArray(createObject('name', 'AzureWebJobsStorage', 'value', format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix={2}', parameters('storageAccountName'), listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').keys[0].value, environment().suffixes.storage)), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference(resourceId('Microsoft.Insights/components', parameters('appInsightsName')), '2020-02-02').ConnectionString), createObject('name', 'CLIENT_ID', 'value', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('ingestFunctionAppName'))), '2023-01-31').clientId), createObject('name', 'MANAGED_IDENTITY_CLIENT_ID', 'value', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('ingestFunctionAppName'))), '2023-01-31').clientId), createObject('name', 'JOB_QUEUE_NAME', 'value', parameters('jobQueueName'))), createArray(createObject('name', 'GTI_API_KEY', 'value', format('@Microsoft.KeyVault(SecretUri={0})', reference(resourceId('Microsoft.KeyVault/vaults/secrets', parameters('keyVaultName'), 'GtiApiKey'), '2023-07-01').secretUri)), createObject('name', 'OUTPUT_FORMAT_INSTRUCTIONS', 'value', parameters('outputFormatInstructions')), createObject('name', 'THREAD_CONTEXT_MESSAGE_COUNT', 'value', string(parameters('threadContextMessageCount'))), createObject('name', 'AzureFunctionsJobHost__extensions__queues__batchSize', 'value', string(parameters('workerConcurrentRequests'))), createObject('name', 'AzureFunctionsJobHost__extensions__queues__newBatchThreshold', 'value', string(variables('workerNewBatchThreshold'))), createObject('name', 'PYTHON_THREADPOOL_THREAD_COUNT', 'value', string(parameters('workerConcurrentRequests'))))), createArray(createObject('name', 'DEPLOYMENT_STORAGE_CONNECTION_STRING', 'value', format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix={2}', parameters('storageAccountName'), listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').keys[0].value, environment().suffixes.storage))))]"
         },
         "functionAppConfig": {
           "deployment": {
@@ -688,7 +670,7 @@
           "linuxFxVersion": "[format('PYTHON|{0}', parameters('pythonVersion'))]",
           "alwaysOn": false,
           "functionAppScaleLimit": "[variables('workerClassicMaximumInstanceCount')]",
-          "appSettings": "[concat(concat(createArray(createObject('name', 'AzureWebJobsStorage', 'value', format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix={2}', parameters('storageAccountName'), listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').keys[0].value, environment().suffixes.storage)), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference(resourceId('Microsoft.Insights/components', parameters('appInsightsName')), '2020-02-02').ConnectionString), createObject('name', 'CLIENT_ID', 'value', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('ingestFunctionAppName'))), '2023-01-31').clientId), createObject('name', 'MANAGED_IDENTITY_CLIENT_ID', 'value', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('ingestFunctionAppName'))), '2023-01-31').clientId), createObject('name', 'JOB_QUEUE_NAME', 'value', parameters('jobQueueName'))), createArray(createObject('name', 'GTI_API_KEY', 'value', format('@Microsoft.KeyVault(SecretUri={0})', reference(resourceId('Microsoft.KeyVault/vaults/secrets', parameters('keyVaultName'), 'GtiApiKey'), '2023-07-01').secretUri)), createObject('name', 'GTI_TIMEOUT_SECONDS', 'value', string(parameters('gtiTimeoutSeconds'))), createObject('name', 'MAX_JOB_AGE_SECONDS', 'value', string(parameters('maxJobAgeSeconds'))), createObject('name', 'OUTPUT_FORMAT_INSTRUCTIONS', 'value', parameters('outputFormatInstructions')), createObject('name', 'THREAD_CONTEXT_MESSAGE_COUNT', 'value', string(parameters('threadContextMessageCount'))), createObject('name', 'AzureFunctionsJobHost__extensions__queues__batchSize', 'value', string(parameters('workerConcurrentRequests'))), createObject('name', 'AzureFunctionsJobHost__extensions__queues__newBatchThreshold', 'value', string(variables('workerNewBatchThreshold'))), createObject('name', 'PYTHON_THREADPOOL_THREAD_COUNT', 'value', string(parameters('workerConcurrentRequests'))))), variables('workerClassicPlanAppSettings'))]"
+          "appSettings": "[concat(concat(createArray(createObject('name', 'AzureWebJobsStorage', 'value', format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix={2}', parameters('storageAccountName'), listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-01-01').keys[0].value, environment().suffixes.storage)), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference(resourceId('Microsoft.Insights/components', parameters('appInsightsName')), '2020-02-02').ConnectionString), createObject('name', 'CLIENT_ID', 'value', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('ingestFunctionAppName'))), '2023-01-31').clientId), createObject('name', 'MANAGED_IDENTITY_CLIENT_ID', 'value', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('ingestFunctionAppName'))), '2023-01-31').clientId), createObject('name', 'JOB_QUEUE_NAME', 'value', parameters('jobQueueName'))), createArray(createObject('name', 'GTI_API_KEY', 'value', format('@Microsoft.KeyVault(SecretUri={0})', reference(resourceId('Microsoft.KeyVault/vaults/secrets', parameters('keyVaultName'), 'GtiApiKey'), '2023-07-01').secretUri)), createObject('name', 'OUTPUT_FORMAT_INSTRUCTIONS', 'value', parameters('outputFormatInstructions')), createObject('name', 'THREAD_CONTEXT_MESSAGE_COUNT', 'value', string(parameters('threadContextMessageCount'))), createObject('name', 'AzureFunctionsJobHost__extensions__queues__batchSize', 'value', string(parameters('workerConcurrentRequests'))), createObject('name', 'AzureFunctionsJobHost__extensions__queues__newBatchThreshold', 'value', string(variables('workerNewBatchThreshold'))), createObject('name', 'PYTHON_THREADPOOL_THREAD_COUNT', 'value', string(parameters('workerConcurrentRequests'))))), variables('workerClassicPlanAppSettings'))]"
         }
       },
       "dependsOn": [

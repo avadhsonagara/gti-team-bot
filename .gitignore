@@ -130,6 +130,7 @@ terraform.rc
 !azure-container/rs-alerts/code.zip
 !azure-queue/gti-teams-bot/bot-ingest-function/code.zip
 !azure-queue/gti-teams-bot/bot-worker-function/code.zip
+!azure-queue/rs-alerts-function/code.zip
 !azure-queue-test/gti-teams-bot/bot-ingest-function/code.zip
 !azure-queue-test/gti-teams-bot/bot-worker-function/code.zip
 

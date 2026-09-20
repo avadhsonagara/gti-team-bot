@@ -41,7 +41,7 @@ param workerFunctionAppName string = 'gti-teams-bot-worker'
 ])
 param workerHostingPlanType string = 'FlexConsumption'
 
-@description('(Only Flex Consumption) Per-instance memory (MB) for the Worker Function App. Ignored when Worker Hosting Plan Type is Consumption.')
+@description('Per-instance memory (MB) for the Worker Function App. Ignored when Worker Hosting Plan Type is Consumption. (Only Flex Consumption)')
 @allowed([
   512
   2048
@@ -54,7 +54,7 @@ param workerInstanceMemoryMB int = 2048
 @maxValue(32)
 param workerConcurrentRequests int = 15
 
-@description('(Only Flex Consumption) Minimum instance count for the Worker Function App. Setting a value > 0 keeps that number of always-ready instances pre-warmed for the queue trigger. Ignored when Worker Hosting Plan Type is Consumption (always scales to zero).')
+@description('Minimum instance count for the Worker Function App. Setting a value > 0 keeps that number of always-ready instances pre-warmed for the queue trigger. Ignored when Worker Hosting Plan Type is Consumption (always scales to zero). (Only Flex Consumption)')
 @minValue(0)
 @maxValue(100)
 param workerMinimumInstanceCount int = 0
@@ -72,16 +72,6 @@ param workerMaximumInstanceCount int = 5
 @secure()
 param gtiApiKey string
 
-@description('Client-side read timeout (seconds) for a single GTI Agentic API call.')
-@minValue(30)
-@maxValue(1800)
-param gtiTimeoutSeconds int = 480
-
-@description('A dequeued job older than this (seconds) is treated as stale and dropped with an apology instead of running an expensive GTI query for it.')
-@minValue(60)
-@maxValue(1800)
-param maxJobAgeSeconds int = 480
-
 @description('Optional formatting instructions applied to every bot response (e.g. "Show severity as bold text instead of emoji"). Leave empty to use the bot\'s built-in formatting.')
 param outputFormatInstructions string = ''
 
@@ -98,8 +88,8 @@ param threadContextMessageCount int = 5
 // the CLI for full control over those.
 // ---------------------------------------------------------------------------
 
-@description('Set to true to provision RS Alerts alongside the bot.')
-param enableRsAlerts bool = false
+@description('Set to false to skip provisioning RS Alerts alongside the bot. Enabled by default — Rs Alerts Teams Channel Link Or Id and Rs Alerts Gti Project must be set for it to actually run.')
+param enableRsAlerts bool = true
 
 @description('Teams channel link or ID that RS Alerts posts GTI alerts into. Required when Enable Rs Alerts is true.')
 param rsAlertsTeamsChannelLinkOrId string = ''
@@ -141,8 +131,6 @@ module main 'main.bicep' = {
     workerMinimumInstanceCount: workerMinimumInstanceCount
     workerMaximumInstanceCount: workerMaximumInstanceCount
     gtiApiKey: gtiApiKey
-    gtiTimeoutSeconds: gtiTimeoutSeconds
-    maxJobAgeSeconds: maxJobAgeSeconds
     outputFormatInstructions: outputFormatInstructions
     threadContextMessageCount: threadContextMessageCount
     enableRsAlerts: enableRsAlerts

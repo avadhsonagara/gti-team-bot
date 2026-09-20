@@ -22,10 +22,10 @@ SYSTEM_PROMPT = _PROMPT_PATH.read_text(encoding="utf-8").strip() if _PROMPT_PATH
 # Google Threat Intelligence (GTI) Agentic API client (app/gti/client.py)
 # =============================================================================
 # NOTE: the GTI *read* timeout is NOT here — it's settings.gti_timeout_seconds
-# (app/config.py), because it's deployment-configurable (GTI_TIMEOUT_SECONDS
-# app setting) and part of the harmonized timeout chain with host.json's
-# functionTimeout. Only the connect-timeout half and the retry/backoff knobs
-# below are fixed, non-configurable constants.
+# (app/config.py, GTI_TIMEOUT_SECONDS env var, fixed in .env — not a Bicep
+# deployment parameter) because it's part of the harmonized timeout chain
+# with host.json's functionTimeout. Only the connect-timeout half and the
+# retry/backoff knobs below are fixed, non-configurable constants.
 
 # (connect, read) timeout tuple's connect half — how long to wait for the TCP
 # connection itself before giving up; the read half is settings.gti_timeout_seconds.
