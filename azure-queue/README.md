@@ -239,10 +239,25 @@ the GTI prompt is built — verified with a test asserting the literal
 
 ## Automated tests
 
-[`gti-teams-bot/tests/`](gti-teams-bot/tests) — see its own
-[README](gti-teams-bot/tests/README.md) for why it's three separate suites
-(`tests/ingest`, `tests/worker`, `tests/cross_app`) rather than one. Covers:
-inbound JWT auth including the missing-`serviceUrl` rejection, the
+[`gti-teams-bot/tests/`](gti-teams-bot/tests) and [`rs-alerts-function/tests/`](rs-alerts-function/tests) —
+each app defines its own top-level `app` package, so the suites are run
+independently:
+
+```bash
+# Ingest function app tests
+pytest gti-teams-bot/tests/ingest
+
+# Worker function app tests
+pytest gti-teams-bot/tests/worker
+
+# Cross-app contract & parity tests
+pytest gti-teams-bot/tests/cross_app
+
+# RS alerts function tests
+pytest rs-alerts-function/tests
+```
+
+Covers: inbound JWT auth including the missing-`serviceUrl` rejection, the
 `build_job_payload`/`parse_job_payload` wire-format contract between the two
 apps, `is_placeholder_message`'s five cases, delivery-failure handling in
 `process_job` (including that it now raises instead of silently dropping the
@@ -251,3 +266,4 @@ the Bot Framework Connector retry policy (and that `POST`/`send_activity` is
 deliberately excluded from it), channel-thread pagination once a thread
 exceeds 250 replies, and a parity check that fails if the files meant to
 stay byte-identical between the two apps ever diverge.
+
