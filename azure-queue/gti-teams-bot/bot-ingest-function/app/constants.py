@@ -7,7 +7,7 @@ APP_NAME = "gti-teams-bot-ingest"
 # (bot-worker-function/app/teams/thread.py, is_placeholder_message) matches
 # on it to exclude that placeholder from what gets fed back into the GTI
 # prompt as prior conversation history.
-PLACEHOLDER_TEXT = "⏳ Looking into that with Google Threat Intelligence…"
+PLACEHOLDER_TEXT = "⏳ Looking into that …"
 
 # Name of the Storage Queue used to hand a parsed activity off to the Worker
 # Function App. Kept identical to bot-worker-function/app/constants.py for

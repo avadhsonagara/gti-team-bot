@@ -7,7 +7,7 @@ APP_NAME = "gti-teams-bot-worker"
 # message body; is_placeholder_message() below (via app/teams/thread.py)
 # matches on it to exclude the bot's own placeholder from channel thread
 # context before it's fed back into the GTI prompt as prior history.
-PLACEHOLDER_TEXT = "⏳ Looking into that with Google Threat Intelligence…"
+PLACEHOLDER_TEXT = "⏳ Looking into that …"
 
 # Name of the Storage Queue this Function App is triggered from. Kept
 # identical to bot-ingest-function/app/constants.py for the same reason.
