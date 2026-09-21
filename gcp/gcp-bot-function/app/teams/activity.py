@@ -71,7 +71,6 @@ def parse_activity(body: dict) -> SimpleNamespace:
         text=body.get("text", "") or "",
         timestamp=_parse_timestamp(body.get("timestamp")),
         service_url=body.get("serviceUrl", ""),
-        action=body.get("action", ""),
         channel_data=channel_data,
         conversation=_conversation_ns(body.get("conversation")),
         from_=_account_ns(body.get("from")),

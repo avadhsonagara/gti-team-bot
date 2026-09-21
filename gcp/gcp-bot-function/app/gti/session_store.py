@@ -13,7 +13,6 @@ Schema per document:
   {"session_id": "<gti_session_id>", "team_id": "<team_id>", "channel_id": "<channel_id>"}
 """
 import logging
-import threading
 from typing import Optional
 
 from google.cloud import firestore
@@ -23,13 +22,6 @@ from app.config import Settings, settings
 logger = logging.getLogger("gti-teams-bot")
 
 _firestore_client: Optional[firestore.Client] = None
-
-# Per-thread locks so two concurrent requests for the SAME channel thread
-# serialize around read-session -> maybe-create-in-GTI -> write-session,
-# instead of both reading "no session yet", both creating a GTI session, and
-# one write silently orphaning the other.
-_session_locks: dict[str, threading.Lock] = {}
-_session_locks_guard = threading.Lock()
 
 # Separate document namespace, same collection: caches the last-known
 # team_id for a channel, since channelData.team isn't always present on an
@@ -61,22 +53,6 @@ def _doc_id(team_id: str, channel_id: str, key: str) -> str:
     """Namespace a session key by its channel (falling back to team) to avoid cross-channel collisions."""
     scope = _sanitize(channel_id or team_id or "-")
     return f"{scope}::{_sanitize(key)}"
-
-
-def session_lock(team_id: str, channel_id: str, key: str) -> threading.Lock:
-    """
-    Return a process-wide lock scoped to this team/channel's session key.
-    Hold it around the read-session -> maybe-create-in-GTI -> write-session
-    sequence so two concurrent requests for the same thread can't both
-    create a GTI session and silently orphan one.
-    """
-    lock_key = _doc_id(team_id, channel_id, key)
-    with _session_locks_guard:
-        lock = _session_locks.get(lock_key)
-        if lock is None:
-            lock = threading.Lock()
-            _session_locks[lock_key] = lock
-        return lock
 
 
 def get_session_id(team_id: str, channel_id: str, key: str) -> Optional[str]:

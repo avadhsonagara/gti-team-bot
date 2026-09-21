@@ -39,6 +39,15 @@ logger.info(
 
 def _handle_messaging_endpoint(request: Request):
     """Validate, parse, and route one inbound Bot Framework activity."""
+    # Early guard: this endpoint is publicly reachable (--allow-unauthenticated
+    # — the bot's own Bearer-token check below is what actually gates it), so
+    # it will get arbitrary/abusive traffic. Reject an implausibly large body
+    # outright, before spending any CPU parsing it as JSON.
+    raw_body = request.get_data()
+    if len(raw_body) > settings.max_request_body_bytes:
+        logger.warning("[GUARD] Rejecting oversized request body (%d bytes)", len(raw_body))
+        return jsonify({"error": "Request body too large"}), 413
+
     body = request.get_json(silent=True)
     if not isinstance(body, dict):
         # This endpoint is publicly reachable (--allow-unauthenticated — the

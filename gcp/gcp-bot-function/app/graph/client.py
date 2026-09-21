@@ -12,6 +12,7 @@ import threading
 import time
 
 import requests
+from requests.adapters import HTTPAdapter
 
 from app.config import settings
 
@@ -40,13 +41,31 @@ class GraphClient:
         self.tenant_id = tenant_id or settings.tenant_id
         self.timeout = timeout
         self._session: requests.Session | None = None
+        self._session_lock = threading.Lock()
         self._token: str | None = None
         self._token_expires_at: float = 0.0
         self._token_lock = threading.Lock()
 
     def _get_session(self) -> requests.Session:
+        """
+        Return or lazily initialize the shared requests.Session. Locked
+        (double-checked), same reasoning as _get_token() below — without
+        this, two concurrent requests racing a cold cache each build and
+        mount their own session/connection pool, and the loser's is silently
+        discarded.
+        """
         if self._session is None:
-            self._session = requests.Session()
+            with self._session_lock:
+                if self._session is None:
+                    session = requests.Session()
+                    # Sized to settings.concurrent_requests (see
+                    # app/config.py) rather than urllib3's default of 10.
+                    adapter = HTTPAdapter(
+                        pool_connections=settings.concurrent_requests,
+                        pool_maxsize=settings.concurrent_requests,
+                    )
+                    session.mount("https://", adapter)
+                    self._session = session
         return self._session
 
     # ── Auth ─────────────────────────────────────────────────────────────────

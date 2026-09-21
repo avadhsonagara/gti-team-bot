@@ -17,6 +17,7 @@ import html as html_lib
 import json
 import logging
 import re
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from app.config import settings
@@ -95,12 +96,56 @@ def extract_attachment_text(attachments: list[dict[str, Any]] | None) -> str:
 
 # ── Graph fetch ──────────────────────────────────────────────────────────────
 
+def _parse_graph_datetime(value: str) -> Optional[datetime]:
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        return None
+
+
+_CLOCK_SKEW_MARGIN = timedelta(seconds=60)
+# Ceiling on paginated Graph /replies fetches when building thread context.
+# The primary stopping condition is still timestamp-based (see
+# _page_reaches_target/target_timestamp below) — most threads exit in 1-2
+# pages, well under this cap. This value bounds the worst case instead: at
+# $top=50 per page, 5 pages is at most 6 sequential Graph calls (root + 5
+# reply pages), capping added latency on a single query at a few seconds.
+# The trade-off is that a thread with more than ~250 replies since its last
+# message near "now" can hit this cap before the timestamp check fires,
+# truncating context to the oldest 250 replies instead of the most recent
+# ones — accepted here in exchange for a tighter, predictable latency bound.
+_THREAD_CONTEXT_MAX_PAGES = 5
+
+
+def _detect_page_order(page: list[dict[str, Any]]) -> Optional[str]:
+    """Detect whether messages in a Graph page are ordered ascending or descending."""
+    if len(page) < 2:
+        return None
+    first = _parse_graph_datetime(page[0].get("createdDateTime") or "")
+    last = _parse_graph_datetime(page[-1].get("createdDateTime") or "")
+    if first is None or last is None:
+        return None
+    return "asc" if last >= first else "desc"
+
+
+def _page_reaches_target(page: list[dict[str, Any]], order: Optional[str], target: Optional[datetime]) -> bool:
+    """Check whether a fetched message page has reached or passed the target timestamp."""
+    if target is None or not page or order is None:
+        return False
+    if order == "desc":
+        oldest_in_page = _parse_graph_datetime(page[-1].get("createdDateTime") or "")
+        return oldest_in_page is not None and oldest_in_page <= target - _CLOCK_SKEW_MARGIN
+    newest_in_page = _parse_graph_datetime(page[-1].get("createdDateTime") or "")
+    return newest_in_page is not None and newest_in_page >= target + _CLOCK_SKEW_MARGIN
+
+
 def fetch_thread_messages(
     team_id: str,
     channel_id: str,
     thread_id: str,
     limit: int = 5,
     exclude_message_id: str = "",
+    target_timestamp: Optional[datetime] = None,
 ) -> list[dict[str, Any]]:
     """
     Return up to `limit` most recent PRIOR messages (root + replies) in a
@@ -132,18 +177,34 @@ def fetch_thread_messages(
     replies_url: Optional[str] = (
         f"{_GRAPH_BASE_URL}/teams/{team_id}/channels/{channel_id}/messages/{thread_id}/replies?$top=50"
     )
-    # Cap pagination — a channel thread context window only needs the tail.
+    # _THREAD_CONTEXT_MAX_PAGES is a safety ceiling against runaway
+    # pagination, not the primary stopping condition — see target_timestamp
+    # above. On a thread with more replies than this ceiling covers,
+    # target_timestamp-based early-stop (via _page_reaches_target) is what
+    # actually keeps this from stopping short of the present.
     pages_fetched = 0
-    while replies_url and pages_fetched < 5:
+    order: Optional[str] = None
+    while replies_url and pages_fetched < _THREAD_CONTEXT_MAX_PAGES:
         resp = session.get(replies_url, headers=headers, timeout=graph_client.timeout)
         if resp.status_code != 200:
             raise GraphError(f"Graph replies fetch failed ({resp.status_code}): {resp.text}")
         payload = resp.json()
-        messages.extend(payload.get("value", []))
+        page = payload.get("value", [])
+        messages.extend(page)
         replies_url = payload.get("@odata.nextLink")
         pages_fetched += 1
+        order = _detect_page_order(page) or order
+        if _page_reaches_target(page, order, target_timestamp):
+            break
 
-    messages.sort(key=lambda m: m.get("createdDateTime") or "")
+    # A plain string sort on createdDateTime is unsafe: Graph omits the
+    # fractional-seconds component when it's exactly zero, so e.g.
+    # "...10:00:00.500Z" sorts before "...10:00:00Z" lexicographically
+    # ('.' < 'Z') even though the latter is earlier — inverting order for
+    # any two messages within the same whole second. Parse before comparing.
+    messages.sort(
+        key=lambda m: _parse_graph_datetime(m.get("createdDateTime") or "") or datetime.min.replace(tzinfo=timezone.utc)
+    )
     if exclude_message_id:
         messages = [m for m in messages if m.get("id") != exclude_message_id]
 
@@ -253,6 +314,7 @@ def get_thread_context(activity, scope: str) -> str:
             team_id, channel_id, thread_id,
             limit=settings.thread_context_message_count,
             exclude_message_id=activity.id or "",
+            target_timestamp=getattr(activity, "timestamp", None),
         )
         logger.info(
             "[GRAPH] Fetched %d thread message(s) | team=%s channel=%s thread=%s",

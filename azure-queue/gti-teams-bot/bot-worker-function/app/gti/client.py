@@ -119,12 +119,6 @@ class GTIAgenticClient:
             self._session = session
         return self._session
 
-    def close(self) -> None:
-        """Close the underlying HTTP session and release connection pool resources."""
-        if self._session is not None:
-            self._session.close()
-            self._session = None
-
     # ── Response Text Extraction ──────────────────────────────────────────────
 
     def _extract_response_text(self, data: dict[str, Any]) -> str:
@@ -437,22 +431,6 @@ class GTIAgenticClient:
             except GTISessionNotFoundError:
                 logger.warning("[GTI] Session %s not found/expired — creating a new session.", session_id)
         return self.create_session(message, files)
-
-    def get_session(self, session_id: str) -> dict[str, Any]:
-        """
-        Retrieve details and event history for an existing session.
-
-        Args:
-            session_id: Identifier of the session to fetch.
-
-        Returns:
-            Parsed JSON response dictionary from the GTI API.
-        """
-        endpoint = f"/agentspace/sessions/{session_id}"
-        return self._send_request_with_retries(
-            method="GET",
-            endpoint=endpoint,
-        )
 
 
 # Shared client instance

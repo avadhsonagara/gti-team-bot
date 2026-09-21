@@ -10,7 +10,6 @@ Every inbound Teams message is routed through handle_message():
 import logging
 import threading
 import time
-from contextlib import nullcontext
 from datetime import datetime, timezone
 import re
 from typing import Optional
@@ -20,10 +19,10 @@ from app.constants import SYSTEM_PROMPT
 from app.gti.client import (
     GTIAuthenticationError,
     GTIClientError,
+    GTIEmptyResponseError,
     GTIPayloadTooLargeError,
     GTIRateLimitError,
     GTIServiceError,
-    GTISessionNotFoundError,
     GTITimeoutError,
     gti_client,
 )
@@ -31,7 +30,6 @@ from app.gti.session_store import (
     delete_team_sessions,
     get_session_id,
     get_team_id_for_channel,
-    session_lock,
     set_session_id,
 )
 from app.observability import bind_request, clear_request
@@ -130,22 +128,21 @@ def handle_message(ctx) -> None:
     conversation_id = activity.conversation.id
     sender = _get_sender(activity)
     user_id = getattr(sender, "id", "unknown") if sender else "unknown"
+    user_name = (getattr(sender, "name", None) or user_id) if sender else "unknown"
 
-    bind_request(user=user_id, conversation=conversation_id, activity_id=activity.id or "")
+    bind_request(user=user_id, user_name=user_name, conversation=conversation_id, activity_id=activity.id or "")
     if tenant_id:
         bind_request(tenant=tenant_id)
 
     try:
         scope = _get_conversation_scope(activity)
-        # Download user file/image attachments across all scopes (personal, groupChat, channel).
-        attachments = download_attachments(ctx)
 
         if not user_text or not re.search(r"\w", user_text, re.UNICODE):
-            logger.info("[EVENT] Message with no meaningful query — replying with usage hint.")
+            logger.info("[EVENT] Message with no meaningful query | user='%s' — replying with usage hint.", user_name)
             deliver_message(ctx, None, EMPTY_QUERY_NOTICE, build_status_card(EMPTY_QUERY_NOTICE))
             return
 
-        _handle_user_query(ctx, user_text, tenant_id, conversation_id, scope, attachments)
+        _handle_user_query(ctx, user_text, tenant_id, conversation_id, scope, user_id, user_name)
     finally:
         clear_request()
 
@@ -158,17 +155,22 @@ def _handle_user_query(
     tenant_id: str,
     conversation_id: str,
     scope: str,
-    attachments: Optional[list[tuple[str, bytes, str]]] = None,
+    user_id: str,
+    user_name: str,
 ) -> None:
     """
     Process a GTI query end-to-end:
-      1. Fetch channel thread context (before posting anything of our own)
-      2. Send loading placeholder
-      3. Retrieve or continue the GTI Agentic session for this thread/conversation
-      4. Format and deliver response as Adaptive Card
+      1. Download user file/image attachments
+      2. Fetch channel thread context (before posting anything of our own —
+         GCP has no is_placeholder_message()-style filter the way Azure's
+         thread.py does, so this ordering — not filtering — is what keeps
+         our own placeholder from being read back as prior history)
+      3. Send loading placeholder
+      4. Retrieve or continue the GTI Agentic session for this thread/conversation
+      5. Format and deliver response as Adaptive Card
     """
+    t_start = time.perf_counter()
     loading_activity_id: Optional[str] = None
-    attachments = attachments or []
     # Channel messages already show the original post inline (and, for thread
     # replies, Teams renders the reply-to preview itself) — the quoted-query
     # blockquote is only useful in personal/group chats, which have neither.
@@ -179,33 +181,54 @@ def _handle_user_query(
         quoted_query = "\n".join(quote_lines)
 
     try:
-        preview = user_text[:80] + ("..." if len(user_text) > 80 else "")
-        logger.info("[EVENT] conversation=%s scope=%s", conversation_id, scope)
-        logger.info("[EVENT] query=%r attachments=%d", preview, len(attachments))
+        logger.info(
+            "[WORKER START] Processing User Query | user='%s' (%s) scope=%s | query='%s'",
+            user_name, user_id, scope, user_text,
+        )
 
-        # ── Step 1: Fetch channel thread context (before posting anything —
-        # otherwise our own placeholder reply gets read right back as "history") ──
+        # ── Step 1: Download user file/image attachments ───────────────────
+        t_att = time.perf_counter()
+        attachments = download_attachments(ctx)
+        att_summary = f"count={len(attachments)}"
+        if attachments:
+            att_names = [a[0] for a in attachments if isinstance(a, tuple) and a and a[0]]
+            if att_names:
+                att_summary += f" ({', '.join(att_names)})"
+        logger.info(
+            "[WORKER 1/5] Attachments processed in %.0fms | %s",
+            (time.perf_counter() - t_att) * 1000, att_summary,
+        )
+
+        # ── Step 2: Fetch channel thread context ────────────────────────────
+        t_thread = time.perf_counter()
         thread_context = get_thread_context(ctx.activity, scope)
+        logger.info(
+            "[WORKER 2/5] Thread context processed in %.0fms | active=%s chars=%d",
+            (time.perf_counter() - t_thread) * 1000, bool(thread_context), len(thread_context),
+        )
 
-        # ── Step 2: Send placeholder message ──────────────────────────────────
+        # ── Step 3: Send placeholder message ────────────────────────────────
+        t_placeholder = time.perf_counter()
         try:
             placeholder_text = (
-                f"{quoted_query}\n\n⏳ Looking into that with Google Threat Intelligence…"
+                f"{quoted_query}\n\n⏳ Looking into that …"
                 if quoted_query
-                else "⏳ Looking into that with Google Threat Intelligence…"
+                else "⏳ Looking into that …"
             )
             sent = ctx.send(placeholder_text)
             loading_activity_id = getattr(sent, "id", None)
-            logger.info("[PLACEHOLDER] Posted | id=%s", loading_activity_id)
+            logger.info(
+                "[WORKER 3/5] Placeholder posted in %.0fms | id=%s",
+                (time.perf_counter() - t_placeholder) * 1000, loading_activity_id,
+            )
         except Exception as exc:
-            logger.warning("[PLACEHOLDER] Failed (%s) — will post fresh reply directly", exc)
+            logger.warning(
+                "[WORKER 3/5] Placeholder post failed (%.0fms): %s — will post fresh reply directly",
+                (time.perf_counter() - t_placeholder) * 1000, exc,
+            )
 
-        # ── Step 3: Query GTI Agentic Sessions API (create or continue session) ──
+        # ── Step 4: Query GTI Agentic Sessions API (create or continue session) ──
         output_format = get_output_format(settings)
-        if thread_context:
-            context_preview = thread_context[:80] + ("..." if len(thread_context) > 80 else "")
-            logger.info("[THREAD] Injecting channel thread context into prompt:\n%s", context_preview)
-
         initial_msg = _render_system_prompt(
             user_query=user_text, thread_context=thread_context, output_format=output_format,
         )
@@ -214,112 +237,183 @@ def _handle_user_query(
         # per thread) — personal and group chats always start a fresh
         # session per message; existing_session_id stays None there so
         # send_message() always creates a new session instead of continuing one.
-        #
-        # The read (get_session_id) -> maybe-create-in-GTI (send_message) ->
-        # write (set_session_id) sequence is held under a per-thread lock so
-        # two concurrent requests for the SAME thread can't both read "no
-        # session yet", both create a GTI session, and have one write
-        # silently orphan the other. No-op lock for personal/group chats,
-        # which have no persisted key to race on.
         if scope == "channel":
             session_key = get_session_key(ctx.activity, scope)
             team_id = get_team_id(ctx.activity)
             channel_id = get_channel_id(ctx.activity)
-            lock_ctx = session_lock(team_id, channel_id, session_key)
         else:
             session_key = ""
             team_id = ""
             channel_id = ""
-            lock_ctx = nullcontext()
 
-        with lock_ctx:
-            existing_session_id = get_session_id(team_id, channel_id, session_key) if session_key else None
-            logger.info(
-                "[AGENTIC] Dispatching query to GTI Agentic API | conversation=%s session_key=%s team_id=%s mode=%s",
-                conversation_id, session_key or "-", team_id or "-", "continue" if existing_session_id else "new",
-            )
-            session_id, response_text, _ = gti_client.send_message(
-                message=initial_msg, session_id=existing_session_id, files=attachments,
-            )
-            bind_request(session_id=session_id)
-            if session_key:
-                set_session_id(team_id, channel_id, session_key, session_id)
+        t_gti = time.perf_counter()
+        existing_session_id = get_session_id(team_id, channel_id, session_key) if session_key else None
+        logger.info(
+            "[WORKER 4/5] Dispatching query to GTI Agentic API | mode=%s session_id=%s user='%s' prompt_chars=%d",
+            "continue" if existing_session_id else "new", existing_session_id or "-", user_name, len(initial_msg),
+        )
+        session_id, response_text, _ = gti_client.send_message(
+            message=initial_msg, session_id=existing_session_id, files=attachments,
+        )
+        # Defense in depth: prompt.md instructs the model to never emit
+        # an <at>...</at> mention tag, but that's a prompt-level
+        # instruction, not a guarantee — prompt injection could still
+        # induce one. Stripped here, before any downstream use, so it's
+        # covered whether the response ends up as a native Adaptive Card
+        # or the markdown fallback wrapper.
+        response_text = strip_mentions(response_text)
+        bind_request(session_id=session_id)
+        if session_key:
+            set_session_id(team_id, channel_id, session_key, session_id)
+        logger.info(
+            "[WORKER 4/5] GTI query completed in %.2fs | session_id=%s response_chars=%d",
+            time.perf_counter() - t_gti, session_id, len(response_text),
+        )
 
-        # ── Step 4: Format & Deliver ──────────────────────────────────────────
-        # Try parsing native Adaptive Card JSON from GTI Agent
+        # ── Step 5: Format & Deliver ─────────────────────────────────────────
+        t_deliver = time.perf_counter()
         parsed_card, fallback_text = parse_adaptive_card(response_text)
         if parsed_card:
-            logger.info("[PARSE] Successfully parsed native Adaptive Card from GTI Agent")
+            logger.info("[WORKER 5/5] Parsed native Adaptive Card from GTI Agent response")
             card = inject_quote_into_card(parsed_card, quoted_query)
         else:
-            logger.info("[PARSE] Using markdown Adaptive Card wrapper")
+            logger.info("[WORKER 5/5] Formatting markdown into Adaptive Card wrapper")
             card = build_gti_response_card(response_text, quoted_query=quoted_query)
 
         fallback_text = f"{quoted_query}\n\n{fallback_text}" if quoted_query else fallback_text
 
-        if loading_activity_id:
-            deliver_mode = "edit-in-place" if scope == "channel" else "delete-and-repost"
-        else:
-            deliver_mode = "fresh-send"
+        deliver_mode = "edit-in-place" if (loading_activity_id and scope == "channel") else (
+            "delete-and-repost" if loading_activity_id else "fresh-send"
+        )
+        delivered = deliver_message(ctx, loading_activity_id, fallback_text, card, edit_in_place=(scope == "channel"))
         logger.info(
-            "[DELIVER] Sending response | length=%d chars mode=%s is_native_card=%s",
-            len(response_text),
-            deliver_mode,
-            bool(parsed_card),
+            "[WORKER 5/5] Response delivered in %.0fms | mode=%s is_native_card=%s success=%s",
+            (time.perf_counter() - t_deliver) * 1000, deliver_mode, bool(parsed_card), delivered,
         )
 
-        delivered = deliver_message(ctx, loading_activity_id, fallback_text, card, edit_in_place=(scope == "channel"))
+        total_elapsed = time.perf_counter() - t_start
         if delivered:
-            logger.info("[DONE] Response delivered successfully.", extra={"status": "delivered"})
+            logger.info(
+                "[WORKER DONE] Job finished successfully in %.2fs | user='%s' query='%s' status=delivered",
+                total_elapsed, user_name, user_text, extra={"status": "delivered"},
+            )
         else:
-            logger.error("[DONE] All delivery attempts failed.", extra={"status": "failed"})
+            logger.error(
+                "[WORKER DONE] Delivery failed after %.2fs | user='%s' query='%s' status=failed",
+                total_elapsed, user_name, user_text, extra={"status": "failed"},
+            )
 
     except GTIAuthenticationError as exc:
-        logger.error("[ERROR] GTI API key authentication failed: %s", exc)
+        logger.error(
+            "[WORKER ERROR] GTI API key authentication failed after %.2fs: %s | user='%s' query='%s'",
+            time.perf_counter() - t_start, exc, user_name, user_text,
+        )
         err_msg = "🔑 **Authentication Failed**\n\nThe Google Threat Intelligence API key is invalid or unauthorized. Please verify your `GTI_API_KEY` configuration."
-        deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg), edit_in_place=(scope == "channel"))
+        deliver_message(
+            ctx, loading_activity_id,
+            f"{quoted_query}\n\n{err_msg}" if quoted_query else err_msg,
+            build_status_card(err_msg, quoted_query),
+            edit_in_place=(scope == "channel"),
+        )
 
     except GTIRateLimitError as exc:
-        logger.error("[ERROR] GTI rate limit exceeded: %s", exc)
+        logger.error(
+            "[WORKER ERROR] GTI rate limit exceeded after %.2fs: %s | user='%s' query='%s'",
+            time.perf_counter() - t_start, exc, user_name, user_text,
+        )
         err_msg = "⚠️ **Rate Limit Exceeded**\n\nThe Google Threat Intelligence API rate limit or quota has been reached. Please try again in a moment."
-        deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg), edit_in_place=(scope == "channel"))
+        deliver_message(
+            ctx, loading_activity_id,
+            f"{quoted_query}\n\n{err_msg}" if quoted_query else err_msg,
+            build_status_card(err_msg, quoted_query),
+            edit_in_place=(scope == "channel"),
+        )
 
     except GTITimeoutError as exc:
-        logger.error("[ERROR] GTI request timed out: %s", exc)
+        logger.error(
+            "[WORKER ERROR] GTI request timed out after %.2fs: %s | user='%s' query='%s'",
+            time.perf_counter() - t_start, exc, user_name, user_text,
+        )
         err_msg = "⏱️ **Request Timed Out**\n\nThe threat intelligence query took too long to complete. Try asking a more specific question or query."
-        deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg), edit_in_place=(scope == "channel"))
+        deliver_message(
+            ctx, loading_activity_id,
+            f"{quoted_query}\n\n{err_msg}" if quoted_query else err_msg,
+            build_status_card(err_msg, quoted_query),
+            edit_in_place=(scope == "channel"),
+        )
 
     except GTIServiceError as exc:
-        logger.error("[ERROR] GTI service unavailable: %s", exc)
+        logger.error(
+            "[WORKER ERROR] GTI service unavailable after %.2fs: %s | user='%s' query='%s'",
+            time.perf_counter() - t_start, exc, user_name, user_text,
+        )
         err_msg = "⚠️ **Threat Intelligence Service Unavailable**\n\nThe Google Threat Intelligence service is temporarily unreachable. Please try again shortly."
-        deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg), edit_in_place=(scope == "channel"))
-
-    except GTISessionNotFoundError as exc:
-        logger.error("[ERROR] GTI session not found or expired: %s", exc)
-        err_msg = "🔄 **Session Expired**\n\nYour conversation session with the Google Threat Intelligence service has expired. Please start a new query."
-        deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg), edit_in_place=(scope == "channel"))
+        deliver_message(
+            ctx, loading_activity_id,
+            f"{quoted_query}\n\n{err_msg}" if quoted_query else err_msg,
+            build_status_card(err_msg, quoted_query),
+            edit_in_place=(scope == "channel"),
+        )
 
     except GTIPayloadTooLargeError as exc:
-        logger.error("[ERROR] GTI rejected the request — payload too large: %s", exc)
+        logger.error(
+            "[WORKER ERROR] GTI rejected the request — payload too large after %.2fs: %s | user='%s' query='%s'",
+            time.perf_counter() - t_start, exc, user_name, user_text,
+        )
         err_msg = (
             "📁 **File Too Large**\n\n"
             "The attached file(s) exceed the maximum size the Google Threat Intelligence "
             "service accepts. Please upload a file less than 32 MB, or fewer files at once."
         )
-        deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg), edit_in_place=(scope == "channel"))
+        deliver_message(
+            ctx, loading_activity_id,
+            f"{quoted_query}\n\n{err_msg}" if quoted_query else err_msg,
+            build_status_card(err_msg, quoted_query),
+            edit_in_place=(scope == "channel"),
+        )
 
     except GTIClientError as exc:
-        logger.error("[ERROR] GTI rejected the request: %s", exc)
+        logger.error(
+            "[WORKER ERROR] GTI rejected the request after %.2fs: %s | user='%s' query='%s'",
+            time.perf_counter() - t_start, exc, user_name, user_text,
+        )
         err_msg = "🚫 **Request Rejected**\n\nThe Google Threat Intelligence service could not process this query. Try rephrasing your question."
-        deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg), edit_in_place=(scope == "channel"))
+        deliver_message(
+            ctx, loading_activity_id,
+            f"{quoted_query}\n\n{err_msg}" if quoted_query else err_msg,
+            build_status_card(err_msg, quoted_query),
+            edit_in_place=(scope == "channel"),
+        )
+
+    except GTIEmptyResponseError as exc:
+        # GTI answered 200 OK but produced no usable result (e.g. a blocked
+        # or failed generation on its own side) — a GTI-API-level failure,
+        # not an HTTP/transport error. Not auto-retried: the same query would
+        # most likely produce the same empty result again.
+        logger.error(
+            "[WORKER ERROR] GTI completed the request but returned no displayable result after %.2fs: %s | user='%s' query='%s'",
+            time.perf_counter() - t_start, exc, user_name, user_text,
+        )
+        err_msg = "🤔 **No Results Found**\n\nNo threat intelligence results were returned for this query. Try rephrasing your question or providing more details."
+        deliver_message(
+            ctx, loading_activity_id,
+            f"{quoted_query}\n\n{err_msg}" if quoted_query else err_msg,
+            build_status_card(err_msg, quoted_query),
+            edit_in_place=(scope == "channel"),
+        )
 
     except Exception:
-        logger.exception("[ERROR] Unexpected error in GTI message handler.")
+        logger.exception(
+            "[WORKER ERROR] Unexpected error in GTI message handler after %.2fs | user='%s' query='%s'",
+            time.perf_counter() - t_start, user_name, user_text,
+        )
         err_msg = "⚠️ **Something went wrong while processing your request.** Please try again."
-        deliver_message(ctx, loading_activity_id, err_msg, build_status_card(err_msg), edit_in_place=(scope == "channel"))
-
-    finally:
-        logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        deliver_message(
+            ctx, loading_activity_id,
+            f"{quoted_query}\n\n{err_msg}" if quoted_query else err_msg,
+            build_status_card(err_msg, quoted_query),
+            edit_in_place=(scope == "channel"),
+        )
 
 
 def handle_installation_removed(activity) -> None:

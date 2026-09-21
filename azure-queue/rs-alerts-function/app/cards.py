@@ -6,7 +6,11 @@ priority levels, vulnerability matches, CVEs, affected technologies, and deep li
 """
 
 _PRIORITY_EMOJI = {"CRITICAL": "🔴", "HIGH": "🟠", "MEDIUM": "🟡", "LOW": "🔵"}
-_ALERTS_UI_BASE = "https://proactive.virustotal.com/alerts"
+# proactive.virustotal.com/alerts/{id}?project=... used to be the deep link
+# here, but it now 302s to a proactive-portal-specific login wall before
+# ever reaching the alert (confirmed live) — this is GTI's actual web GUI
+# alert-view route, which loads directly with no extra login hop.
+_ALERTS_UI_BASE = "https://www.virustotal.com/gui/alerts"
 
 
 def _strip_enum(value: str | None, *prefixes: str) -> str | None:
@@ -42,24 +46,20 @@ def alert_id(alert: dict) -> str:
     return name.rsplit("/", 1)[-1] if name else "(unknown)"
 
 
-def _alert_url(alert: dict, project: str) -> str | None:
+def _alert_url(alert: dict) -> str | None:
     """
     Construct the web console deep link for an alert.
 
     Args:
         alert: Alert dictionary.
-        project: GTI project identifier.
 
     Returns:
         URL string to view the alert in the GTI portal, or None.
     """
     aid = alert_id(alert)
-    if not project:
-        parts = alert.get("name", "").split("/")
-        project = parts[1] if len(parts) >= 2 and parts[0] == "projects" else ""
-    if aid == "(unknown)" or not project:
+    if aid == "(unknown)":
         return None
-    return f"{_ALERTS_UI_BASE}/{aid}?project=projects/{project}"
+    return f"{_ALERTS_UI_BASE}/{aid}"
 
 
 # Maps the server-set `detailType` string to (a) the key the populated
@@ -132,13 +132,12 @@ def _detail_facts(detail: dict) -> list[tuple[str, str]]:
     return facts
 
 
-def build_alert_card(alert: dict, project: str) -> dict:
+def build_alert_card(alert: dict) -> dict:
     """
     Build a Teams-compatible Adaptive Card (v1.4) for a GTI alert.
 
     Args:
         alert: Raw alert dictionary received from the GTI API.
-        project: GTI project identifier for constructing deep links.
 
     Returns:
         Adaptive Card payload dictionary ready for posting to Teams.
@@ -189,7 +188,7 @@ def build_alert_card(alert: dict, project: str) -> dict:
         body.append({"type": "FactSet", "facts": facts, "spacing": "Medium"})
 
     actions = []
-    url = _alert_url(alert, project)
+    url = _alert_url(alert)
     if url:
         actions.append({"type": "Action.OpenUrl", "title": "View in GTI", "url": url})
 

@@ -60,10 +60,11 @@ def test_write_overwrites_the_previous_cursor(fake_store):
     assert state_store.read_cursor(_settings()) == "2026-09-17T11:00:00Z"
 
 
-def test_corrupt_blob_degrades_to_fresh_start_not_a_crash(fake_store):
-    """Verify corrupted JSON blob payload degrades to None without raising exceptions."""
+def test_corrupt_blob_raises_instead_of_degrading_to_fresh_start(fake_store):
+    """A corrupted cursor blob must raise, not silently restart and re-flood duplicates."""
     fake_store["data"] = b"{not valid json"
-    assert state_store.read_cursor(_settings()) is None
+    with pytest.raises(RuntimeError, match="corrupted or unreadable"):
+        state_store.read_cursor(_settings())
 
 
 def test_write_retries_transient_failures_then_succeeds(monkeypatch, fake_store):

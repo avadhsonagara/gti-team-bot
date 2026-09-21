@@ -179,9 +179,9 @@ variable "thread_context_message_count" {
 # ── RS Alerts (Background GTI Alerts -> Teams) ───────────────────────────────
 
 variable "enable_rs_alerts" {
-  description = "Set to true to provision the RS Alerts background function and Cloud Scheduler trigger."
+  description = "Set to false to skip provisioning RS Alerts: a background, scheduled Cloud Run function that posts new Google Threat Intelligence alerts to a Teams channel. Enabled by default — rs_alerts_teams_channel_id_or_link and rsa_gti_project must be set for it to actually run (enforced by this module's preconditions at plan/apply time)."
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "rs_alerts_teams_channel_id_or_link" {

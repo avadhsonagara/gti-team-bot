@@ -27,12 +27,17 @@ def rs_alerts_http(request: Request):
     Invoked on schedule by Cloud Scheduler or manually for verification.
     """
     try:
-        logger.info("RS Alerts function invoked via %s %s", request.method, request.path)
+        logger.info("[RS-ALERTS HTTP] Function invoked via %s %s", request.method, request.path)
         summary = run_job(settings)
-        logger.info("RS Alerts run summary: %s", summary)
+        logger.info(
+            "[RS-ALERTS HTTP] Run completed successfully | fetched=%d cursor=%s -> %s",
+            summary.get("fetched", 0),
+            summary.get("cursor_from"),
+            summary.get("cursor_to"),
+        )
         return jsonify(summary), 200
     except Exception as exc:
-        logger.exception("RS Alerts job execution failed: %s", exc)
+        logger.exception("[RS-ALERTS HTTP] Job execution failed: %s", exc)
         return jsonify({"status": "error", "error": str(exc)}), 500
 
 

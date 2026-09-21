@@ -95,13 +95,19 @@ class AlertSender:
         service_url = self._settings.service_url
         url = f"{service_url}v3/conversations/{self._channel_id}/activities"
 
+        alert_name = alert.get("name", "<unknown>")
+        logger.info(
+            "[RS-ALERTS DELIVER] Posting alert %s (%d sent so far) to channel=%s",
+            alert_name, self.total_sent + 1, self._channel_id,
+        )
+
         payload = {
             "type": "message",
             "serviceUrl": service_url,
             "attachments": [
                 {
                     "contentType": "application/vnd.microsoft.card.adaptive",
-                    "content": build_alert_card(alert, self._settings.gti_rsa_project),
+                    "content": build_alert_card(alert),
                 }
             ],
         }
@@ -119,9 +125,9 @@ class AlertSender:
             self._on_checkpoint(update_time)
         elif self._on_checkpoint:
             logger.warning(
-                "Alert %s has no audit.updateTime or audit.createTime — cursor "
-                "cannot advance past it and it may be re-sent on the next run.",
-                alert.get("name", "<unknown>"),
+                "[RS-ALERTS DELIVER] Alert %s has no audit.updateTime or audit.createTime — "
+                "cursor cannot advance past it and it may be re-sent on subsequent runs.",
+                alert_name,
             )
 
         time.sleep(0.3)  # Rate-limit protection

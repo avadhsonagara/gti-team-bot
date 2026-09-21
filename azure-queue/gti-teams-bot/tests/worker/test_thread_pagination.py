@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 from app.teams import thread as thread_module
 
-_TOTAL_REPLIES = 3000  # 60 pages of 50 — exceeds THREAD_CONTEXT_MAX_PAGES (50)
+_TOTAL_REPLIES = 3000  # 60 pages of 50 — exceeds THREAD_CONTEXT_MAX_PAGES (5)
 _PAGE_SIZE = 50
 
 

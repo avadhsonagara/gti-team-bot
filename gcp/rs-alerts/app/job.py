@@ -11,6 +11,7 @@ Flow:
      in Firestore after every successful send.
 """
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 
 from app.config import Settings
@@ -58,7 +59,7 @@ def _backfill_days(settings: Settings) -> int:
     days = settings.backfill_days
     if not (_MIN_BACKFILL_DAYS <= days <= _MAX_BACKFILL_DAYS):
         logger.warning(
-            "BACKFILL_DAYS=%d out of range (%d-%d) — defaulting to %d.",
+            "[RS-ALERTS CONFIG] BACKFILL_DAYS=%d is out of range (%d-%d) — defaulting to %d days.",
             days, _MIN_BACKFILL_DAYS, _MAX_BACKFILL_DAYS, _DEFAULT_BACKFILL_DAYS,
         )
         return _DEFAULT_BACKFILL_DAYS
@@ -67,42 +68,59 @@ def _backfill_days(settings: Settings) -> int:
 
 def run_job(settings: Settings) -> dict:
     """Fetch incremental GTI alerts and deliver them to the Teams channel."""
-    channel_id = _validate_settings(settings)
-    logger.info("Configuration validated. Target channel ID: %s", channel_id)
+    start = time.perf_counter()
+    logger.info("[RS-ALERTS START] RS Alerts synchronization job started.")
 
-    cursor = read_cursor(settings)
-    if cursor:
-        logger.info("Resuming from Firestore cursor: %s", cursor)
-    else:
-        days = _backfill_days(settings)
-        cursor = _to_rfc3339(_now_utc() - timedelta(days=days))
-        logger.info("No prior Firestore cursor found — backfilling from %s (%d day(s)).", cursor, days)
+    try:
+        channel_id = _validate_settings(settings)
+        logger.info("[RS-ALERTS CONFIG] Settings validated. Destination channel ID: %s", channel_id)
 
-    filter_str = build_filter(cursor, settings)
-    logger.info("Alert filter: %s", filter_str)
+        cursor = read_cursor(settings)
+        if cursor:
+            logger.info("[RS-ALERTS CURSOR] Resuming from existing Firestore cursor: %s", cursor)
+        else:
+            days = _backfill_days(settings)
+            cursor = _to_rfc3339(_now_utc() - timedelta(days=days))
+            logger.info(
+                "[RS-ALERTS CURSOR] No previous cursor found — backfilling from %s (%d day(s)).",
+                cursor, days,
+            )
 
-    newest_str = cursor
+        filter_str = build_filter(cursor, settings)
+        logger.info("[RS-ALERTS FILTER] Formulated GTI alert filter: %s", filter_str)
 
-    def checkpoint(update_time: str) -> None:
-        """Advance the cursor in Firestore."""
-        nonlocal newest_str
-        write_cursor(settings, update_time)
-        newest_str = update_time
-        logger.info("Firestore checkpoint saved: %s", update_time)
+        newest_str = cursor
 
-    sender = AlertSender(settings, channel_id, on_checkpoint=checkpoint)
+        def checkpoint(update_time: str) -> None:
+            """Persist updated cursor timestamp in Firestore after successful alert delivery."""
+            nonlocal newest_str
+            write_cursor(settings, update_time)
+            newest_str = update_time
+            logger.info("[RS-ALERTS CHECKPOINT] Cursor checkpoint advanced to: %s", update_time)
 
-    gti_token = get_gti_access_token(settings.gti_api_key)
-    logger.info("GTI token acquired. Fetching alerts...")
+        sender = AlertSender(settings, channel_id, on_checkpoint=checkpoint)
 
-    count = 0
-    for alert in list_alerts(gti_token, settings.gti_rsa_project, filter_str, settings.page_size):
-        sender.send(alert)
-        count += 1
+        logger.info("[RS-ALERTS AUTH] Requesting GTI bearer access token...")
+        gti_token = get_gti_access_token(settings.gti_api_key)
+        logger.info("[RS-ALERTS AUTH] GTI access token acquired successfully.")
 
-    logger.info("Done — %d alert(s) sent to Teams channel.", count)
-    return {
-        "fetched": count,
-        "cursor_from": cursor,
-        "cursor_to": newest_str,
-    }
+        logger.info("[RS-ALERTS FETCH] Querying GTI alerts and delivering to Microsoft Teams...")
+        count = 0
+        for alert in list_alerts(gti_token, settings.gti_rsa_project, filter_str, settings.page_size):
+            sender.send(alert)
+            count += 1
+
+        elapsed = time.perf_counter() - start
+        logger.info(
+            "[RS-ALERTS DONE] Job completed successfully: %d alert(s) sent in %.2fs | cursor: %s -> %s",
+            count, elapsed, cursor, newest_str,
+        )
+        return {
+            "fetched": count,
+            "cursor_from": cursor,
+            "cursor_to": newest_str,
+        }
+    except Exception:
+        elapsed = time.perf_counter() - start
+        logger.exception("[RS-ALERTS FAILED] Job execution aborted after %.2fs due to error.", elapsed)
+        raise

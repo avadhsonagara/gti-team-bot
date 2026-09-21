@@ -5,6 +5,8 @@ Supports authentication via Microsoft Entra ID OAuth2 client-credentials grant
 (CLIENT_ID, CLIENT_SECRET, TENANT_ID).
 """
 import logging
+import time
+
 import requests
 
 from app.config import Settings
@@ -12,6 +14,10 @@ from app.config import Settings
 BOTFRAMEWORK_SCOPE = "https://api.botframework.com/.default"
 
 logger = logging.getLogger("rs-alerts")
+
+_TOKEN_REQUEST_RETRIES = 3
+_TOKEN_REQUEST_BACKOFF_SECONDS = 1.0
+_RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
 
 
 def _get_bot_token_via_client_secret(client_id: str, client_secret: str, tenant_id: str) -> str:
@@ -22,9 +28,36 @@ def _get_bot_token_via_client_secret(client_id: str, client_secret: str, tenant_
         "scope": BOTFRAMEWORK_SCOPE,
         "grant_type": "client_credentials",
     }
-    resp = requests.post(url, data=data, timeout=30)
-    resp.raise_for_status()
-    return resp.json()["access_token"]
+
+    last_exc: Exception | None = None
+    for attempt in range(_TOKEN_REQUEST_RETRIES):
+        try:
+            resp = requests.post(url, data=data, timeout=30)
+        except requests.exceptions.RequestException as exc:
+            last_exc = exc
+            if attempt == _TOKEN_REQUEST_RETRIES - 1:
+                raise
+            delay = _TOKEN_REQUEST_BACKOFF_SECONDS * (2 ** attempt)
+            logger.warning(
+                "[RS-ALERTS RETRY] Bot Framework token request failed (%s) — retrying attempt %d/%d in %.1fs.",
+                exc, attempt + 1, _TOKEN_REQUEST_RETRIES, delay,
+            )
+            time.sleep(delay)
+            continue
+
+        if resp.status_code in _RETRYABLE_STATUS_CODES and attempt < _TOKEN_REQUEST_RETRIES - 1:
+            delay = _TOKEN_REQUEST_BACKOFF_SECONDS * (2 ** attempt)
+            logger.warning(
+                "[RS-ALERTS RETRY] Bot Framework token request returned HTTP %d — retrying attempt %d/%d in %.1fs.",
+                resp.status_code, attempt + 1, _TOKEN_REQUEST_RETRIES, delay,
+            )
+            time.sleep(delay)
+            continue
+
+        resp.raise_for_status()
+        return resp.json()["access_token"]
+
+    raise last_exc or RuntimeError("Bot Framework token request failed after retries.")
 
 
 def get_bot_token(settings: Settings) -> str:

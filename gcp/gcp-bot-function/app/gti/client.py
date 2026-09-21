@@ -11,6 +11,7 @@ import time
 from typing import Any
 
 import requests
+from requests.adapters import HTTPAdapter
 
 from app.config import settings
 
@@ -51,6 +52,10 @@ class GTITimeoutError(GTIError):
     """Raised when the request to the GTI Agentic API times out."""
 
 
+class GTIEmptyResponseError(GTIError):
+    """Raised when the GTI Agentic API returns a 200 OK response with no displayable agent response text."""
+
+
 # ── GTI Agentic API Client ───────────────────────────────────────────────────
 
 class GTIAgenticClient:
@@ -87,6 +92,15 @@ class GTIAgenticClient:
                 "x-apikey": self.api_key,
                 "User-Agent": "gti-teams-bot-agentic-gcp/1.0",
             })
+            # Sized to settings.concurrent_requests (see app/config.py)
+            # rather than urllib3's default of 10, so concurrent Cloud Run
+            # requests each get their own pooled connection instead of
+            # discarding/recreating one past the default pool size.
+            adapter = HTTPAdapter(
+                pool_connections=settings.concurrent_requests,
+                pool_maxsize=settings.concurrent_requests,
+            )
+            session.mount("https://", adapter)
             self._session = session
         return self._session
 
@@ -95,9 +109,12 @@ class GTIAgenticClient:
     def _extract_response_text(self, data: dict[str, Any]) -> str:
         """
         Extract the latest AGENT_FINAL_RESPONSE markdown text from session events.
+
+        Raises:
+            GTIEmptyResponseError: If no valid response text was returned by the agent.
         """
         if not isinstance(data, dict):
-            return "No response generated."
+            raise GTIEmptyResponseError("GTI API response was not a JSON object.")
 
         events = (
             (data.get("data") or {})
@@ -105,9 +122,14 @@ class GTIAgenticClient:
             .get("events", [])
         )
         if not events:
-            return "No response events returned by GTI Agentic API."
+            raise GTIEmptyResponseError("GTI API returned no session events.")
 
-        # Scan events in reverse to find the latest AGENT_FINAL_RESPONSE
+        # Scan events in reverse to find the latest AGENT_FINAL_RESPONSE. The
+        # `if text_parts: return ...` must be inside this `if`, not after —
+        # otherwise, when the LATEST final-response event has no text (e.g.
+        # a chart/table-only widget), the loop would silently keep scanning
+        # backwards and return an OLDER turn's text as if it answered the
+        # current question, instead of raising.
         for event in reversed(events):
             if event.get("message_type") == "AGENT_FINAL_RESPONSE":
                 final_resp = event.get("agent_final_response", {})
@@ -120,8 +142,9 @@ class GTIAgenticClient:
                             text_parts.append(md_text.strip())
                 if text_parts:
                     return "\n\n".join(text_parts)
+                break
 
-        return "Analysis completed, but no displayable text was generated."
+        raise GTIEmptyResponseError("GTI API completed the request but produced no displayable text.")
 
     # ── Core Request Runner with Retries ───────────────────────────────────────
 
@@ -212,18 +235,35 @@ class GTIAgenticClient:
                 response.raise_for_status()
                 return response.json()
 
-            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as exc:
-                logger.warning("[GTI] Connection/timeout error: %s", exc)
+            except requests.exceptions.ConnectionError as exc:
+                # Fails fast (DNS failure, connection refused, a connect
+                # timeout) — cheap to retry, unlike a read timeout below.
+                logger.warning("[GTI] Connection error: %s", exc)
                 last_exc = exc
                 if attempt < self.max_retries:
                     delay = (self.retry_delay * (2 ** attempt)) + random.uniform(0.1, 0.5)
                     logger.info("[GTI] Retrying network error in %.1fs...", delay)
                     time.sleep(delay)
                     continue
-                raise GTITimeoutError(f"GTI request timed out or network failed: {exc}") from exc
+                raise GTITimeoutError(f"GTI request failed after retries (connection error): {exc}") from exc
 
-            except (GTIAuthenticationError, GTISessionNotFoundError, GTIClientError):
-                # Don't retry permanent client-side errors
+            except requests.exceptions.Timeout as exc:
+                # A read timeout means GTI never responded within
+                # self.timeout — deliberately NOT retried, unlike the
+                # ConnectionError case above. Retrying would re-burn the full
+                # self.timeout budget again per attempt, multiplying total
+                # user-facing latency for no benefit — a single attempt at
+                # the full timeout, then fail fast, keeps latency bounded.
+                logger.warning("[GTI] Read timeout after %.0fs: %s", self.timeout, exc)
+                raise GTITimeoutError(f"GTI request timed out after {self.timeout:.0f}s: {exc}") from exc
+
+            except (GTIAuthenticationError, GTISessionNotFoundError, GTIClientError, GTIRateLimitError):
+                # Don't retry client-side / permanent errors, and don't let
+                # GTIRateLimitError fall into the generic `except Exception`
+                # below — it would get logged as "[GTI] Unexpected error",
+                # re-enter the retry loop, and ultimately be re-raised as
+                # GTIServiceError instead, showing the user "Service
+                # Unavailable" instead of the correct "Rate Limit Exceeded".
                 raise
 
             except Exception as exc:

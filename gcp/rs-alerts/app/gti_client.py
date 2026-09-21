@@ -7,6 +7,7 @@ Google Threat Intelligence (GTI) List Alerts API client.
      paginating through all pages.
 """
 import logging
+import time
 from collections.abc import Iterator
 
 import requests
@@ -17,6 +18,50 @@ GTI_TOKEN_URL = "https://idp.prod.identity.proactive.virustotal.com/realms/maste
 GTI_API_BASE = "https://threatintelligence.googleapis.com/v1beta"
 
 logger = logging.getLogger("rs-alerts")
+
+_GTI_REQUEST_RETRIES = 3
+_GTI_REQUEST_BACKOFF_SECONDS = 1.0
+_RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
+
+
+def _request_with_retry(method: str, url: str, **kwargs) -> requests.Response:
+    """
+    Call the GTI API with retry-with-backoff for transient failures
+    (429/5xx/network errors). Any other 4xx (401, 403, 404, ...) is a
+    permanent/config problem — a bad or expired API key, or an invalid
+    project id — that retrying won't fix, so those fail immediately instead
+    of wasting three attempts.
+    """
+    last_exc: Exception | None = None
+    for attempt in range(_GTI_REQUEST_RETRIES):
+        try:
+            resp = requests.request(method, url, **kwargs)
+        except requests.exceptions.RequestException as exc:
+            last_exc = exc
+            if attempt == _GTI_REQUEST_RETRIES - 1:
+                raise
+            delay = _GTI_REQUEST_BACKOFF_SECONDS * (2 ** attempt)
+            logger.warning(
+                "[GTI RETRY] Network error during request (%s) — retrying attempt %d/%d in %.1fs.",
+                exc, attempt + 1, _GTI_REQUEST_RETRIES, delay,
+            )
+            time.sleep(delay)
+            continue
+
+        if resp.status_code in _RETRYABLE_STATUS_CODES and attempt < _GTI_REQUEST_RETRIES - 1:
+            delay = _GTI_REQUEST_BACKOFF_SECONDS * (2 ** attempt)
+            logger.warning(
+                "[GTI RETRY] HTTP %d received — retrying attempt %d/%d in %.1fs.",
+                resp.status_code, attempt + 1, _GTI_REQUEST_RETRIES, delay,
+            )
+            time.sleep(delay)
+            continue
+
+        resp.raise_for_status()
+        return resp
+
+    raise last_exc or RuntimeError("GTI API request failed after retries.")
+
 
 _LEVEL_FILTERS = [
     ("severity_analysis.severity_level", "filter_severity_level", "SEVERITY_LEVEL_",
@@ -32,13 +77,13 @@ _LEVEL_FILTERS = [
 
 def get_gti_access_token(api_key: str) -> str:
     """Exchange the GTI API key for a bearer access token (valid ~4 hours)."""
-    resp = requests.post(
+    resp = _request_with_retry(
+        "POST",
         GTI_TOKEN_URL,
         headers={"Content-Type": "application/json"},
         json={"api_key": api_key},
         timeout=30,
     )
-    resp.raise_for_status()
     return resp.json()["access_token"]
 
 
@@ -86,17 +131,24 @@ def list_alerts(
     headers = {"Authorization": f"Bearer {token}", "x-goog-user-project": project}
     params = {"pageSize": page_size, "orderBy": "audit.update_time asc", "filter": filter_str}
 
+    page_num = 0
+    total_fetched = 0
     while True:
-        logger.info("Calling GET %s", url)
-        resp = requests.get(url, headers=headers, params=params, timeout=60)
-        resp.raise_for_status()
+        page_num += 1
+        logger.info("[GTI FETCH] Requesting page %d from %s", page_num, url)
+        resp = _request_with_retry("GET", url, headers=headers, params=params, timeout=60)
         data = resp.json()
 
         page_alerts = data.get("alerts", [])
-        logger.info("Fetched %d alerts on this page", len(page_alerts))
+        total_fetched += len(page_alerts)
+        logger.info(
+            "[GTI FETCH] Page %d returned %d alert(s) (%d total accumulated so far).",
+            page_num, len(page_alerts), total_fetched,
+        )
         yield from page_alerts
 
         next_token = data.get("nextPageToken")
         if not next_token:
+            logger.info("[GTI FETCH] Pagination complete: %d alert(s) fetched across %d page(s).", total_fetched, page_num)
             break
         params["pageToken"] = next_token

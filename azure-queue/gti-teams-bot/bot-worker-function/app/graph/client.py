@@ -65,12 +65,6 @@ class GraphClient:
                     self._session = session
         return self._session
 
-    def close(self) -> None:
-        """Close the underlying HTTP session and release connection resources."""
-        if self._session is not None:
-            self._session.close()
-            self._session = None
-
     # ── Auth ─────────────────────────────────────────────────────────────────
 
     def _fetch_token_via_managed_identity(self) -> tuple[str, float]:

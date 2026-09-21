@@ -125,11 +125,29 @@ def build_gti_response_card(markdown_text: str, quoted_query: str = "") -> dict:
     }
 
 
-def build_status_card(text: str) -> dict:
+def build_status_card(text: str, quoted_query: str = "") -> dict:
     """
     Wrap a plain warning or informational message in a standard Adaptive Card.
     """
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    body_elements: list[dict] = []
+    if quoted_query:
+        body_elements.append({
+            "type": "TextBlock",
+            "text": quoted_query,
+            "wrap": True,
+            "isSubtle": True,
+            "size": "Small",
+        })
+    body_elements.append({"type": "TextBlock", "wrap": True, "text": text})
+    body_elements.append({
+        "type": "TextBlock",
+        "wrap": True,
+        "isSubtle": True,
+        "size": "Small",
+        "text": f"GTI Teams Bot • {now}",
+        "spacing": "Small",
+    })
     return {
         "type": "AdaptiveCard",
         "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
@@ -137,15 +155,5 @@ def build_status_card(text: str) -> dict:
         "msteams": {
             "width": "full",
         },
-        "body": [
-            {"type": "TextBlock", "wrap": True, "text": text},
-            {
-                "type": "TextBlock",
-                "wrap": True,
-                "isSubtle": True,
-                "size": "Small",
-                "text": f"GTI Teams Bot • {now}",
-                "spacing": "Small",
-            },
-        ],
+        "body": body_elements,
     }

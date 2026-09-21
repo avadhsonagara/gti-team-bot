@@ -172,7 +172,7 @@ class AlertSender:
             "attachments": [
                 {
                     "contentType": "application/vnd.microsoft.card.adaptive",
-                    "content": build_alert_card(alert, self._settings.gti_rsa_project),
+                    "content": build_alert_card(alert),
                 }
             ],
         }

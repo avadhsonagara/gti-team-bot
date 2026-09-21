@@ -54,7 +54,12 @@ def read_cursor(settings: Settings) -> str | None:
         settings: Application settings containing storage configurations.
 
     Returns:
-        Last recorded RFC 3339 update timestamp string, or None if no valid cursor exists.
+        Last recorded RFC 3339 update timestamp string, or None if no cursor exists yet (first run).
+
+    Raises:
+        RuntimeError: If the cursor blob exists but is corrupted/unreadable. This is
+            deliberately NOT treated as a fresh start — doing so would re-send up to
+            BACKFILL_DAYS of alert history as a duplicate flood on the next run.
     """
     blob_client = _blob_client(settings)
     try:
@@ -65,9 +70,13 @@ def read_cursor(settings: Settings) -> str | None:
 
     try:
         data = json.loads(raw)
-    except (json.JSONDecodeError, UnicodeDecodeError):
-        logger.warning("[RS-ALERTS CHECKPOINT] State blob is corrupted or unreadable; starting fresh.")
-        return None
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        logger.error(
+            "[RS-ALERTS CHECKPOINT] State blob is corrupted or unreadable — refusing to treat "
+            "this as a fresh start, which would re-send the entire backfill window as a "
+            "duplicate flood."
+        )
+        raise RuntimeError("Cursor state blob is corrupted or unreadable.") from exc
 
     cursor = data.get("last_update_time")
     if cursor:

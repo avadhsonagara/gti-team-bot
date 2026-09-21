@@ -46,10 +46,16 @@ def read_cursor(settings: Settings) -> str | None:
     )
     doc = doc_ref.get()
     if not doc.exists:
+        logger.info("[RS-ALERTS CHECKPOINT] No previous cursor document found; initializing new cursor.")
         return None
 
     data = doc.to_dict() or {}
-    return data.get("last_update_time")
+    cursor = data.get("last_update_time")
+    if cursor:
+        logger.info("[RS-ALERTS CHECKPOINT] Loaded existing cursor timestamp: %s", cursor)
+    else:
+        logger.info("[RS-ALERTS CHECKPOINT] Cursor document contained no timestamp; starting fresh.")
+    return cursor
 
 
 def write_cursor(settings: Settings, update_time: str) -> None:
@@ -70,14 +76,15 @@ def write_cursor(settings: Settings, update_time: str) -> None:
                 "last_update_time": update_time,
                 "updated_at": firestore.SERVER_TIMESTAMP,
             }, merge=True)
+            logger.info("[RS-ALERTS CHECKPOINT] Saved cursor timestamp %s to Firestore.", update_time)
             return
         except Exception as exc:
             if attempt == _CHECKPOINT_WRITE_RETRIES - 1:
-                logger.error("Failed to write cursor to Firestore: %s", exc)
+                logger.error("[RS-ALERTS CHECKPOINT] Failed to write cursor to Firestore: %s", exc)
                 raise
             delay = _CHECKPOINT_WRITE_BACKOFF_SECONDS * (2 ** attempt)
             logger.warning(
-                "Checkpoint write failed (attempt %d/%d): %s — retrying in %.1fs.",
-                attempt + 1, _CHECKPOINT_WRITE_RETRIES, exc, delay,
+                "[RS-ALERTS RETRY] Checkpoint write failed (attempt %d/%d) — retrying in %.1fs.",
+                attempt + 1, _CHECKPOINT_WRITE_RETRIES, delay,
             )
             time.sleep(delay)

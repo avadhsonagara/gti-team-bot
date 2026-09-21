@@ -9,7 +9,6 @@ where the Bot Framework activity carries no usable file reference at all.
 """
 import base64
 import logging
-from datetime import datetime
 from typing import Any, Optional
 
 import requests
@@ -25,10 +24,6 @@ _FILE_DOWNLOAD_INFO = "application/vnd.microsoft.teams.file.download.info"
 _NON_FILE_PREFIXES = ("text/html", "application/vnd.microsoft.card.")
 _GRAPH_BASE_URL = "https://graph.microsoft.com/v1.0"
 _DOWNLOAD_TIMEOUT = (10.0, 30.0)  # (connect, read) seconds
-
-# Graph message-listing/matching for the fallback path.
-_MESSAGE_LIST_MAX_PAGES = 3       # $top=50/page — page 1 covers virtually every real case
-_MESSAGE_MATCH_WINDOW_SECONDS = 120.0
 
 
 def _is_user_file(content_type: str) -> bool:
@@ -60,127 +55,75 @@ def _download_graph_share(content_url: str) -> bytes:
     return _download(url, headers)
 
 
-def _parse_graph_datetime(value: str) -> Optional[datetime]:
-    try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except (ValueError, AttributeError):
-        return None
+def _graph_get(url: str):
+    """GET against Microsoft Graph, using this client's own token/session/timeout."""
+    token = graph_client._get_token()
+    session = graph_client._get_session()
+    return session.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=graph_client.timeout)
 
 
-def _select_matching_message(
-    messages: list[dict[str, Any]],
-    sender_aad_id: Optional[str],
-    activity_timestamp: Optional[datetime],
-    window_seconds: float,
+def _get_channel_message_by_id(
+    team_id: str, channel_id: str, thread_root_id: str, message_id: str,
 ) -> Optional[dict[str, Any]]:
     """
-    Pick the chatMessage that best matches the inbound activity: has
-    attachments, same sender (when known), createdDateTime closest to (and
-    within window_seconds of) the activity's own timestamp.
+    Direct Graph GET for one exact channel message — the thread's root
+    itself when message_id == thread_root_id, otherwise a reply within it.
+    Bot Framework's activity.id equals the Graph chatMessage.id in both
+    cases, so no listing or fuzzy matching is needed.
     """
-    best, best_delta = None, None
-    for msg in messages:
-        if not msg.get("attachments"):
-            continue
-        frm_user_id = ((msg.get("from") or {}).get("user") or {}).get("id")
-        if sender_aad_id and frm_user_id and frm_user_id != sender_aad_id:
-            continue
-        created = _parse_graph_datetime(msg.get("createdDateTime") or "")
-        if created is None:
-            continue
-        delta = abs((activity_timestamp - created).total_seconds()) if activity_timestamp else 0.0
-        if delta > window_seconds:
-            continue
-        if best is None or delta < best_delta:
-            best, best_delta = msg, delta
-    return best
+    if message_id == thread_root_id:
+        url = f"{_GRAPH_BASE_URL}/teams/{team_id}/channels/{channel_id}/messages/{message_id}"
+    else:
+        url = f"{_GRAPH_BASE_URL}/teams/{team_id}/channels/{channel_id}/messages/{thread_root_id}/replies/{message_id}"
+    resp = _graph_get(url)
+    if resp.status_code == 404:
+        return None
+    if resp.status_code != 200:
+        raise GraphError(f"Graph message-by-id fetch failed ({resp.status_code}): {resp.text}")
+    return resp.json()
 
 
-def _list_graph_chat_messages(chat_id: str, window_seconds: float) -> list[dict[str, Any]]:
-    """List a group chat's recent messages via Graph, newest first."""
-    token = graph_client._get_token()
-    session = graph_client._get_session()
-    headers = {"Authorization": f"Bearer {token}"}
-
-    messages: list[dict[str, Any]] = []
-    url = f"{_GRAPH_BASE_URL}/chats/{chat_id}/messages?$top=50&$orderby=createdDateTime desc"
-    pages_fetched = 0
-    while url and pages_fetched < _MESSAGE_LIST_MAX_PAGES:
-        resp = session.get(url, headers=headers, timeout=graph_client.timeout)
-        if resp.status_code != 200:
-            logger.warning(
-                "[ATTACHMENT] Graph chat-messages list failed (%d) for chat=%s: %s",
-                resp.status_code, chat_id, resp.text,
-            )
-            break
-        payload = resp.json()
-        page = payload.get("value") or []
-        messages.extend(page)
-        oldest_on_page = _parse_graph_datetime(min((m.get("createdDateTime") or "" for m in page), default=""))
-        if oldest_on_page and (datetime.now(oldest_on_page.tzinfo) - oldest_on_page).total_seconds() > window_seconds:
-            break  # createdDateTime-desc — nothing further back can still be in-window
-        url = payload.get("@odata.nextLink")
-        pages_fetched += 1
-    return messages
-
-
-def _list_graph_channel_messages(team_id: str, channel_id: str, thread_id: str) -> list[dict[str, Any]]:
-    """List a channel thread's root + reply messages via Graph, newest first."""
-    token = graph_client._get_token()
-    session = graph_client._get_session()
-    headers = {"Authorization": f"Bearer {token}"}
-
-    messages: list[dict[str, Any]] = []
-    root_url = f"{_GRAPH_BASE_URL}/teams/{team_id}/channels/{channel_id}/messages/{thread_id}"
-    root_resp = session.get(root_url, headers=headers, timeout=graph_client.timeout)
-    if root_resp.status_code == 200:
-        messages.append(root_resp.json())
-    elif root_resp.status_code != 404:
-        logger.warning("[ATTACHMENT] Graph channel root-message fetch failed (%d)", root_resp.status_code)
-
-    url = (
-        f"{_GRAPH_BASE_URL}/teams/{team_id}/channels/{channel_id}/messages/{thread_id}"
-        f"/replies?$top=50&$orderby=createdDateTime desc"
-    )
-    pages_fetched = 0
-    while url and pages_fetched < _MESSAGE_LIST_MAX_PAGES:
-        resp = session.get(url, headers=headers, timeout=graph_client.timeout)
-        if resp.status_code != 200:
-            logger.warning("[ATTACHMENT] Graph channel-replies list failed (%d)", resp.status_code)
-            break
-        payload = resp.json()
-        messages.extend(payload.get("value") or [])
-        url = payload.get("@odata.nextLink")
-        pages_fetched += 1
-    return messages
+def _get_chat_message_by_id(chat_id: str, message_id: str) -> Optional[dict[str, Any]]:
+    """Direct Graph GET for one exact group chat message — same activity.id == chatMessage.id equality."""
+    url = f"{_GRAPH_BASE_URL}/chats/{chat_id}/messages/{message_id}"
+    resp = _graph_get(url)
+    if resp.status_code == 404:
+        return None
+    if resp.status_code != 200:
+        raise GraphError(f"Graph message-by-id fetch failed ({resp.status_code}): {resp.text}")
+    return resp.json()
 
 
 def _fetch_graph_message_attachments(activity, scope: str) -> list[dict[str, Any]]:
     """
     Best-effort: find the inbound message via Microsoft Graph and return its
-    attachments[]. Only applies to channel and groupChat — personal chats
-    already get real file data straight from the Bot Framework activity.
+    attachments[]. Channel and groupChat only — personal chats already get
+    real file data straight from the Bot Framework activity.
 
-    Deliberately does NOT do a direct get-by-id lookup: activity.id is not
-    documented to equal Graph's chatMessage.id for inbound user messages, so
-    a get-by-id would be as likely to 404 on a mismatch as to succeed. Instead
-    this lists recent messages and matches by sender + closest timestamp.
+    activity.id IS the Graph chatMessage.id for both scopes, so this fetches
+    that exact message directly by id — never a listing or a sender/
+    timestamp guess. A list-and-guess approach was deliberately avoided here:
+    a message with NO actual attachment (Bot Framework's own text/html
+    rendering is present regardless of whether a file was attached) could
+    otherwise match some unrelated older message that happened to have one,
+    silently attaching the wrong file to the wrong query.
     """
     if scope not in ("channel", "groupChat"):
         return []
 
     conv_id = getattr(getattr(activity, "conversation", None), "id", None)
-    sender = getattr(activity, "from_property", None) or getattr(activity, "from_", None)
-    sender_aad_id = getattr(sender, "aad_object_id", None) or None
-    activity_timestamp = getattr(activity, "timestamp", None)
     if not conv_id:
+        return []
+
+    message_id = getattr(activity, "id", None) or ""
+    if not message_id:
         return []
 
     try:
         if scope == "channel":
             # Reuse get_team_id()/get_channel_id() (with their conversation.id
             # and channel->team-cache fallbacks) instead of re-reading
-            # channelData inline
+            # channelData inline.
             team_id = get_team_id(activity)
             channel_id = get_channel_id(activity)
             if not team_id and channel_id:
@@ -188,20 +131,16 @@ def _fetch_graph_message_attachments(activity, scope: str) -> list[dict[str, Any
             # An opening post that starts a new channel thread has no
             # ";messageid=" in its own conversation.id (only replies get
             # that, pointing back at the root) — but the opening post's own
-            # activity.id IS that root id. Without this fallback, attaching
-            # a file to a brand-new post silently never got looked up here.
-            thread_id = get_thread_root_id(conv_id) or getattr(activity, "id", None) or ""
-            if not (team_id and channel_id and thread_id):
+            # activity.id IS that root id.
+            thread_root_id = get_thread_root_id(conv_id) or message_id
+            if not (team_id and channel_id and thread_root_id):
                 return []
-            messages = _list_graph_channel_messages(team_id, channel_id, thread_id)
+            match = _get_channel_message_by_id(team_id, channel_id, thread_root_id, message_id)
         else:  # groupChat
-            messages = _list_graph_chat_messages(conv_id, _MESSAGE_MATCH_WINDOW_SECONDS)
+            match = _get_chat_message_by_id(conv_id, message_id)
 
-        match = _select_matching_message(messages, sender_aad_id, activity_timestamp, _MESSAGE_MATCH_WINDOW_SECONDS)
         if not match:
-            logger.warning(
-                "[ATTACHMENT] Graph fallback found no matching message with attachments (scope=%s)", scope,
-            )
+            logger.warning("[ATTACHMENT] Graph fallback found no matching message (scope=%s)", scope)
             return []
         return match.get("attachments") or []
 
@@ -238,10 +177,10 @@ def download_attachments(ctx) -> list[tuple[str, bytes, str]]:
     for attachment in raw_attachments:
         content_type = attachment.content_type or ""
         if not _is_user_file(content_type):
-            logger.info(
-                "[ATTACHMENT] Skipping non-file attachment (content_type=%r) content=%r",
-                content_type, attachment.content,
-            )
+            # Never logs `attachment.content` here — for content_type
+            # "text/html" that content IS the message's own text (Teams'
+            # own HTML rendering of it), not a real attachment.
+            logger.info("[ATTACHMENT] Skipping non-file attachment (content_type=%r)", content_type)
             continue
         name = attachment.name or "file"
 
@@ -286,10 +225,15 @@ def download_attachments(ctx) -> list[tuple[str, bytes, str]]:
     if not results and raw_attachments:
         graph_attachments = _fetch_graph_message_attachments(activity, scope)
         for g_att in graph_attachments:
-            c_type = (g_att.get("contentType") or "").lower()
             c_url = g_att.get("contentUrl")
             name = g_att.get("name") or "file"
-            if c_type != "reference" or not c_url:
+            # Any attachment with a contentUrl is worth trying — not just
+            # contentType == "reference" (Graph's marker for a user sharing
+            # an EXISTING SharePoint/OneDrive file). A freshly-uploaded
+            # channel file/image resolves through Graph the same way (Teams
+            # stores every channel file in SharePoint either way), and may
+            # not carry that exact contentType.
+            if not c_url:
                 continue
 
             try:
@@ -306,4 +250,6 @@ def download_attachments(ctx) -> list[tuple[str, bytes, str]]:
             except Exception:
                 logger.exception("[ATTACHMENT] Unexpected error downloading Graph attachment %r", name)
 
+    if raw_attachments:
+        logger.info("[ATTACHMENT] Downloaded %d of %d attachment(s)", len(results), len(raw_attachments))
     return results

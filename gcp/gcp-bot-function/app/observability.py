@@ -16,7 +16,7 @@ _request_ctx: contextvars.ContextVar[dict] = contextvars.ContextVar(
     "request_ctx", default={}
 )
 
-_CONTEXT_FIELDS = ("activity_id", "user", "conversation", "tenant", "trace", "session_id")
+_CONTEXT_FIELDS = ("activity_id", "user", "user_name", "conversation", "tenant", "trace", "session_id")
 
 
 def _gcp_project() -> str:

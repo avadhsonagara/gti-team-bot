@@ -76,11 +76,12 @@ def validate_bot_framework_token(authorization_header: str, app_id: str, claimed
         # is a subclass of the other, and both mean "reject this request".
         raise BotFrameworkAuthError(f"Token validation failed: {exc}") from exc
 
-    if claimed_service_url:
-        token_service_url = (payload.get("serviceurl") or "").rstrip("/")
-        if token_service_url != claimed_service_url.rstrip("/"):
-            raise BotFrameworkAuthError(
-                f"serviceUrl mismatch: token claims {token_service_url!r}, activity body says {claimed_service_url!r}"
-            )
+    if not claimed_service_url:
+        raise BotFrameworkAuthError("Missing serviceUrl in request body.")
+    token_service_url = (payload.get("serviceurl") or "").rstrip("/")
+    if token_service_url != claimed_service_url.rstrip("/"):
+        raise BotFrameworkAuthError(
+            f"serviceUrl mismatch: token claims {token_service_url!r}, activity body says {claimed_service_url!r}"
+        )
 
     return payload

@@ -57,6 +57,22 @@ class Settings(BaseSettings):
     thread_context_enabled: bool = True
     thread_context_message_count: int = 5
 
+    # ── HTTP connection pool sizing ───────────────────────────────────────────
+    # Reuses the THREADS env var terraform/main.tf already sets from
+    # var.concurrency (Cloud Run's max_instance_request_concurrency) rather
+    # than introducing a second, separate setting — so every outbound HTTP
+    # client's connection pool (Bot Framework Connector, GTI, Graph) can hold
+    # one connection per concurrent request this instance is actually given,
+    # instead of urllib3's default pool size of 10.
+    concurrent_requests: int = Field(default=40, validation_alias="THREADS")
+
+    # ── Inbound request guard ─────────────────────────────────────────────────
+    # /api/messages is publicly reachable (--allow-unauthenticated — the
+    # bot's own Bearer-token check is what actually gates it), so it will get
+    # arbitrary/abusive traffic. Reject an implausibly large body outright,
+    # before spending any CPU parsing it as JSON.
+    max_request_body_bytes: int = 1 * 1024 * 1024
+
     # ── Validators ────────────────────────────────────────────────────────────
 
     @field_validator("gti_api_base_url", mode="before")
@@ -71,6 +87,12 @@ class Settings(BaseSettings):
     def strip_secret(cls, v: str) -> str:
         """Trim whitespace from secret values."""
         return (v or "").strip()
+
+    @field_validator("thread_context_message_count")
+    @classmethod
+    def clamp_thread_context_message_count(cls, v: int) -> int:
+        """Clamp the thread context message count between 1 and 30."""
+        return max(1, min(v, 30))
 
 
 settings = Settings()

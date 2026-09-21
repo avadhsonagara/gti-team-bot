@@ -109,30 +109,22 @@ GRAPH_API_TIMEOUT_SECONDS = 30.0
 # (connect, read) timeout seconds for downloading one attachment's bytes.
 ATTACHMENT_DOWNLOAD_TIMEOUT = (10.0, 30.0)
 
-# Safety ceiling on paginated Graph message-list fetches (channel replies, or
-# a group chat's recent messages) when locating the inbound message's real
-# attachment reference — NOT the primary stopping condition. That's
-# timestamp-based (see attachments.py's _page_reaches_target/target_timestamp): the
-# actual target message's own timestamp, so a very high-traffic channel
-# still gets found correctly no matter how many pages that takes. This cap
-# only guards against truly runaway pagination (e.g. a broken nextLink, or
-# a badly-skewed clock making the timestamp check never trigger) — set high
-# enough that it should never realistically be hit in ordinary use.
-ATTACHMENT_GRAPH_MESSAGE_LIST_MAX_PAGES = 50
-
 
 # =============================================================================
 # Channel thread context (app/teams/thread.py)
 # =============================================================================
 
-# Safety ceiling on paginated Graph /replies fetches when building thread
-# context — NOT the primary stopping condition. That's timestamp-based (see
-# thread.py's _page_reaches_target/target_timestamp): the triggering
-# activity's own timestamp, so a long-running thread still gets its truly
-# most recent messages no matter how many pages that takes. This cap only
-# guards against truly runaway pagination — set high enough that it should
-# never realistically be hit in ordinary use.
-THREAD_CONTEXT_MAX_PAGES = 50
+# Ceiling on paginated Graph /replies fetches when building thread context.
+# The primary stopping condition is still timestamp-based (see thread.py's
+# _page_reaches_target/target_timestamp) — most threads exit in 1-2 pages,
+# well under this cap. This value bounds the worst case instead: at $top=50
+# per page, 5 pages is at most 6 sequential Graph calls (root + 5 reply
+# pages), capping added latency on a single query at a few seconds. The
+# trade-off is that a thread with more than ~250 replies since its last
+# message near "now" can hit this cap before the timestamp check fires,
+# truncating context to the oldest 250 replies instead of the most recent
+# ones — accepted here in exchange for a tighter, predictable latency bound.
+THREAD_CONTEXT_MAX_PAGES = 5
 
 
 # =============================================================================

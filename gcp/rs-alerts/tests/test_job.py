@@ -23,24 +23,21 @@ class _FakeSender:
 
 
 def _alert(short_id: str, update_time: str) -> dict:
-    """Helper creating minimal test alert dictionary."""
     return {"name": f"projects/p/alerts/{short_id}", "audit": {"updateTime": update_time}}
 
 
 def test_checkpoint_advances_once_per_sent_alert(monkeypatch):
-    """Verify that cursor checkpointing is called for each successfully delivered alert in order."""
     settings = Settings(
         _env_file=None,
-        teams_channel_link_or_id="19:abc@thread.tacv2",
+        teams_channel_id="19:abc@thread.tacv2",
         gti_api_key="key",
         gti_rsa_project="p",
-        managed_identity_client_id="mi-client-id",
+        client_id="c", client_secret="s", tenant_id="t",
     )
 
     monkeypatch.setattr(job_module, "read_cursor", lambda s: "2026-09-17T10:00:00Z")
     writes: list[str] = []
     monkeypatch.setattr(job_module, "write_cursor", lambda s, t: writes.append(t))
-    monkeypatch.setattr(job_module, "ensure_app_installed", lambda team_id, s: None)
     monkeypatch.setattr(job_module, "get_gti_access_token", lambda key: "fake-token")
     monkeypatch.setattr(job_module, "AlertSender", _FakeSender)
 
@@ -62,7 +59,6 @@ def test_checkpoint_advances_once_per_sent_alert(monkeypatch):
 
 
 def test_missing_required_config_raises_before_any_gti_call(monkeypatch):
-    """Verify missing mandatory settings raise RuntimeError before initiating external calls."""
     settings = Settings(_env_file=None)
 
     called = {"list_alerts": False}
@@ -75,41 +71,40 @@ def test_missing_required_config_raises_before_any_gti_call(monkeypatch):
         job_module.run_job(settings)
         raise AssertionError("expected RuntimeError for missing required config")
     except RuntimeError as exc:
-        assert "TEAMS_CHANNEL_LINK_OR_ID" in str(exc)
+        assert "TEAMS_CHANNEL_ID" in str(exc)
         assert "GTI_API_KEY" in str(exc)
         assert "GTI_RSA_PROJECT" in str(exc)
 
     assert called["list_alerts"] is False
 
 
-def test_missing_managed_identity_raises(monkeypatch):
-    """Verify missing MANAGED_IDENTITY_CLIENT_ID raises RuntimeError."""
+def test_missing_bot_framework_credentials_raises(monkeypatch):
     settings = Settings(
         _env_file=None,
-        teams_channel_link_or_id="19:abc@thread.tacv2",
+        teams_channel_id="19:abc@thread.tacv2",
         gti_api_key="key",
         gti_rsa_project="p",
     )
     try:
         job_module.run_job(settings)
-        raise AssertionError("expected RuntimeError for missing MANAGED_IDENTITY_CLIENT_ID")
+        raise AssertionError("expected RuntimeError for missing Bot Framework credentials")
     except RuntimeError as exc:
-        assert "MANAGED_IDENTITY_CLIENT_ID" in str(exc)
+        assert "CLIENT_ID" in str(exc)
+        assert "CLIENT_SECRET" in str(exc)
+        assert "TENANT_ID" in str(exc)
 
 
 def test_backfill_days_out_of_range_falls_back_to_default(monkeypatch):
-    """Verify backfill_days setting outside range [1, 7] falls back to default 7 days."""
     settings = Settings(
         _env_file=None,
-        teams_channel_link_or_id="19:abc@thread.tacv2",
+        teams_channel_id="19:abc@thread.tacv2",
         gti_api_key="key",
         gti_rsa_project="p",
-        managed_identity_client_id="mi-client-id",
+        client_id="c", client_secret="s", tenant_id="t",
         backfill_days=30,
     )
     monkeypatch.setattr(job_module, "read_cursor", lambda s: None)
     monkeypatch.setattr(job_module, "write_cursor", lambda s, t: None)
-    monkeypatch.setattr(job_module, "ensure_app_installed", lambda team_id, s: None)
     monkeypatch.setattr(job_module, "get_gti_access_token", lambda key: "fake-token")
     monkeypatch.setattr(job_module, "AlertSender", _FakeSender)
     monkeypatch.setattr(job_module, "list_alerts", lambda *a, **kw: iter([]))
@@ -125,16 +120,15 @@ def test_job_failure_is_logged_and_reraised(monkeypatch, caplog):
     """[RS-ALERTS FAILED] must fire and the original exception must still propagate."""
     settings = Settings(
         _env_file=None,
-        teams_channel_link_or_id="19:abc@thread.tacv2",
+        teams_channel_id="19:abc@thread.tacv2",
         gti_api_key="key",
         gti_rsa_project="p",
-        managed_identity_client_id="mi-client-id",
+        client_id="c", client_secret="s", tenant_id="t",
     )
     monkeypatch.setattr(job_module, "read_cursor", lambda s: "2026-09-17T10:00:00Z")
 
     def _raise(key):
         raise RuntimeError("GTI is down")
-    monkeypatch.setattr(job_module, "ensure_app_installed", lambda team_id, s: None)
     monkeypatch.setattr(job_module, "get_gti_access_token", _raise)
 
     with pytest.raises(RuntimeError, match="GTI is down"):
@@ -142,4 +136,3 @@ def test_job_failure_is_logged_and_reraised(monkeypatch, caplog):
             job_module.run_job(settings)
 
     assert any("[RS-ALERTS FAILED]" in rec.message for rec in caplog.records)
-
