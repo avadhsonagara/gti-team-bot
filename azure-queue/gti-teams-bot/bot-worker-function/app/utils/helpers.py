@@ -52,22 +52,24 @@ def parse_adaptive_card(raw_text: str | None) -> tuple[Optional[dict], str]:
         isn't a valid AdaptiveCard shape.
     """
     text = (raw_text or "").strip()
-    # Strip a code fence anywhere in the text (not just at the start), in
-    # case the model prefaces the JSON with prose. Falls back to stripping
-    # just a leading fence when there's no matching close (e.g. output
-    # truncated before the closing ```) — a matched pair is preferred
-    # whenever both exist.
-    fence_start = text.find("```")
-    if fence_start != -1:
-        fence_end = text.rfind("```")
-        if fence_end > fence_start:
-            text = re.sub(r"^[a-zA-Z]*\n?", "", text[fence_start + 3:fence_end]).strip()
-        elif text.startswith("```"):
-            text = re.sub(r"^```[a-zA-Z]*\n?", "", text).strip()
+    if not text:
+        return None, "No response generated."
+
+    # Try parsing as-is first — a triple-backtick code span embedded inside
+    # a TextBlock's own text value (e.g. a shell command or IOC the model
+    # wrapped in markdown) is valid JSON and must not be mistaken for an
+    # enclosing fence. Only strip a fence, and only a genuinely *leading*
+    # one, if direct parsing fails.
     try:
         data = json.loads(text)
     except json.JSONDecodeError:
-        return None, raw_text or "No response generated."
+        if text.startswith("```"):
+            text = re.sub(r"^```[a-zA-Z]*\n?", "", text)
+            text = re.sub(r"\n?```$", "", text).strip()
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            return None, raw_text or "No response generated."
 
     if isinstance(data, dict) and data.get("type") == "AdaptiveCard" and isinstance(data.get("body"), list) and data["body"]:
         data.setdefault("msteams", {})["width"] = "full"

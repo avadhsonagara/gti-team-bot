@@ -23,7 +23,6 @@ from app.gti.client import (
     GTIPayloadTooLargeError,
     GTIRateLimitError,
     GTIServiceError,
-    GTISessionNotFoundError,
     GTITimeoutError,
     gti_client,
 )
@@ -203,6 +202,13 @@ def process_job(raw_payload: dict, dequeue_count: int = 1) -> None:
         session_id, response_text, _ = gti_client.send_message(
             message=initial_msg, session_id=existing_session_id, files=attachments,
         )
+        # Defense in depth: prompt.md instructs the model to never emit an
+        # <at>...</at> mention tag, but that's a prompt-level instruction,
+        # not a guarantee — prompt injection could still induce one.
+        # Stripped here, before any downstream use, so it's covered whether
+        # the response ends up as a native Adaptive Card or the markdown
+        # fallback wrapper.
+        response_text = strip_mentions(response_text)
         bind_request(session_id=session_id)
         if have_session_key:
             set_session_id(team_id, channel_id, team_post_id, session_id)
@@ -278,20 +284,6 @@ def process_job(raw_payload: dict, dequeue_count: int = 1) -> None:
     except GTIServiceError as exc:
         logger.error("[WORKER ERROR] GTI service unavailable after %.2fs: %s", time.perf_counter() - t_worker_start, exc)
         err_msg = "⚠️ **Service Temporarily Unavailable**\n\nThe threat intelligence service is currently unreachable. Please try again in a few moments."
-        deliver_message(
-            ctx, loading_activity_id,
-            f"{quoted_query}\n\n{err_msg}" if quoted_query else err_msg,
-            build_status_card(err_msg, quoted_query),
-            edit_in_place=(scope == "channel"),
-        )
-
-    except GTISessionNotFoundError as exc:
-        logger.error("[WORKER ERROR] GTI session not found or expired after %.2fs: %s", time.perf_counter() - t_worker_start, exc)
-        err_msg = (
-            "🔄 **Thread Session Expired**\n\n"
-            "The conversation session for this channel thread has timed out. "
-            "Please post your question again to start a fresh analysis."
-        )
         deliver_message(
             ctx, loading_activity_id,
             f"{quoted_query}\n\n{err_msg}" if quoted_query else err_msg,

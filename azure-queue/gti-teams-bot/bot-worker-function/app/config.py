@@ -69,6 +69,20 @@ class Settings(BaseSettings):
     # used).
     thread_context_message_count: int = 5
 
+    # ── HTTP connection pool sizing ───────────────────────────────────────────
+    # Matches bicep/main.bicep's workerConcurrentRequests (same value also
+    # drives PYTHON_THREADPOOL_THREAD_COUNT) so every outbound HTTP client's
+    # connection pool (Bot Framework Connector — app/teams/bot_client.py,
+    # shared byte-for-byte with bot-ingest-function's own copy, hence the
+    # generic field name — plus GTI and Graph, worker-only) can actually hold
+    # one connection per concurrent worker thread — urllib3's own default
+    # pool size is 10 regardless of actual thread count, which silently
+    # discards and recreates connections (repeated TCP/TLS handshakes) once
+    # concurrency exceeds it. Redeploying with a different
+    # workerConcurrentRequests automatically resizes these pools too, with
+    # no code change needed.
+    concurrent_requests: int = 15
+
     # ── Queue hand-off from the Ingest Function App ──────────────────────────
     job_queue_name: str = DEFAULT_QUEUE_NAME
     # A message that has sat in the queue longer than this before being

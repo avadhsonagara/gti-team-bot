@@ -44,7 +44,14 @@ _retry_strategy = Retry(
     status_forcelist=list(BOT_CONNECTOR_RETRY_STATUS_FORCELIST),
     raise_on_status=False,
 )
-_session.mount("https://", HTTPAdapter(max_retries=_retry_strategy))
+_session.mount(
+    "https://",
+    HTTPAdapter(
+        max_retries=_retry_strategy,
+        pool_connections=settings.concurrent_requests,
+        pool_maxsize=settings.concurrent_requests,
+    ),
+)
 _bot_token: str | None = None
 _bot_token_expires_at: float = 0.0
 _token_lock = threading.Lock()
@@ -85,9 +92,30 @@ def _headers() -> dict:
 
 
 def send_activity(service_url: str, conversation_id: str, activity: dict) -> dict:
-    """POST a new activity to a conversation. Returns the Connector API response (includes 'id')."""
+    """
+    POST a new activity to a conversation. Returns the Connector API response
+    (includes 'id').
+
+    POST is deliberately excluded from the mounted adapter's own retry
+    strategy (see _retry_strategy above) to avoid double-posting on an
+    ambiguous 5xx failure. A 429 carries no such risk — it means the request
+    was throttled before being processed at all — so it's retried here
+    instead, respecting Retry-After when the Connector API sends one.
+    """
     url = f"{service_url.rstrip('/')}/v3/conversations/{conversation_id}/activities"
-    resp = _session.post(url, headers=_headers(), json=activity, timeout=BOT_CONNECTOR_TIMEOUT)
+    for attempt in range(BOT_CONNECTOR_RETRY_TOTAL + 1):
+        resp = _session.post(url, headers=_headers(), json=activity, timeout=BOT_CONNECTOR_TIMEOUT)
+        if resp.status_code != 429 or attempt == BOT_CONNECTOR_RETRY_TOTAL:
+            break
+        retry_after = resp.headers.get("Retry-After")
+        delay = float(retry_after) if retry_after and retry_after.strip().isdigit() else (
+            BOT_CONNECTOR_RETRY_BACKOFF_FACTOR * (2 ** attempt)
+        )
+        logger.warning(
+            "[BOT] Rate limited (429) sending activity — retrying in %.1fs (attempt %d/%d)...",
+            delay, attempt + 1, BOT_CONNECTOR_RETRY_TOTAL,
+        )
+        time.sleep(delay)
     resp.raise_for_status()
     return resp.json() if resp.content else {}
 

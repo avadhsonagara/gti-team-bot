@@ -46,6 +46,14 @@ class Settings(BaseSettings):
     azure_web_jobs_storage: str = Field(default="", validation_alias="AzureWebJobsStorage")
     job_queue_name: str = DEFAULT_QUEUE_NAME
 
+    # ── HTTP connection pool sizing ───────────────────────────────────────────
+    # Matches bicep/main.bicep's ingestConcurrentRequests (same value also
+    # drives PYTHON_THREADPOOL_THREAD_COUNT) so app/teams/bot_client.py's
+    # connection pool — shared byte-for-byte with bot-worker-function's own
+    # copy, hence the generic field name — can hold one connection per
+    # concurrent request instead of urllib3's default pool size of 10.
+    concurrent_requests: int = 20
+
     # ── Safety guards ─────────────────────────────────────────────────────────
     # Azure Storage Queue messages are hard-capped at 64 KiB. The enqueued job
     # is the raw Activity JSON plus a little metadata — almost always tiny,

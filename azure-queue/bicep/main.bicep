@@ -390,6 +390,15 @@ var ingestAppSettings = concat(sharedCoreAppSettings, [
     name: 'PYTHON_THREADPOOL_THREAD_COUNT'
     value: string(ingestConcurrentRequests)
   }
+  {
+    // Read by app/config.py so app/teams/bot_client.py's outbound Bot
+    // Framework Connector connection pool (shared byte-for-byte with
+    // bot-worker-function's own copy) is sized to match actual thread
+    // concurrency instead of urllib3's default pool size of 10 — see the
+    // comment on concurrent_requests in config.py.
+    name: 'CONCURRENT_REQUESTS'
+    value: string(ingestConcurrentRequests)
+  }
 ])
 
 var workerAppSettingsBase = concat(sharedCoreAppSettings, [
@@ -423,6 +432,14 @@ var workerAppSettingsBase = concat(sharedCoreAppSettings, [
   }
   {
     name: 'PYTHON_THREADPOOL_THREAD_COUNT'
+    value: string(workerConcurrentRequests)
+  }
+  {
+    // Read by app/config.py so the worker's own outbound HTTP connection
+    // pools (Bot Framework Connector, GTI, Graph) are sized to match actual
+    // thread concurrency instead of urllib3's default pool size of 10 —
+    // see the comment on concurrent_requests in config.py.
+    name: 'CONCURRENT_REQUESTS'
     value: string(workerConcurrentRequests)
   }
 ])

@@ -1,13 +1,13 @@
 {
   "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.30/MicrosoftTeams.schema.json",
   "manifestVersion": "1.30",
-  "version": "1.0.1",
+  "version": "1.0.0",
   "id": "",
   "developer": {
     "name": "Google",
-    "websiteUrl": "https://example.com",
-    "privacyUrl": "https://example.com/privacy",
-    "termsOfUseUrl": "https://example.com/terms"
+    "websiteUrl": "https://www.virustotal.com",
+    "privacyUrl": "https://policies.google.com/privacy",
+    "termsOfUseUrl": "https://policies.google.com/terms"
   },
   "icons": {
     "color": "color.png",

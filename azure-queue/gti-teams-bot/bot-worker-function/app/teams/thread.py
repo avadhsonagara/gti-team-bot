@@ -28,7 +28,7 @@ import html as html_lib
 import json
 import logging
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from app.config import settings
@@ -261,7 +261,14 @@ def fetch_thread_messages(
         if _page_reaches_target(page, order, target_timestamp):
             break
 
-    messages.sort(key=lambda m: m.get("createdDateTime") or "")
+    # A plain string sort on createdDateTime is unsafe: Graph omits the
+    # fractional-seconds component when it's exactly zero, so e.g.
+    # "...10:00:00.500Z" sorts before "...10:00:00Z" lexicographically
+    # ('.' < 'Z') even though the latter is earlier — inverting order for
+    # any two messages within the same whole second. Parse before comparing.
+    messages.sort(
+        key=lambda m: _parse_graph_datetime(m.get("createdDateTime") or "") or datetime.min.replace(tzinfo=timezone.utc)
+    )
     messages = [
         m for m in messages
         if m.get("id") != exclude_message_id and not is_placeholder_message(m, bot_app_id)

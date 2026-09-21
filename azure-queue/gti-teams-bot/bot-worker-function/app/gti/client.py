@@ -15,6 +15,7 @@ import time
 from typing import Any
 
 import requests
+from requests.adapters import HTTPAdapter
 
 from app.config import settings
 from app.constants import (
@@ -106,11 +107,21 @@ class GTIAgenticClient:
     def _get_session(self) -> requests.Session:
         """Return or lazily initialize the shared requests.Session."""
         if self._session is None:
-            self._session = requests.Session()
-            self._session.headers.update({
+            session = requests.Session()
+            session.headers.update({
                 "x-apikey": self.api_key,
                 "User-Agent": "gti-teams-bot-agentic/1.0",
             })
+            # Sized to settings.concurrent_requests (see app/config.py)
+            # rather than urllib3's default of 10, so concurrent worker
+            # threads each get their own pooled connection instead of
+            # discarding/recreating one past the default pool size.
+            adapter = HTTPAdapter(
+                pool_connections=settings.concurrent_requests,
+                pool_maxsize=settings.concurrent_requests,
+            )
+            session.mount("https://", adapter)
+            self._session = session
         return self._session
 
     def close(self) -> None:
