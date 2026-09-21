@@ -1,5 +1,8 @@
 """
-Adaptive Card formatter for GTI alerts.
+Adaptive Card payload generators for GTI threat intelligence alerts.
+
+Constructs schema-compliant Adaptive Cards (version 1.4) summarizing GTI alert findings,
+priority levels, vulnerability matches, CVEs, affected technologies, and deep links.
 """
 
 _PRIORITY_EMOJI = {"CRITICAL": "🔴", "HIGH": "🟠", "MEDIUM": "🟡", "LOW": "🔵"}
@@ -7,6 +10,16 @@ _ALERTS_UI_BASE = "https://proactive.virustotal.com/alerts"
 
 
 def _strip_enum(value: str | None, *prefixes: str) -> str | None:
+    """
+    Remove known enum prefixes from a value string.
+
+    Args:
+        value: Input string or None.
+        *prefixes: Variable length prefixes to strip if matched.
+
+    Returns:
+        Stripped string value, or original value.
+    """
     if not value:
         return None
     for prefix in prefixes:
@@ -16,11 +29,30 @@ def _strip_enum(value: str | None, *prefixes: str) -> str | None:
 
 
 def alert_id(alert: dict) -> str:
+    """
+    Extract the short alert ID from the resource name path.
+
+    Args:
+        alert: Alert dictionary.
+
+    Returns:
+        Extracted alert ID string, or '(unknown)'.
+    """
     name = alert.get("name", "")
     return name.rsplit("/", 1)[-1] if name else "(unknown)"
 
 
 def _alert_url(alert: dict, project: str) -> str | None:
+    """
+    Construct the web console deep link for an alert.
+
+    Args:
+        alert: Alert dictionary.
+        project: GTI project identifier.
+
+    Returns:
+        URL string to view the alert in the GTI portal, or None.
+    """
     aid = alert_id(alert)
     if not project:
         parts = alert.get("name", "").split("/")
@@ -32,12 +64,6 @@ def _alert_url(alert: dict, project: str) -> str | None:
 
 # Maps the server-set `detailType` string to (a) the key the populated
 # union sub-object actually lives under, and (b) a short display label.
-# Confirmed against real API responses that these two use DIFFERENT
-# casings for what looks like "the same" name: detailType comes back
-# snake_case ("initial_access_broker"), but the sub-object's own key is
-# still camelCase ("initialAccessBroker") — the OpenAPI schema's property
-# names only tell you the second casing, not what detailType itself
-# actually contains, and assuming they matched was silently wrong.
 _DETAIL_TYPE_INFO = {
     "initial_access_broker": ("initialAccessBroker", "IAB"),
     "data_leak": ("dataLeak", "Data Leak"),
@@ -47,15 +73,13 @@ _DETAIL_TYPE_INFO = {
 
 def _detail_facts(detail: dict) -> list[tuple[str, str]]:
     """
-    Extract label/value facts from an alert's `detail` union, branching on
-    `detailType`. Per the actual GTI Alert API schema, AlertDetail is a
-    strict one-of: initialAccessBroker / dataLeak / insiderThreat (each
-    just a `severity` + `discoveryDocumentIds`) or targetTechnology (a much
-    richer `vulnerabilityMatch`). There is no generic actor/malware/
-    indicator field on this object under any detailType — an earlier
-    version of this card read fields (threatActors, malwareFamilies,
-    indicators, matchedIocs, ...) that don't exist anywhere in the
-    documented schema, so they never actually rendered anything.
+    Extract key-value facts from an alert's detail sub-object based on detailType.
+
+    Args:
+        detail: Alert detail dictionary.
+
+    Returns:
+        List of (label, value) tuples suitable for FactSet presentation.
     """
     detail_type = detail.get("detailType")
     facts: list[tuple[str, str]] = []
@@ -109,7 +133,16 @@ def _detail_facts(detail: dict) -> list[tuple[str, str]]:
 
 
 def build_alert_card(alert: dict, project: str) -> dict:
-    """Build a Teams-compatible Adaptive Card v1.4 for a GTI alert."""
+    """
+    Build a Teams-compatible Adaptive Card (v1.4) for a GTI alert.
+
+    Args:
+        alert: Raw alert dictionary received from the GTI API.
+        project: GTI project identifier for constructing deep links.
+
+    Returns:
+        Adaptive Card payload dictionary ready for posting to Teams.
+    """
     severity = _strip_enum(alert.get("severityAnalysis", {}).get("severityLevel"), "SEVERITY_LEVEL_")
     priority = _strip_enum(alert.get("priorityAnalysis", {}).get("priorityLevel"), "PRIORITY_LEVEL_")
     relevance = _strip_enum(alert.get("relevanceAnalysis", {}).get("relevanceLevel"), "RELEVANCE_LEVEL_")

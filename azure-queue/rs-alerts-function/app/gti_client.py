@@ -1,10 +1,8 @@
 """
 Google Threat Intelligence (GTI) List Alerts API client.
 
-  1. Exchange the GTI API key for a short-lived bearer token.
-  2. Call List Alerts with a filter combining the incremental cursor AND the
-     configured level filters, ordered by ``audit.update_time asc``,
-     paginating through all pages.
+Handles authentication with the GTI identity provider and queries the
+Threat Intelligence Alerts API with incremental timestamp and level filters.
 """
 import logging
 import time
@@ -26,12 +24,21 @@ _RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
 
 def _request_with_retry(method: str, url: str, **kwargs) -> requests.Response:
     """
-    Call the GTI API with retry-with-backoff for transient failures
-    (429/5xx/network errors) — same pattern as sender.py's
-    _post_with_retry and state_store.py's write_cursor retry. Any other
-    4xx (401, 403, 404, ...) is a permanent/config problem — a bad or
-    expired API key, or an invalid project id — that retrying won't fix, so
-    those fail immediately instead of wasting three attempts.
+    Execute an HTTP request against GTI with exponential backoff on transient errors.
+
+    Retries on network errors and HTTP status codes 429, 500, 502, 503, and 504.
+    Client errors (e.g., 401, 403, 404) are raised immediately without retrying.
+
+    Args:
+        method: HTTP method (e.g., 'GET', 'POST').
+        url: Request target URL.
+        **kwargs: Additional arguments passed to requests.request.
+
+    Returns:
+        The successful requests.Response object.
+
+    Raises:
+        requests.RequestException: If the request fails after all retry attempts.
     """
     last_exc: Exception | None = None
     for attempt in range(_GTI_REQUEST_RETRIES):
@@ -43,7 +50,7 @@ def _request_with_retry(method: str, url: str, **kwargs) -> requests.Response:
                 raise
             delay = _GTI_REQUEST_BACKOFF_SECONDS * (2 ** attempt)
             logger.warning(
-                "GTI API request failed (%s) — retrying (attempt %d/%d) in %.1fs.",
+                "[GTI RETRY] Network error during request (%s) — retrying attempt %d/%d in %.1fs.",
                 exc, attempt + 1, _GTI_REQUEST_RETRIES, delay,
             )
             time.sleep(delay)
@@ -52,7 +59,7 @@ def _request_with_retry(method: str, url: str, **kwargs) -> requests.Response:
         if resp.status_code in _RETRYABLE_STATUS_CODES and attempt < _GTI_REQUEST_RETRIES - 1:
             delay = _GTI_REQUEST_BACKOFF_SECONDS * (2 ** attempt)
             logger.warning(
-                "GTI API request failed (status %d) — retrying (attempt %d/%d) in %.1fs.",
+                "[GTI RETRY] HTTP %d received — retrying attempt %d/%d in %.1fs.",
                 resp.status_code, attempt + 1, _GTI_REQUEST_RETRIES, delay,
             )
             time.sleep(delay)
@@ -76,7 +83,18 @@ _LEVEL_FILTERS = [
 
 
 def get_gti_access_token(api_key: str) -> str:
-    """Exchange the GTI API key for a bearer access token (valid ~4 hours)."""
+    """
+    Exchange the GTI API key for an OAuth bearer access token.
+
+    Args:
+        api_key: The GTI secret API key.
+
+    Returns:
+        Access token string valid for API operations.
+
+    Raises:
+        requests.RequestException: If token exchange fails.
+    """
     resp = _request_with_retry(
         "POST",
         GTI_TOKEN_URL,
@@ -91,10 +109,23 @@ def _level_filter_clause(
     field: str, settings_attr: str, prefix: str, valid_suffixes: tuple, settings: Settings
 ) -> str:
     """
-    Build one field's OR-clause. Raises if the setting resolves to no
-    values — every filter dimension must include at least one level; there
-    is no "disable this dimension" option (matching the gti-alerts
-    reference script's own validation).
+    Build an individual filter clause for a GTI alert level dimension.
+
+    Parses comma-separated level values from settings, validates prefixes and allowed
+    suffixes, and constructs an equality or disjunction clause.
+
+    Args:
+        field: GTI API filter attribute path (e.g. 'severity_analysis.severity_level').
+        settings_attr: Attribute name on Settings holding configured filter values.
+        prefix: Standard enum prefix (e.g. 'SEVERITY_LEVEL_').
+        valid_suffixes: Tuple of permitted enum suffix strings.
+        settings: Application settings instance.
+
+    Returns:
+        Filter clause string for the specified dimension.
+
+    Raises:
+        RuntimeError: If values are invalid or no values resolve for the dimension.
     """
     raw = getattr(settings, settings_attr)
     values = []
@@ -117,12 +148,17 @@ def _level_filter_clause(
 
 def build_filter(updated_after: str | None, settings: Settings) -> str:
     """
-    Compose the List Alerts filter: the cursor (if any) AND every level filter.
+    Compose the complete query filter for the GTI List Alerts endpoint.
 
-    Strict (>), matching the canonical gti-alerts reference script exactly:
-    two alerts sharing the exact same audit.update_time is a real but
-    accepted edge case — whichever one wasn't sent before the cursor
-    advances past that shared timestamp is excluded on every later run.
+    Combines optional incremental cursor timestamp constraints with configured
+    severity, priority, relevance, and confidence level filters.
+
+    Args:
+        updated_after: Optional RFC 3339 timestamp string; only alerts updated after this are returned.
+        settings: Application settings containing level filter configurations.
+
+    Returns:
+        A combined query filter string.
     """
     clauses = []
     if updated_after:
@@ -134,7 +170,24 @@ def build_filter(updated_after: str | None, settings: Settings) -> str:
 def list_alerts(
     token: str, project: str, filter_str: str, page_size: int = 1000
 ) -> Iterator[dict]:
-    """Yield alerts page by page, ordered oldest-first."""
+    """
+    Yield alerts page by page from the GTI API ordered chronologically.
+
+    Handles pagination automatically via `pageToken` until all matching alerts
+    have been fetched.
+
+    Args:
+        token: Bearer access token for GTI API.
+        project: Google Cloud project ID associated with GTI.
+        filter_str: Filter query string applied to the alerts endpoint.
+        page_size: Number of alerts to request per page.
+
+    Yields:
+        Individual alert resource dictionaries.
+
+    Raises:
+        requests.RequestException: If an API page request fails.
+    """
     url = f"{GTI_API_BASE}/projects/{project}/alerts"
     headers = {"Authorization": f"Bearer {token}", "x-goog-user-project": project}
     params = {"pageSize": page_size, "orderBy": "audit.update_time asc", "filter": filter_str}
@@ -143,20 +196,20 @@ def list_alerts(
     total_fetched = 0
     while True:
         page_num += 1
-        logger.info("Calling GET %s (page %d)", url, page_num)
+        logger.info("[GTI FETCH] Requesting page %d from %s", page_num, url)
         resp = _request_with_retry("GET", url, headers=headers, params=params, timeout=60)
         data = resp.json()
 
         page_alerts = data.get("alerts", [])
         total_fetched += len(page_alerts)
         logger.info(
-            "Page %d: %d alert(s) returned by this API call (%d total so far).",
+            "[GTI FETCH] Page %d returned %d alert(s) (%d total accumulated so far).",
             page_num, len(page_alerts), total_fetched,
         )
         yield from page_alerts
 
         next_token = data.get("nextPageToken")
         if not next_token:
-            logger.info("No more pages — %d alert(s) fetched across %d API call(s).", total_fetched, page_num)
+            logger.info("[GTI FETCH] Pagination complete: %d alert(s) fetched across %d page(s).", total_fetched, page_num)
             break
         params["pageToken"] = next_token

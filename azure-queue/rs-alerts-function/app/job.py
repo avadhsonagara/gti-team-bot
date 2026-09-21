@@ -1,20 +1,9 @@
 """
-Core RS Alerts job: fetch incremental GTI alerts and deliver them to Teams.
+Core RS Alerts synchronization job module.
 
-Flow:
-  1. Load the cursor (last seen ``audit.update_time``) from blob state.
-       - First run / no state -> backfill from BACKFILL_DAYS ago (default 7,
-         clamped to 1-7) rather than the project's entire history.
-  2. Ensure the bot's Teams app is installed in the target team (Microsoft
-     Graph auto-install — only possible when TEAMS_CHANNEL_LINK_OR_ID is the
-     full channel link, since that's what carries the team id).
-  3. Exchange the GTI API key for a short-lived bearer token.
-  4. Call List Alerts with a filter combining the cursor (strict, ``>``) AND
-     the level filters, ordered by ``audit.update_time asc``, paginating
-     through all pages.
-  5. For each alert, post an Adaptive Card (v1.4) to the Teams channel via
-     the Bot Framework Connector API (retrying transient failures),
-     checkpointing the cursor after every successful send.
+Orchestrates incremental GTI alert retrieval, authentication, Teams bot
+installation verification via Microsoft Graph, message delivery as Adaptive Cards,
+and persistent cursor checkpointing in Azure Blob Storage.
 """
 import logging
 import time
@@ -34,15 +23,41 @@ _DEFAULT_BACKFILL_DAYS = 7
 
 
 def _now_utc() -> datetime:
+    """
+    Get the current UTC date and time.
+
+    Returns:
+        Current datetime with UTC timezone.
+    """
     return datetime.now(timezone.utc)
 
 
 def _to_rfc3339(dt: datetime) -> str:
+    """
+    Format a datetime object into an RFC 3339 UTC string.
+
+    Args:
+        dt: The datetime instance to format.
+
+    Returns:
+        Formatted UTC timestamp string (e.g. '2026-09-21T00:00:00Z').
+    """
     return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _validate_settings(settings: Settings) -> str:
-    """Validate required configuration and return the canonical Teams channel ID."""
+    """
+    Validate mandatory configuration settings and extract the destination channel ID.
+
+    Args:
+        settings: Application settings instance to inspect.
+
+    Returns:
+        Canonical Microsoft Teams channel identifier string.
+
+    Raises:
+        RuntimeError: If any required settings or credentials are unset.
+    """
     missing = [
         name for name, val in (
             ("TEAMS_CHANNEL_LINK_OR_ID", settings.teams_channel_link_or_id),
@@ -60,11 +75,19 @@ def _validate_settings(settings: Settings) -> str:
 
 
 def _backfill_days(settings: Settings) -> int:
-    """Clamp BACKFILL_DAYS to 1-7, warning (not failing) if it was out of range."""
+    """
+    Validate and clamp the backfill window duration within permitted bounds (1-7 days).
+
+    Args:
+        settings: Application settings containing configured backfill days.
+
+    Returns:
+        Validated number of backfill days.
+    """
     days = settings.backfill_days
     if not (_MIN_BACKFILL_DAYS <= days <= _MAX_BACKFILL_DAYS):
         logger.warning(
-            "BACKFILL_DAYS=%d out of range (%d-%d) — defaulting to %d.",
+            "[RS-ALERTS CONFIG] BACKFILL_DAYS=%d is out of range (%d-%d) — defaulting to %d days.",
             days, _MIN_BACKFILL_DAYS, _MAX_BACKFILL_DAYS, _DEFAULT_BACKFILL_DAYS,
         )
         return _DEFAULT_BACKFILL_DAYS
@@ -72,56 +95,76 @@ def _backfill_days(settings: Settings) -> int:
 
 
 def run_job(settings: Settings) -> dict:
-    """Fetch incremental GTI alerts and deliver them to the Teams channel."""
+    """
+    Execute the incremental RS alerts synchronization pipeline.
+
+    Coordinates cursor loading, Graph app check, token exchange, query filtering,
+    batch fetching from GTI, card delivery to Teams, and incremental checkpointing.
+
+    Args:
+        settings: Application settings instance.
+
+    Returns:
+        Dictionary summarizing execution metrics:
+            - 'fetched': Total number of alerts delivered.
+            - 'cursor_from': Starting cursor timestamp.
+            - 'cursor_to': Final advanced cursor timestamp.
+
+    Raises:
+        Exception: Re-raises any critical failure occurring during execution.
+    """
     start = time.perf_counter()
-    logger.info("[RS-ALERTS START] Job triggered.")
+    logger.info("[RS-ALERTS START] RS Alerts synchronization job started.")
 
     try:
         channel_id = _validate_settings(settings)
-        logger.info("[RS-ALERTS CONFIG] Configuration validated. Target channel ID: %s", channel_id)
+        logger.info("[RS-ALERTS CONFIG] Settings validated. Destination channel ID: %s", channel_id)
 
         team_id = extract_team_id(settings.teams_channel_link_or_id)
         if team_id:
-            logger.info("[RS-ALERTS TEAMS-APP] Ensuring bot's Teams app is installed for team %s...", team_id)
+            logger.info("[RS-ALERTS TEAMS-APP] Checking Teams app installation for team_id=%s...", team_id)
             ensure_app_installed(team_id, settings)
         else:
             logger.info(
-                "[RS-ALERTS TEAMS-APP] TEAMS_CHANNEL_LINK_OR_ID has no groupId (a bare "
-                "channel ID was given, not the full link) — skipping Teams app "
-                "auto-install; the bot must already be a member of the target team for "
-                "delivery to succeed."
+                "[RS-ALERTS TEAMS-APP] TEAMS_CHANNEL_LINK_OR_ID contains no groupId (bare channel ID provided). "
+                "Skipping Graph auto-install check."
             )
 
         cursor = read_cursor(settings)
         if cursor:
-            logger.info("[RS-ALERTS CURSOR] Resuming from cursor: %s", cursor)
+            logger.info("[RS-ALERTS CURSOR] Resuming from existing cursor timestamp: %s", cursor)
         else:
             days = _backfill_days(settings)
             cursor = _to_rfc3339(_now_utc() - timedelta(days=days))
             logger.info(
-                "[RS-ALERTS CURSOR] No prior state found — backfilling from %s (%d day(s)).",
+                "[RS-ALERTS CURSOR] No previous cursor found — backfilling from %s (%d day(s)).",
                 cursor, days,
             )
 
         filter_str = build_filter(cursor, settings)
-        logger.info("[RS-ALERTS FILTER] Alert filter: %s", filter_str)
+        logger.info("[RS-ALERTS FILTER] Formulated GTI alert filter: %s", filter_str)
 
         newest_str = cursor
 
         def checkpoint(update_time: str) -> None:
-            """Advance the cursor."""
+            """
+            Persist updated cursor timestamp after successful alert delivery.
+
+            Args:
+                update_time: Update timestamp of the delivered alert.
+            """
             nonlocal newest_str
             write_cursor(settings, update_time)
             newest_str = update_time
-            logger.info("[RS-ALERTS CHECKPOINT] Checkpoint saved: %s", update_time)
+            logger.info("[RS-ALERTS CHECKPOINT] Cursor checkpoint advanced to: %s", update_time)
 
         sender = AlertSender(settings, channel_id, on_checkpoint=checkpoint)
 
-        logger.info("[RS-ALERTS AUTH] Requesting GTI access token...")
+        logger.info("[RS-ALERTS AUTH] Requesting GTI bearer access token...")
         gti_token = get_gti_access_token(settings.gti_api_key)
-        logger.info("[RS-ALERTS AUTH] GTI token acquired.")
+        logger.info("[RS-ALERTS AUTH] GTI access token acquired successfully.")
 
-        logger.info("[RS-ALERTS FETCH] Fetching alerts from GTI and delivering to Teams...")
+        logger.info("[RS-ALERTS FETCH] Querying GTI alerts and delivering to Microsoft Teams...")
         count = 0
         for alert in list_alerts(gti_token, settings.gti_rsa_project, filter_str, settings.page_size):
             sender.send(alert)
@@ -129,7 +172,7 @@ def run_job(settings: Settings) -> dict:
 
         elapsed = time.perf_counter() - start
         logger.info(
-            "[RS-ALERTS DONE] %d alert(s) sent to Teams channel in %.2fs | cursor %s -> %s",
+            "[RS-ALERTS DONE] Job completed successfully: %d alert(s) sent in %.2fs | cursor: %s -> %s",
             count, elapsed, cursor, newest_str,
         )
         return {
@@ -139,5 +182,5 @@ def run_job(settings: Settings) -> dict:
         }
     except Exception:
         elapsed = time.perf_counter() - start
-        logger.exception("[RS-ALERTS FAILED] Job aborted after %.2fs.", elapsed)
+        logger.exception("[RS-ALERTS FAILED] Job execution aborted after %.2fs due to error.", elapsed)
         raise

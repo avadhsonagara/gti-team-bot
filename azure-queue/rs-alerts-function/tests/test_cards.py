@@ -1,16 +1,19 @@
-"""Regression tests for the GTI alert -> Adaptive Card formatting."""
+"""Unit tests for GTI alert Adaptive Card formatting and card payload structure."""
 from app.cards import alert_id, build_alert_card
 
 
 def test_alert_id_extracts_trailing_segment():
+    """Verify alert_id extracts the trailing segment from a resource path."""
     assert alert_id({"name": "projects/p/alerts/abc123"}) == "abc123"
 
 
 def test_alert_id_missing_name_returns_placeholder():
+    """Verify alert_id returns fallback string when name field is missing."""
     assert alert_id({}) == "(unknown)"
 
 
 def test_card_basic_shape_and_view_in_gti_action():
+    """Verify general card layout, priority indicators, fact sets, and open URL action."""
     alert = {
         "name": "projects/p/alerts/abc123",
         "displayName": "Suspicious IAB listing",
@@ -45,6 +48,7 @@ def test_card_basic_shape_and_view_in_gti_action():
 
 
 def test_target_technology_detail_facts():
+    """Verify detail facts rendering for target technology vulnerability matches."""
     alert = {
         "name": "projects/p/alerts/xyz",
         "detail": {
@@ -79,6 +83,7 @@ def test_target_technology_detail_facts():
 
 
 def test_iab_detail_facts_use_document_count_not_raw_paths():
+    """Verify initial access broker details format discovery document counts."""
     alert = {
         "name": "projects/p/alerts/iab1",
         "detail": {
@@ -96,5 +101,6 @@ def test_iab_detail_facts_use_document_count_not_raw_paths():
 
 
 def test_no_url_when_project_and_alert_id_unresolvable():
+    """Verify no open URL action is generated when project or alert ID cannot be resolved."""
     card = build_alert_card({}, "")
     assert card["actions"] == []

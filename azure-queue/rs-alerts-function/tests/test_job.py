@@ -1,10 +1,4 @@
-"""
-Regression tests for run_job()'s orchestration: required-config validation,
-backfill-days fallback, and that the checkpoint fires once per successfully
-sent alert — the same mechanism as the canonical gti-ms-team-bot/gcp/rs-alerts
-implementation (see test_gti_client_filter.py for the matching strict `>`
-filter behavior this checkpoint pairs with).
-"""
+"""Unit tests for the RS Alerts run_job orchestration workflow."""
 from datetime import datetime, timezone
 
 from app import job as job_module
@@ -12,7 +6,7 @@ from app.config import Settings
 
 
 class _FakeSender:
-    """Stands in for AlertSender — records every alert "sent" and mirrors its real checkpoint call."""
+    """Mock AlertSender recording sent alerts and triggering checkpoint callbacks."""
 
     def __init__(self, settings, channel_id, on_checkpoint=None):
         self._on_checkpoint = on_checkpoint
@@ -27,10 +21,12 @@ class _FakeSender:
 
 
 def _alert(short_id: str, update_time: str) -> dict:
+    """Helper creating minimal test alert dictionary."""
     return {"name": f"projects/p/alerts/{short_id}", "audit": {"updateTime": update_time}}
 
 
 def test_checkpoint_advances_once_per_sent_alert(monkeypatch):
+    """Verify that cursor checkpointing is called for each successfully delivered alert in order."""
     settings = Settings(
         _env_file=None,
         teams_channel_link_or_id="19:abc@thread.tacv2",
@@ -60,12 +56,12 @@ def test_checkpoint_advances_once_per_sent_alert(monkeypatch):
     assert summary["fetched"] == 2
     assert summary["cursor_from"] == "2026-09-17T10:00:00Z"
     assert summary["cursor_to"] == "2026-09-17T11:00:00Z"
-    # One checkpoint write per successfully sent alert, in order.
     assert writes == ["2026-09-17T10:30:00Z", "2026-09-17T11:00:00Z"]
 
 
 def test_missing_required_config_raises_before_any_gti_call(monkeypatch):
-    settings = Settings(_env_file=None)  # nothing set
+    """Verify missing mandatory settings raise RuntimeError before initiating external calls."""
+    settings = Settings(_env_file=None)
 
     called = {"list_alerts": False}
     monkeypatch.setattr(
@@ -81,16 +77,16 @@ def test_missing_required_config_raises_before_any_gti_call(monkeypatch):
         assert "GTI_API_KEY" in str(exc)
         assert "GTI_RSA_PROJECT" in str(exc)
 
-    assert called["list_alerts"] is False, "must fail fast before ever calling GTI"
+    assert called["list_alerts"] is False
 
 
 def test_missing_managed_identity_raises(monkeypatch):
+    """Verify missing MANAGED_IDENTITY_CLIENT_ID raises RuntimeError."""
     settings = Settings(
         _env_file=None,
         teams_channel_link_or_id="19:abc@thread.tacv2",
         gti_api_key="key",
         gti_rsa_project="p",
-        # managed_identity_client_id deliberately left unset
     )
     try:
         job_module.run_job(settings)
@@ -100,13 +96,14 @@ def test_missing_managed_identity_raises(monkeypatch):
 
 
 def test_backfill_days_out_of_range_falls_back_to_default(monkeypatch):
+    """Verify backfill_days setting outside range [1, 7] falls back to default 7 days."""
     settings = Settings(
         _env_file=None,
         teams_channel_link_or_id="19:abc@thread.tacv2",
         gti_api_key="key",
         gti_rsa_project="p",
         managed_identity_client_id="mi-client-id",
-        backfill_days=30,  # out of the allowed 1-7 range
+        backfill_days=30,
     )
     monkeypatch.setattr(job_module, "read_cursor", lambda s: None)
     monkeypatch.setattr(job_module, "write_cursor", lambda s, t: None)
@@ -117,7 +114,7 @@ def test_backfill_days_out_of_range_falls_back_to_default(monkeypatch):
 
     summary = job_module.run_job(settings)
 
-    # Falls back to the documented default (7 days) rather than honoring the out-of-range value.
     cursor_dt = datetime.strptime(summary["cursor_from"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
     age_days = (datetime.now(timezone.utc) - cursor_dt).total_seconds() / 86400
     assert 6.9 < age_days < 7.1
+

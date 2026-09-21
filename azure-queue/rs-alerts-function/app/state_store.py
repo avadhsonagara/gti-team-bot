@@ -1,11 +1,8 @@
 """
-Incremental cursor persistence (Azure Blob Storage).
+Incremental cursor state storage backed by Azure Blob Storage.
 
-Flex Consumption Function App instances are ephemeral and can scale to zero
-between timer ticks, so — unlike the original gti-alerts/state.json — the
-cursor can't live on local disk. It's stored instead as a small JSON blob in
-the same storage account the Function App already uses (AzureWebJobsStorage),
-in a dedicated container.
+Stores and retrieves the high-watermark timestamp cursor (`last_update_time`)
+in an Azure Storage container to enable continuous incremental alert ingestion.
 """
 import json
 import logging
@@ -23,6 +20,20 @@ _CHECKPOINT_WRITE_BACKOFF_SECONDS = 1.0
 
 
 def _blob_client(settings: Settings):
+    """
+    Construct and return a BlobClient for the configured state blob.
+
+    Ensures the destination container exists prior to returning the client.
+
+    Args:
+        settings: Application settings containing storage credentials and container names.
+
+    Returns:
+        azure.storage.blob.BlobClient configured for the state blob.
+
+    Raises:
+        RuntimeError: If AzureWebJobsStorage is not configured.
+    """
     if not settings.azure_web_jobs_storage:
         raise RuntimeError("AzureWebJobsStorage is not configured — cannot persist the alert cursor.")
 
@@ -37,38 +48,45 @@ def _blob_client(settings: Settings):
 
 def read_cursor(settings: Settings) -> str | None:
     """
-    Read the incremental cursor (last-seen audit.update_time) from blob
-    storage. Returns None if no cursor exists yet (first run). A blob that
-    can't be parsed is treated the same way, logged, rather than failing
-    the job outright.
+    Read the incremental cursor timestamp from Azure Blob Storage.
+
+    Args:
+        settings: Application settings containing storage configurations.
+
+    Returns:
+        Last recorded RFC 3339 update timestamp string, or None if no valid cursor exists.
     """
     blob_client = _blob_client(settings)
     try:
         raw = blob_client.download_blob().readall()
     except ResourceNotFoundError:
+        logger.info("[RS-ALERTS CHECKPOINT] No previous cursor blob found; initializing new cursor.")
         return None
 
     try:
         data = json.loads(raw)
     except (json.JSONDecodeError, UnicodeDecodeError):
-        logger.warning("State blob is unreadable — starting fresh.")
+        logger.warning("[RS-ALERTS CHECKPOINT] State blob is corrupted or unreadable; starting fresh.")
         return None
 
-    return data.get("last_update_time")
+    cursor = data.get("last_update_time")
+    if cursor:
+        logger.info("[RS-ALERTS CHECKPOINT] Loaded existing cursor timestamp: %s", cursor)
+    else:
+        logger.info("[RS-ALERTS CHECKPOINT] Cursor blob contained no timestamp; starting fresh.")
+    return cursor
 
 
 def write_cursor(settings: Settings, update_time: str) -> None:
-    """Write the incremental cursor to blob storage, retrying transient failures with backoff.
+    """
+    Persist the incremental cursor timestamp to Azure Blob Storage with retry logic.
 
-    The checkpoint is written after the alert has already been delivered to
-    Teams, so a transient failure here (rather than a genuine one) would
-    otherwise cause that alert to be re-sent on the next run. Retry with
-    backoff to close most of that window before giving up and propagating.
-    This narrows but does not eliminate the risk: if all retries here are
-    exhausted after the Teams send already succeeded, that one alert will
-    still be re-sent on the next run (no distributed transaction spans the
-    Teams delivery and this blob write) — an accepted, bounded residual
-    risk, not something this retry loop is meant to fully close.
+    Args:
+        settings: Application settings containing storage configurations.
+        update_time: RFC 3339 formatted timestamp string to persist.
+
+    Raises:
+        Exception: If writing to blob storage fails after exhausting all retry attempts.
     """
     blob_client = _blob_client(settings)
     payload = json.dumps({"last_update_time": update_time})
@@ -76,13 +94,14 @@ def write_cursor(settings: Settings, update_time: str) -> None:
     for attempt in range(_CHECKPOINT_WRITE_RETRIES):
         try:
             blob_client.upload_blob(payload, overwrite=True)
+            logger.info("[RS-ALERTS CHECKPOINT] Saved cursor timestamp %s to blob storage.", update_time)
             return
         except Exception:
             if attempt == _CHECKPOINT_WRITE_RETRIES - 1:
                 raise
             delay = _CHECKPOINT_WRITE_BACKOFF_SECONDS * (2 ** attempt)
             logger.warning(
-                "Checkpoint write failed (attempt %d/%d) — retrying in %.1fs.",
+                "[RS-ALERTS RETRY] Checkpoint write failed (attempt %d/%d) — retrying in %.1fs.",
                 attempt + 1, _CHECKPOINT_WRITE_RETRIES, delay,
             )
             time.sleep(delay)

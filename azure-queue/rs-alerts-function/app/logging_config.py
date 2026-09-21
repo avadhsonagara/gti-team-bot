@@ -1,15 +1,15 @@
 """
-Logging setup for RS Alerts.
+Logging configuration for the RS Alerts Function App.
 
-Azure Functions forwards everything written through the standard `logging`
-module to Application Insights automatically (via APPLICATIONINSIGHTS_CONNECTION_STRING
-in host.json / app settings) — plain readable text is used unconditionally.
+Sets up standard logging formats for local console execution and Azure Application Insights forwarding.
 """
 import logging
 
 
 def setup_logging() -> None:
-    """Configure root logging for local or Azure Functions execution."""
+    """
+    Configure the root logger with a standardized stream handler and formatter.
+    """
     handler = logging.StreamHandler()
     handler.setFormatter(logging.Formatter(
         "%(asctime)s %(levelname)-8s [rs-alerts] %(message)s",
@@ -17,3 +17,4 @@ def setup_logging() -> None:
     ))
 
     logging.basicConfig(level=logging.INFO, handlers=[handler], force=True)
+

@@ -1,14 +1,8 @@
 """
-Azure Functions (Python v2 programming model) entry point for RS Alerts.
+Azure Functions entry point for the RS Alerts application.
 
-Exposes two functions:
-  - `rs_alerts_timer`: a Timer Trigger that runs the GTI -> Teams alert job
-    on the schedule configured by the RS_ALERTS_SCHEDULE app setting
-    (NCRONTAB expression; default: every 15 minutes). This is the
-    production entry point — it's what "the background job" means.
-  - `rs_alerts_trigger`: an HTTP Trigger (function-key protected) that runs
-    the same job on demand, for manual testing and troubleshooting without
-    waiting for the timer.
+Provides scheduled timer triggers and manual HTTP triggers to fetch incremental
+Google Threat Intelligence (GTI) alerts and deliver them to Microsoft Teams channels.
 """
 import json
 import logging
@@ -34,29 +28,56 @@ app = func.FunctionApp()
     use_monitor=True,
 )
 def rs_alerts_timer(timer: func.TimerRequest) -> None:
-    """Run the RS Alerts job on the configured schedule."""
-    if timer.past_due:
-        logger.warning("RS Alerts timer trigger is running late.")
+    """
+    Execute the RS Alerts job on a periodic schedule defined by NCRONTAB configuration.
 
+    Args:
+        timer: TimerRequest metadata provided by the Azure Functions runtime.
+    """
+    if timer.past_due:
+        logger.warning("[RS-ALERTS TIMER] Timer trigger invocation is running past due.")
+
+    logger.info("[RS-ALERTS TIMER] Scheduled RS Alerts execution triggered.")
     try:
         summary = run_job(settings)
-        logger.info("RS Alerts run summary: %s", summary)
+        logger.info(
+            "[RS-ALERTS TIMER] Scheduled run completed successfully | fetched=%d cursor=%s -> %s",
+            summary.get("fetched", 0),
+            summary.get("cursor_from"),
+            summary.get("cursor_to"),
+        )
     except Exception:
-        logger.exception("RS Alerts job failed")
+        logger.exception("[RS-ALERTS TIMER] Scheduled RS Alerts execution failed.")
         raise
 
 
 @app.function_name(name="rs_alerts_trigger")
 @app.route(route="trigger", methods=["GET", "POST"], auth_level=func.AuthLevel.FUNCTION)
 def rs_alerts_trigger(req: func.HttpRequest) -> func.HttpResponse:
-    """Manually run the RS Alerts job on demand (for testing/troubleshooting)."""
+    """
+    Manually invoke the RS Alerts job on demand via an authenticated HTTP request.
+
+    Args:
+        req: HttpRequest object received by the function.
+
+    Returns:
+        HttpResponse containing the JSON run summary or error details.
+    """
+    logger.info("[RS-ALERTS HTTP] Manual trigger request received | method=%s url=%s", req.method, req.url)
     try:
         summary = run_job(settings)
+        logger.info(
+            "[RS-ALERTS HTTP] Manual trigger run completed successfully | fetched=%d cursor=%s -> %s",
+            summary.get("fetched", 0),
+            summary.get("cursor_from"),
+            summary.get("cursor_to"),
+        )
         return func.HttpResponse(
             json.dumps(summary), status_code=200, mimetype="application/json"
         )
     except Exception as exc:
-        logger.exception("RS Alerts job failed")
+        logger.exception("[RS-ALERTS HTTP] Manual trigger run failed.")
         return func.HttpResponse(
             json.dumps({"error": str(exc)}), status_code=500, mimetype="application/json"
         )
+

@@ -1,11 +1,8 @@
 """
-Single source of truth for RS Alerts runtime configuration.
+Runtime configuration settings for the RS Alerts Function App.
 
-Reads values from environment variables (Azure Function App Settings are
-exposed as env vars at runtime) and, for local development, from a .env file.
-Field names map to env vars via automatic uppercasing (e.g. `gti_api_key`
-reads from `GTI_API_KEY`), except where an explicit `validation_alias` is
-set below for names that don't follow that convention.
+Loads application settings from environment variables and local .env files,
+providing validated configuration for GTI alerts, Microsoft Teams, Azure Storage, and Graph.
 """
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -79,15 +76,32 @@ class Settings(BaseSettings):
     @field_validator("gti_api_key", mode="before")
     @classmethod
     def strip_secret(cls, v: str) -> str:
-        """Trim whitespace from secret-like values."""
+        """
+        Trim leading and trailing whitespace from secret-like configuration values.
+
+        Args:
+            v: Input secret string.
+
+        Returns:
+            Cleaned secret string.
+        """
         return (v or "").strip()
 
     @field_validator("service_url", mode="before")
     @classmethod
     def normalize_service_url(cls, v: str) -> str:
-        """Ensure the Bot Framework service URL ends with exactly one slash."""
+        """
+        Normalize the Bot Framework service URL to end with a single trailing slash.
+
+        Args:
+            v: Input service URL string.
+
+        Returns:
+            Normalized URL string ending with '/'.
+        """
         val = (v or "https://smba.trafficmanager.net/teams/").strip()
         return val.rstrip("/") + "/"
+
 
 
 settings = Settings()
