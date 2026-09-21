@@ -1,14 +1,9 @@
 """
-Handles a job that exhausted every retry (host.json's extensions.queues.
-maxDequeueCount) and was auto-routed by the Functions runtime to the
-"<job_queue_name>-poison" queue — the Azure Functions Storage extension's
-own, automatic naming convention, not something this codebase creates.
+Poison queue message handler for permanently failed jobs.
 
-Best-effort only: tells the user their request failed instead of leaving the
-"looking into that…" placeholder stuck forever. Never lets an exception
-escape to the caller — there is no further queue this could be routed to, so
-an unhandled exception here would just be silently dropped by the runtime
-anyway; catching it here at least gets it logged.
+Processes messages moved to the poison queue after exhausting all retry attempts,
+sending an error notification to the user in Teams and replacing or cleaning up
+the pending placeholder message.
 """
 import logging
 
@@ -29,6 +24,12 @@ _POISON_NOTICE = (
 
 
 def process_poison_job(raw_payload: dict) -> None:
+    """
+    Process a poisoned queue message and notify the user of the failure.
+
+    Args:
+        raw_payload: Deserialized dictionary payload from the poison queue message.
+    """
     if get_job_kind(raw_payload) == "installationUpdateRemove":
         # A cleanup job, not a user query — there's no placeholder to
         # replace and, having just been uninstalled, likely no conversation

@@ -1,8 +1,8 @@
 """
-Tests for app/teams/auth.py's inbound Bot Framework JWT validation —
-particularly the serviceUrl-matching regression covered by finding #7 of the
-2026-09 code review: a request whose body omits serviceUrl entirely must be
-rejected, not silently let through with the check skipped.
+Tests for inbound Bot Framework JWT authentication.
+
+Verifies token signature, issuer, audience, expiration, and serviceUrl claim matching
+against inbound activity request data.
 """
 import time
 from types import SimpleNamespace
@@ -80,10 +80,7 @@ def test_service_url_mismatch_rejected(patched_jwks, rsa_key_pair):
 
 def test_missing_service_url_in_activity_body_rejected(patched_jwks, rsa_key_pair):
     """
-    Regression test for finding #7: previously `if claimed_service_url:`
-    skipped the whole comparison whenever the inbound activity body omitted
-    serviceUrl (falsy None/""), letting a token through with no serviceUrl
-    verification at all. It must now be rejected instead.
+    Verify that an activity omitting serviceUrl is rejected.
     """
     private_key, _ = rsa_key_pair
     token = _sign_token(private_key, service_url="https://smba.trafficmanager.net/amer/")

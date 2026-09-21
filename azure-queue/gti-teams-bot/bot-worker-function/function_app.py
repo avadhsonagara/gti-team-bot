@@ -1,25 +1,10 @@
 """
-Azure Functions (Python v2 programming model) entry point — Worker Function.
+Azure Functions entry point for the GTI Teams Bot Worker Function.
 
-Triggered by the Storage Queue bot-ingest-function/ enqueues to
-(settings.job_queue_name): runs the actual GTI Agentic API query — which can
-take up to gti_timeout_seconds — and delivers the final response by editing
-(channel) or deleting-and-reposting (personal/group) the placeholder the
-Ingest Function already posted. See app/job_processor.py for the full
-pipeline.
-
-Also declares the matching poison-queue handler: the Azure Functions Storage
-extension automatically routes a message here after
-extensions.queues.maxDequeueCount (host.json) failed attempts, into a queue
-named "<job_queue_name>-poison" — this app is the only place either queue
-needs consuming, so both triggers live in this one Function App.
-
-Requires host.json's extensionBundle (unlike bot-ingest-function, which
-doesn't use any native binding) — the queue_trigger decorator is what gives
-this app automatic per-message retry, lease renewal while an invocation is
-alive, and poison-queue routing; a hand-rolled polling loop over the SDK
-would have to reimplement all three.
+Processes background queue jobs dequeued from Azure Storage Queue, including
+GTI queries, conversation cleanup events, and poison-queue failure notifications.
 """
+
 import json
 import logging
 
@@ -51,7 +36,15 @@ app = func.FunctionApp()
 
 @app.queue_trigger(arg_name="msg", queue_name=settings.job_queue_name, connection="AzureWebJobsStorage")
 def process_query_job(msg: func.QueueMessage) -> None:
-    """Main job queue trigger — processes one GTI query end-to-end."""
+    """
+    Process incoming queue messages from the primary job queue.
+
+    Parses the message payload, inspects the job kind, and dispatches to
+    either installation cleanup or GTI query processing.
+
+    Args:
+        msg: Azure Functions QueueMessage received from the job queue.
+    """
     try:
         raw = json.loads(msg.get_body().decode("utf-8"))
         kind = get_job_kind(raw)
@@ -68,10 +61,6 @@ def process_query_job(msg: func.QueueMessage) -> None:
                 logger.info("[QUEUE TRIGGER] Dequeued job from %s | msg_id=%s dequeue_count=%d", settings.job_queue_name, msg.id, msg.dequeue_count)
             process_job(raw, dequeue_count=msg.dequeue_count)
     except InvalidJobPayload:
-        # A message that was never a valid job of ours (shouldn't happen —
-        # only bot-ingest-function ever writes to this queue — but this is
-        # cheap insurance). Re-raising lets it exhaust maxDequeueCount and
-        # land in the poison queue rather than being silently dropped here.
         logger.exception("[JOB] Malformed job payload | msg_id=%s dequeue_count=%d", getattr(msg, "id", "-"), getattr(msg, "dequeue_count", 0))
         raise
     except Exception:
@@ -91,11 +80,13 @@ def process_query_job(msg: func.QueueMessage) -> None:
 )
 def process_poisoned_job(msg: func.QueueMessage) -> None:
     """
-    A job that failed every retry lands here, auto-routed by the Functions
-    runtime. Best-effort tells the user their request failed instead of
-    leaving their placeholder stuck on "looking into that…" forever. Never
-    raises — there's no further queue for this one to be routed to, and a
-    raised exception here would just retry the poison handler itself.
+    Process messages routed to the poison queue after exhausting retry attempts.
+
+    Attempts to notify the user in Teams that their request could not be completed,
+    cleaning up or replacing the pending placeholder message.
+
+    Args:
+        msg: Azure Functions QueueMessage received from the poison queue.
     """
     try:
         logger.warning(

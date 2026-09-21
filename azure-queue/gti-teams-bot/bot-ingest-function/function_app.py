@@ -1,31 +1,8 @@
 """
-Azure Functions (Python v2 programming model) entry point — Ingest Function.
+Azure Functions HTTP entry point for Teams Bot message ingestion.
 
-Responsibilities, and nothing else:
-  1. Verify the inbound Bot Framework JWT (app/teams/auth.py).
-  2. Parse the raw Activity JSON (app/teams/activity.py).
-  3. Post the "looking into that…" placeholder immediately
-     (app/teams/context.py) so the user sees a response right away.
-  4. Hand the activity off to the Worker Function App via a Storage Queue
-     job (app/queue_job.py, bot-worker-function/) and acknowledge with 200.
-
-Deliberately does NOT call the GTI Agentic API, fetch channel thread
-context, or do anything else that can take more than a second or two —
-that's bot-worker-function/'s job, which runs on its own timeout budget
-completely decoupled from this HTTP request/response cycle. This is what
-lets the bot answer a query that takes 5-10 minutes without needing a
-Premium/long-idle-timeout ingress anywhere: this endpoint always responds in
-well under a second.
-
-`host.json` sets `extensions.http.routePrefix` to "" so routes are exposed
-exactly as below (no extra "/api" prefix Azure adds by default) — this keeps
-the Bot messaging endpoint at "/api/messages" to match the Azure Bot
-resource configuration and the Teams app manifest.
-
-`auth_level=ANONYMOUS` is intentional: Azure Bot Service calls the messaging
-endpoint without an Azure Functions key. Authenticity of inbound activities
-is verified inside app/teams/auth.py instead, using CLIENT_ID (the bot's App
-ID) — the same security model as bot-worker-function/ and azure/azure-bot-function.
+Handles inbound Bot Framework webhook activities, validates authorization tokens,
+posts immediate acknowledgment placeholders, and enqueues query jobs to Azure Storage Queue.
 """
 import json
 import logging
@@ -87,16 +64,43 @@ _queue_client_lock = threading.Lock()
 
 
 def _json_response(payload: dict, status_code: int = 200) -> func.HttpResponse:
+    """
+    Construct an HTTP response containing a JSON payload.
+
+    Args:
+        payload: Dictionary to serialize as JSON.
+        status_code: HTTP status code.
+
+    Returns:
+        func.HttpResponse with application/json MIME type.
+    """
     return func.HttpResponse(json.dumps(payload), status_code=status_code, mimetype="application/json")
 
 
 def _strip_mentions(text: str) -> str:
-    """Remove all <at>...</at> mention tokens from a Teams message."""
+    """
+    Remove mention tokens (<at>...</at>) from a Teams message string.
+
+    Args:
+        text: Raw message text containing mention markup.
+
+    Returns:
+        Cleaned text without mention tags.
+    """
     return _MENTION_RE.sub("", text or "")
 
 
 @app.route(route="/", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
 def root(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    Return service identity, version, and messaging endpoint metadata.
+
+    Args:
+        req: Inbound HTTP request.
+
+    Returns:
+        JSON response with service information.
+    """
     return _json_response({
         "status": "ok",
         "name": "Google Threat Intelligence Agentic Bot — Ingest (Azure)",
@@ -108,6 +112,15 @@ def root(req: func.HttpRequest) -> func.HttpResponse:
 
 @app.route(route="health", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
 def health(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    Return service health status and configuration verification.
+
+    Args:
+        req: Inbound HTTP request.
+
+    Returns:
+        JSON response with health and queue configuration status.
+    """
     return _json_response({
         "status": "ok",
         "app": "gti-teams-bot-ingest",
@@ -119,7 +132,17 @@ def health(req: func.HttpRequest) -> func.HttpResponse:
 
 @app.route(route="api/messages", methods=["GET", "POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
 def messages(req: func.HttpRequest) -> func.HttpResponse:
-    """Microsoft Teams / Bot Framework webhook endpoint."""
+    """
+    Handle Microsoft Teams / Bot Framework activities.
+
+    Supports OPTIONS preflight, GET status confirmation, and POST activity ingestion.
+
+    Args:
+        req: Inbound HTTP request containing Bot Framework payload.
+
+    Returns:
+        func.HttpResponse acknowledging receipt (200 OK) or error status.
+    """
     if req.method == "OPTIONS":
         return func.HttpResponse(status_code=200)
 
@@ -190,6 +213,16 @@ def messages(req: func.HttpRequest) -> func.HttpResponse:
 
 
 def _ingest_message(body: dict, t_start: float) -> None:
+    """
+    Process and validate an inbound user message activity.
+
+    Binds request context, posts an immediate placeholder response, and enqueues
+    the query job for background processing by the worker function.
+
+    Args:
+        body: Inbound activity JSON dictionary.
+        t_start: Performance counter timestamp at request receipt.
+    """
     activity = parse_activity(body)
     ctx = Ctx(activity)
 
@@ -273,7 +306,16 @@ def _ingest_message(body: dict, t_start: float) -> None:
 
 
 def _deliver_error_notice(ctx: Ctx, loading_activity_id, scope: str, text: str, quoted_query: str = "") -> None:
-    """Minimal, card-free error delivery — this function never needs the rich Adaptive Card path."""
+    """
+    Deliver a minimal error notification to the user, replacing or deleting the placeholder.
+
+    Args:
+        ctx: Activity context instance.
+        loading_activity_id: Activity ID of the placeholder message.
+        scope: Conversation scope ('channel', 'personal', 'groupChat').
+        text: Error message text.
+        quoted_query: Optional quoted user query prefix.
+    """
     if quoted_query:
         text = f"{quoted_query}\n\n{text}"
     try:
@@ -282,10 +324,6 @@ def _deliver_error_notice(ctx: Ctx, loading_activity_id, scope: str, text: str, 
             return
 
         if loading_activity_id:
-            # Isolated from the ctx.send() below: a delete failure here (the
-            # placeholder was already gone, expired, or a transient error)
-            # must not skip sending the notice — the user still needs to
-            # hear that something went wrong either way.
             try:
                 ctx.api.conversations.activities(ctx.activity.conversation.id).delete(loading_activity_id)
             except Exception as exc:
@@ -297,6 +335,12 @@ def _deliver_error_notice(ctx: Ctx, loading_activity_id, scope: str, text: str, 
 
 
 def _get_queue_client() -> QueueClient:
+    """
+    Return a cached singleton QueueClient instance, creating the queue if needed.
+
+    Returns:
+        QueueClient instance for the job queue.
+    """
     global _queue_client_instance
     if _queue_client_instance is None:
         with _queue_client_lock:
@@ -322,6 +366,19 @@ def _enqueue_job(
     user_name: str = "unknown",
     user_text: str = "",
 ) -> None:
+    """
+    Serialize and send a query job payload to Azure Storage Queue.
+
+    Args:
+        activity_body: Inbound activity JSON payload.
+        loading_activity_id: Activity ID of the posted placeholder message.
+        ctx: Context instance for delivering error notice if queueing fails.
+        scope: Conversation scope.
+        t_start: Performance counter timestamp when request was received.
+        quoted_query: Quoted query string.
+        user_name: Sender user name.
+        user_text: Extracted user query string.
+    """
     payload = build_job_payload(activity_body, loading_activity_id)
     encoded = json.dumps(payload)
     encoded_bytes = encoded.encode("utf-8")
@@ -337,10 +394,6 @@ def _enqueue_job(
     try:
         t_q = time.perf_counter()
         queue_client = _get_queue_client()
-        # Sent as plain UTF-8 text (no base64/encoding policy) — the worker's
-        # native queue_trigger binding (bot-worker-function/function_app.py)
-        # reads it back the same way via msg.get_body().decode("utf-8"), so
-        # both sides agree on the wire format without any extra framing.
         queue_client.send_message(encoded)
         logger.info(
             "[INGEST 3/3] Enqueued to %s in %.0fms | payload_size=%d bytes",
@@ -359,7 +412,12 @@ def _enqueue_job(
 
 
 def _enqueue_installation_removed(activity_body: dict) -> None:
-    """Enqueue a small cleanup job so the worker can delete this team's stored GTI sessions."""
+    """
+    Enqueue a cleanup job to remove stored team sessions when the bot is uninstalled.
+
+    Args:
+        activity_body: Inbound installationUpdate activity JSON payload.
+    """
     activity = parse_activity(activity_body)
     conversation_id = getattr(activity.conversation, "id", "")
     bind_request(request_id=activity.id or "", conversation=conversation_id, activity_id=activity.id or "")

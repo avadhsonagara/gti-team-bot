@@ -1,11 +1,8 @@
 """
-Single source of truth for runtime configuration — Worker Function.
+Runtime configuration settings for the GTI Teams Bot Worker Function.
 
-Reads values from environment variables (and .env at startup). Azure
-Function App Application Settings are exposed as environment variables at
-runtime, so no Azure-specific config loading is needed.
-Field names map to env vars via automatic uppercasing:
-  e.g. `client_id` reads from `CLIENT_ID`.
+Loads application settings from environment variables and local .env files,
+providing validated configuration for GTI, Microsoft Teams, Azure Storage, and Graph.
 """
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -95,22 +92,46 @@ class Settings(BaseSettings):
     @field_validator("gti_api_base_url", mode="before")
     @classmethod
     def strip_and_normalize_url(cls, v: str) -> str:
-        """Trim whitespace and trailing slashes from the API base URL."""
+        """
+        Trim whitespace and trailing slashes from the API base URL.
+
+        Args:
+            v: Raw base URL string.
+
+        Returns:
+            Normalized base URL string.
+        """
         val = (v or "https://www.virustotal.com/api/v3").strip()
         return val.rstrip("/")
 
     @field_validator("gti_api_key", mode="before")
     @classmethod
     def strip_secret(cls, v: str) -> str:
-        """Trim whitespace from secret-like values."""
+        """
+        Trim leading and trailing whitespace from secret key strings.
+
+        Args:
+            v: Raw secret string.
+
+        Returns:
+            Cleaned secret string.
+        """
         return (v or "").strip()
 
     @field_validator("thread_context_message_count")
     @classmethod
     def clamp_thread_context_message_count(cls, v: int) -> int:
-        """Cap at 30 and floor at 1 regardless of what's configured — a
-        misconfigured app setting can't blow up the prompt sent to GTI."""
+        """
+        Validate and clamp the thread context message count between 1 and 30.
+
+        Args:
+            v: Input message count integer.
+
+        Returns:
+            Clamped message count integer.
+        """
         return max(1, min(v, 30))
+
 
 
 settings = Settings()

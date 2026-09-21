@@ -1,13 +1,8 @@
 """
 Inbound Bot Framework request authentication.
 
-Verifies the JWT bearer token the Bot Framework Connector attaches to every
-call to POST /api/messages. Hand-rolled to match exactly what the
-microsoft-teams-apps SDK's TokenValidator.for_service() did (see
-https://learn.microsoft.com/en-us/azure/bot-service/rest-api/bot-framework-rest-connector-authentication):
-RS256 signature verified against Bot Framework's public JWKS, issuer/audience
-checked, plus a serviceUrl-claim match against the activity body's own
-serviceUrl to catch a token being replayed against a spoofed destination.
+Validates JWT bearer tokens attached by the Bot Framework Connector to inbound
+HTTP requests, verifying signatures, issuers, audiences, expiration, and service URL claims.
 """
 import logging
 
@@ -28,6 +23,12 @@ class BotFrameworkAuthError(Exception):
 
 
 def _get_jwks_client() -> jwt.PyJWKClient:
+    """
+    Retrieve or initialize the cached PyJWKClient for Bot Framework keys.
+
+    Returns:
+        Configured PyJWKClient instance.
+    """
     global _jwks_client
     if _jwks_client is None:
         _jwks_client = jwt.PyJWKClient(_JWKS_URI)
@@ -35,19 +36,33 @@ def _get_jwks_client() -> jwt.PyJWKClient:
 
 
 def _expected_audiences(app_id: str) -> list[str]:
+    """
+    Construct the list of valid audience claims for the bot application ID.
+
+    Args:
+        app_id: Configured Microsoft application/client ID.
+
+    Returns:
+        List of accepted audience strings.
+    """
     return [app_id, f"api://{app_id}", f"api://botid-{app_id}"]
 
 
 def validate_bot_framework_token(authorization_header: str, app_id: str, claimed_service_url: str | None) -> dict:
     """
-    Validate the Authorization header of an inbound /api/messages request.
+    Validate the Authorization header of an inbound Bot Framework request.
 
-    Returns the decoded token payload on success. Raises BotFrameworkAuthError
-    on any failure: missing/malformed header, bad signature, wrong issuer or
-    audience, expired token, a JWKS lookup failure, a missing serviceUrl in
-    the activity body, or a serviceUrl mismatch between the token and the
-    activity body — a missing serviceUrl is rejected rather than skipped so a
-    token replayed without one can't bypass this check entirely.
+    Args:
+        authorization_header: Value of the HTTP Authorization header (e.g. 'Bearer <token>').
+        app_id: Configured Microsoft application/client ID.
+        claimed_service_url: Service URL provided in the activity request body.
+
+    Returns:
+        Decoded JWT claims payload as a dictionary.
+
+    Raises:
+        BotFrameworkAuthError: If authentication fails due to missing credentials,
+            invalid signatures, expired tokens, or service URL mismatches.
     """
     if not app_id:
         raise BotFrameworkAuthError("No CLIENT_ID configured — refusing all inbound requests.")

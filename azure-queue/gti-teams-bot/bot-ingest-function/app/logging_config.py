@@ -1,9 +1,8 @@
 """
-Logging setup for Azure Functions and local console compatibility.
+Logging configuration for Azure Functions and local console execution.
 
-Azure Functions forwards everything written through the standard `logging`
-module to Application Insights automatically, so structured formatting isn't
-required for ingestion — plain readable text is used unconditionally.
+Configures root logging with custom filters for request context injection
+and library category tagging.
 """
 import logging
 
@@ -19,7 +18,15 @@ _LIBRARY_TAG_PREFIXES = (
 
 
 def _tag_for_logger(name: str) -> str:
-    """Bracket tag for a logger name, e.g. 'urllib3' -> '[HTTP]'."""
+    """
+    Return a bracketed category tag for a given logger name.
+
+    Args:
+        name: Logger name string (e.g., 'urllib3', 'azure.storage').
+
+    Returns:
+        Formatted category prefix tag.
+    """
     for prefix, tag in _LIBRARY_TAG_PREFIXES:
         if name == prefix or name.startswith(prefix + "."):
             return tag
@@ -27,9 +34,10 @@ def _tag_for_logger(name: str) -> str:
 
 
 class LibraryTagFilter(logging.Filter):
-    """Attaches lib_tag (e.g. '[HTTP] ') to every record for formatters."""
+    """Logging filter that attaches a library category tag to log records."""
 
     def filter(self, record: logging.LogRecord) -> bool:
+        """Attach lib_tag attribute to the log record for formatting."""
         tag = _tag_for_logger(record.name)
         record.lib_tag = f"{tag} " if tag else ""
         return True
@@ -45,10 +53,5 @@ def setup_logging() -> None:
 
     stream_handler.addFilter(RequestContextFilter())
     stream_handler.addFilter(LibraryTagFilter())
-    # No traceback-suppressing filter here: a third-party library (azure.*,
-    # urllib3) logging an exception with exc_info is exactly the kind of
-    # unexpected infra failure (network, auth, TLS) an operator needs the
-    # real stack trace for — stripping it would trade that diagnostic
-    # capability for slightly quieter logs.
 
     logging.basicConfig(level=logging.INFO, handlers=[stream_handler], force=True)

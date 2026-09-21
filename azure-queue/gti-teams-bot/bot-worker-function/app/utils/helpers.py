@@ -1,3 +1,9 @@
+"""
+Utility functions and helpers for the GTI Teams Bot worker.
+
+Provides text extraction, mention cleaning, Adaptive Card JSON parsing,
+prompt formatting utilities, and Teams message delivery with multi-stage fallbacks.
+"""
 import json
 import logging
 import re
@@ -11,14 +17,30 @@ _MENTION_RE = re.compile(r"<at>.*?</at>", re.IGNORECASE)
 
 
 def strip_mentions(text: str) -> str:
-    """Remove all <at>...</at> mention tokens from a Teams message."""
+    """
+    Remove all <at>...</at> mention tokens from a Teams message.
+
+    Args:
+        text: Input message text.
+
+    Returns:
+        Cleaned text string with mention tags removed.
+    """
     return _MENTION_RE.sub("", text or "")
 
 
 # ── Adaptive Card Parser ──────────────────────────────────────────────────────
 
 def extract_text_from_card(card: dict | None) -> str:
-    """Extract plain text from an Adaptive Card dictionary for fallback delivery."""
+    """
+    Extract plain text from an Adaptive Card dictionary for fallback delivery.
+
+    Args:
+        card: Adaptive Card dictionary or None.
+
+    Returns:
+        Concatenated text extracted from text blocks and fact sets.
+    """
     if not isinstance(card, dict):
         return ""
     parts: list[str] = []
@@ -45,21 +67,18 @@ def extract_text_from_card(card: dict | None) -> str:
 
 def parse_adaptive_card(raw_text: str | None) -> tuple[Optional[dict], str]:
     """
-    Parse model output into an Adaptive Card dict, stripping accidental code fences.
+    Parse model output into an Adaptive Card dictionary, stripping accidental code fences.
+
+    Args:
+        raw_text: Raw text or JSON string from the model output.
 
     Returns:
-        (card, fallback_text) — card is None when parsing fails or the output
-        isn't a valid AdaptiveCard shape.
+        Tuple of (card_dict, fallback_text). card_dict is None if parsing fails.
     """
     text = (raw_text or "").strip()
     if not text:
         return None, "No response generated."
 
-    # Try parsing as-is first — a triple-backtick code span embedded inside
-    # a TextBlock's own text value (e.g. a shell command or IOC the model
-    # wrapped in markdown) is valid JSON and must not be mistaken for an
-    # enclosing fence. Only strip a fence, and only a genuinely *leading*
-    # one, if direct parsing fails.
     try:
         data = json.loads(text)
     except json.JSONDecodeError:
@@ -83,10 +102,13 @@ def parse_adaptive_card(raw_text: str | None) -> tuple[Optional[dict], str]:
 
 def build_custom_format_section(output_format: str) -> str:
     """
-    Wrap the configured output-format instructions for injection into the prompt.
+    Wrap custom output formatting instructions for injection into the prompt template.
 
-    Returns an empty string when no custom format is set, so the
-    {{CUSTOM_FORMAT}} placeholder disappears rather than leaving a dangling section.
+    Args:
+        output_format: Configured output format instructions string.
+
+    Returns:
+        Formatted markdown section string, or empty string if no custom format is set.
     """
     if not output_format.strip():
         return ""
@@ -104,11 +126,13 @@ def build_custom_format_section(output_format: str) -> str:
 
 def build_thread_context_section(thread_context: str) -> str:
     """
-    Wrap the fetched Teams thread history for injection into the prompt.
+    Wrap thread history transcript for injection into the prompt template.
 
-    Returns an empty string when there is no prior thread context (personal/group
-    chats, or the first message in a channel thread), so the {{THREAD_CONTEXT}}
-    placeholder disappears rather than leaving a dangling section.
+    Args:
+        thread_context: Formatted thread messages transcript.
+
+    Returns:
+        Formatted markdown section string, or empty string if thread context is empty.
     """
     if not thread_context.strip():
         return ""
@@ -122,9 +146,6 @@ def build_thread_context_section(thread_context: str) -> str:
 
 
 # ── Standard User Notices ─────────────────────────────────────────────────────
-# The empty-query notice lives in bot-ingest-function/function_app.py instead
-# (as _EMPTY_QUERY_NOTICE) — the ingest function is what actually handles an
-# empty/no-content query, before a job is ever enqueued to this worker.
 
 LARGE_QUERY_NOTICE = (
     "⚠️ **Response Too Large to Deliver**\n\n"
@@ -141,11 +162,13 @@ GENERIC_DELIVERY_FAILURE_NOTICE = (
 
 def _looks_like_size_limit_error(exc: Exception) -> bool:
     """
-    Detect a payload-too-large failure delivering to Teams. Checks the HTTP
-    status code first (bot_client.py's send/update/delete all raise via
-    response.raise_for_status(), which carries the real status on
-    exc.response) and falls back to a text heuristic for exceptions that
-    don't carry a response (e.g. connection errors).
+    Detect whether a delivery failure was caused by exceeding Teams payload size limits.
+
+    Args:
+        exc: Exception caught during message delivery.
+
+    Returns:
+        True if the exception indicates an HTTP 413 or payload size limit error.
     """
     response = getattr(exc, "response", None)
     status_code = getattr(response, "status_code", None)
@@ -160,10 +183,28 @@ def _looks_like_size_limit_error(exc: Exception) -> bool:
 
 
 def _text_activity(text: str) -> dict:
+    """
+    Construct a plain text message activity payload.
+
+    Args:
+        text: Message text content.
+
+    Returns:
+        Bot Framework message activity dictionary.
+    """
     return {"type": "message", "text": text}
 
 
 def _card_activity(card: dict) -> dict:
+    """
+    Construct a message activity payload containing an Adaptive Card attachment.
+
+    Args:
+        card: Adaptive Card payload dictionary.
+
+    Returns:
+        Bot Framework message activity dictionary with card attachment.
+    """
     return {
         "type": "message",
         "attachments": [{"contentType": "application/vnd.microsoft.card.adaptive", "content": card}],
@@ -178,18 +219,17 @@ def deliver_message(
     edit_in_place: bool = False,
 ) -> bool:
     """
-    Send a response message to the Teams user.
+    Deliver a response message to Microsoft Teams with fallback handling.
 
-    If loading_activity_id is provided:
-      - edit_in_place=True: updates that placeholder activity in place with
-        the final message. Used for channel threads, where deleting a
-        message leaves a "This message has been deleted." tombstone visible
-        to the whole channel — updating it instead only adds a small
-        "(Edited)" label.
-      - edit_in_place=False (default): deletes the placeholder first, then
-        sends the final message as a fresh activity, avoiding the "Edited"
-        tag entirely. Used for personal/group chats, where a deleted
-        message leaves no trace anyway.
+    Args:
+        ctx: Context wrapper for sending messages to Teams.
+        loading_activity_id: Activity ID of the placeholder message to update or delete.
+        text: Fallback plain text content.
+        card: Optional Adaptive Card payload dictionary.
+        edit_in_place: If True, updates placeholder in place; if False, deletes and reposts.
+
+    Returns:
+        True if delivery succeeded, False if all delivery fallback attempts failed.
     """
     conversation_id = ctx.activity.conversation.id
     activities = ctx.api.conversations.activities(conversation_id)

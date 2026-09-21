@@ -1,13 +1,8 @@
 """
-Processes one dequeued GTI query job end-to-end: fetch channel thread
-context, run the GTI Agentic Sessions API pipeline, and deliver the final
-Adaptive Card response — editing (channel) or deleting-and-reposting
-(personal/group) the placeholder the Ingest Function already posted.
+End-to-end job processor for GTI query execution.
 
-This is bot-worker-function's equivalent of azure/azure-bot-function's
-app/teams/handlers.py::_handle_user_query(), split apart because in this
-queue architecture the placeholder was already sent by a different Function
-App (bot-ingest-function/) before this job ever reached the queue.
+Coordinates thread context retrieval, attachment downloading, GTI Agentic API
+sessions, Adaptive Card response formatting, and delivery back to Microsoft Teams.
 """
 import logging
 import re
@@ -47,7 +42,7 @@ logger = logging.getLogger("gti-teams-bot")
 
 
 class DeliveryFailedError(Exception):
-    """Raised when deliver_message() exhausts every delivery fallback."""
+    """Raised when message delivery to Microsoft Teams fails after all fallback attempts."""
 
 
 _STALE_JOB_NOTICE = (
@@ -57,7 +52,17 @@ _STALE_JOB_NOTICE = (
 
 
 def _render_system_prompt(user_query: str, thread_context: str = "", output_format: str = "") -> str:
-    """Render the system prompt with user query, thread context, dynamic UTC timestamp, and output format."""
+    """
+    Render the system prompt with user query, thread context, dynamic UTC timestamp, and output format.
+
+    Args:
+        user_query: Cleaned user query text.
+        thread_context: Formatted prior messages in the conversation thread.
+        output_format: Custom output formatting guidelines, if configured.
+
+    Returns:
+        Rendered system prompt string ready for submission to the GTI API.
+    """
     if not SYSTEM_PROMPT:
         return user_query
     now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
@@ -72,6 +77,15 @@ def _render_system_prompt(user_query: str, thread_context: str = "", output_form
 
 
 def _get_tenant_id(activity) -> str:
+    """
+    Extract the Microsoft 365 tenant ID from an inbound activity.
+
+    Args:
+        activity: Parsed Activity object.
+
+    Returns:
+        Tenant ID string, or empty string if not found.
+    """
     channel_data = getattr(activity, "channel_data", None) or {}
     if isinstance(channel_data, dict):
         tenant = channel_data.get("tenant") or {}
@@ -82,9 +96,14 @@ def _get_tenant_id(activity) -> str:
 
 def _quoted_query(user_text: str, scope: str) -> str:
     """
-    Must reproduce exactly what bot-ingest-function/function_app.py computed
-    for the SAME message when it built the placeholder text, so the
-    placeholder and the final delivered response show the same quote.
+    Generate markdown quote lines for the user query to display above responses in personal/group chats.
+
+    Args:
+        user_text: Original cleaned user query text.
+        scope: Conversation scope ('channel', 'personal', or 'groupChat').
+
+    Returns:
+        Markdown blockquote string for personal/group chats, or empty string for channel posts.
     """
     if scope == "channel":
         return ""
@@ -93,6 +112,21 @@ def _quoted_query(user_text: str, scope: str) -> str:
 
 
 def process_job(raw_payload: dict, dequeue_count: int = 1) -> None:
+    """
+    Process a dequeued query job end-to-end.
+
+    Extracts activity details, checks job age, downloads attachments, fetches thread context,
+    invokes the GTI Agentic API, formats the resulting card or text, and delivers the response
+    to Microsoft Teams.
+
+    Args:
+        raw_payload: Raw deserialized job dictionary from the queue.
+        dequeue_count: Number of times this message has been dequeued by the queue trigger.
+
+    Raises:
+        DeliveryFailedError: If Teams message delivery fails across all attempts.
+        Exception: Re-raised on unexpected errors to allow Azure Storage Queue retries.
+    """
     t_worker_start = time.perf_counter()
     activity_body, loading_activity_id, enqueued_at = parse_job_payload(raw_payload)
     activity = parse_activity(activity_body)

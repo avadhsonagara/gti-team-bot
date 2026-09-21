@@ -1,13 +1,8 @@
 """
-Google Threat Intelligence (GTI) Agentic API Client.
+Google Threat Intelligence (GTI) Agentic API client.
 
-Directly connects to the VirusTotal / GTI Agentic Sessions API:
-  - Create new session: POST /agentspace/sessions
-  - Post message to session: POST /agentspace/sessions/{session_id}
-  - Get session details: GET /agentspace/sessions/{session_id}
-  - Delete session: DELETE /agentspace/sessions/{session_id}
-
-Plain synchronous `requests` calls — no microsoft-teams-apps SDK, no async.
+Provides HTTP client operations for interacting with the GTI Agentic Sessions API,
+including session creation, message dispatch, history retrieval, and exponential backoff retries.
 """
 import logging
 import random
@@ -53,11 +48,11 @@ class GTIServiceError(GTIError):
 
 
 class GTIClientError(GTIError):
-    """Raised for a permanent, non-retryable 4xx error (e.g. malformed request, conflict) other than 401/403/404/413/429."""
+    """Raised for a permanent, non-retryable 4xx error other than 401/403/404/413/429."""
 
 
 class GTIPayloadTooLargeError(GTIClientError):
-    """Raised when the request body (typically attached files) exceeds the GTI API's size limit (HTTP 413)."""
+    """Raised when the request body exceeds the GTI API size limit (HTTP 413)."""
 
 
 class GTITimeoutError(GTIError):
@@ -65,20 +60,13 @@ class GTITimeoutError(GTIError):
 
 
 class GTIEmptyResponseError(GTIError):
-    """
-    Raised when the GTI Agentic API returns HTTP 200 but no displayable
-    AGENT_FINAL_RESPONSE text was found (e.g. a blocked or failed generation
-    on GTI's own side). This is a GTI-API-level failure signal, distinct from
-    any HTTP/transport-level error — without a dedicated exception for it,
-    the caller would otherwise silently deliver a bland "no response" string
-    to the user as if it were a real, successful answer.
-    """
+    """Raised when the GTI Agentic API returns a 200 OK response with no displayable agent response text."""
 
 
 # ── GTI Agentic API Client ───────────────────────────────────────────────────
 
 class GTIAgenticClient:
-    """Client for the Google Threat Intelligence Agentic API."""
+    """Client for interacting with the Google Threat Intelligence (GTI) Agentic API."""
 
     def __init__(
         self,
@@ -89,13 +77,19 @@ class GTIAgenticClient:
         retry_delay: float | None = None,
         rate_limit_retry_delay: float | None = None,
     ) -> None:
+        """
+        Initialize the GTI Agentic API client.
+
+        Args:
+            api_key: Optional API key. Defaults to settings.gti_api_key.
+            base_url: Optional API base URL. Defaults to settings.gti_api_base_url.
+            timeout: Request timeout in seconds. Defaults to settings.gti_timeout_seconds.
+            max_retries: Maximum number of retry attempts for transient errors.
+            retry_delay: Base delay between retries in seconds.
+            rate_limit_retry_delay: Base delay between rate limit retries in seconds.
+        """
         self.api_key = api_key or settings.gti_api_key
         self.base_url = (base_url or settings.gti_api_base_url).rstrip("/")
-        # Defaults to settings.gti_timeout_seconds (not a hardcoded literal)
-        # so this stays in the harmonized timeout chain with host.json's
-        # functionTimeout and extensions.queues.visibilityTimeout — raising
-        # GTI_TIMEOUT_SECONDS for a Flex Consumption deployment (see
-        # app/config.py) automatically flows through here.
         self.timeout = timeout if timeout is not None else settings.gti_timeout_seconds
         self.max_retries = max_retries if max_retries is not None else GTI_MAX_RETRIES
         self.retry_delay = retry_delay if retry_delay is not None else GTI_RETRY_DELAY_SECONDS
@@ -105,17 +99,18 @@ class GTIAgenticClient:
         self._session: requests.Session | None = None
 
     def _get_session(self) -> requests.Session:
-        """Return or lazily initialize the shared requests.Session."""
+        """
+        Retrieve or lazily initialize the shared requests.Session instance.
+
+        Returns:
+            Configured requests.Session object with HTTP connection pooling.
+        """
         if self._session is None:
             session = requests.Session()
             session.headers.update({
                 "x-apikey": self.api_key,
                 "User-Agent": "gti-teams-bot-agentic/1.0",
             })
-            # Sized to settings.concurrent_requests (see app/config.py)
-            # rather than urllib3's default of 10, so concurrent worker
-            # threads each get their own pooled connection instead of
-            # discarding/recreating one past the default pool size.
             adapter = HTTPAdapter(
                 pool_connections=settings.concurrent_requests,
                 pool_maxsize=settings.concurrent_requests,
@@ -125,7 +120,7 @@ class GTIAgenticClient:
         return self._session
 
     def close(self) -> None:
-        """Close the underlying HTTP session."""
+        """Close the underlying HTTP session and release connection pool resources."""
         if self._session is not None:
             self._session.close()
             self._session = None
@@ -134,11 +129,16 @@ class GTIAgenticClient:
 
     def _extract_response_text(self, data: dict[str, Any]) -> str:
         """
-        Extract the latest AGENT_FINAL_RESPONSE markdown text from session events.
+        Extract the latest AGENT_FINAL_RESPONSE markdown text from session event data.
 
-        Raises GTIEmptyResponseError (rather than returning a placeholder
-        string) whenever the API technically responded 200 OK but didn't
-        actually produce a usable answer — see that exception's docstring.
+        Args:
+            data: Raw dictionary response from the GTI API.
+
+        Returns:
+            Concatenated markdown text of final response widgets.
+
+        Raises:
+            GTIEmptyResponseError: If no valid response text was returned by the agent.
         """
         if not isinstance(data, dict):
             raise GTIEmptyResponseError("GTI API response was not a JSON object.")
@@ -183,8 +183,25 @@ class GTIAgenticClient:
         data: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """
-        Execute an HTTP request against the GTI Agentic API with rate limiting
-        and exponential backoff for transient failures and 429 rate limits.
+        Execute an HTTP request against the GTI API with rate limiting and retry handling.
+
+        Args:
+            method: HTTP method string (e.g. 'GET', 'POST').
+            endpoint: API endpoint path relative to the base URL.
+            files: Optional multipart form files payload.
+            data: Optional form data payload.
+
+        Returns:
+            Parsed JSON dictionary from the response.
+
+        Raises:
+            GTIAuthenticationError: On 401 or 403 response codes.
+            GTISessionNotFoundError: On 404 response codes.
+            GTIPayloadTooLargeError: On 413 response codes.
+            GTIRateLimitError: When rate limit retries are exhausted on 429 response codes.
+            GTIServiceError: On 5xx server errors when retries are exhausted.
+            GTITimeoutError: On connection errors or read timeouts.
+            GTIClientError: On non-retryable 4xx client errors.
         """
         if not self.api_key:
             raise GTIAuthenticationError(
@@ -334,18 +351,16 @@ class GTIAgenticClient:
         files: list[tuple[str, bytes, str]] | None = None,
     ) -> tuple[str, str, dict[str, Any]]:
         """
-        Create a new agentic session with the initial user message.
+        Create a new agentic session and submit an initial user message.
+
+        Args:
+            message: Initial user query or system prompt message.
+            files: Optional list of (filename, file_bytes, content_type) tuples.
 
         Returns:
-            (session_id, response_markdown_text, raw_api_response_dict)
+            Tuple of (session_id, response_markdown_text, raw_api_response_dict).
         """
         endpoint = "/agentspace/sessions"
-        # `files` is a single array-typed field in the API schema, so every file
-        # must repeat the SAME field name "files" (a dict can't hold duplicate
-        # keys, hence the list-of-tuples form here — requests' documented way
-        # to send a repeated multipart field). Using indexed keys like
-        # "files[0]"/"files[1]" here previously meant the backend never saw
-        # them as part of its "files" array at all.
         form_files: list[tuple[str, Any]] = [("message", (None, message))]
 
         if files:
@@ -372,11 +387,15 @@ class GTIAgenticClient:
         """
         Post a follow-up message to an existing agentic session.
 
+        Args:
+            session_id: Identifier of the active session.
+            message: Follow-up query or prompt text.
+            files: Optional list of (filename, file_bytes, content_type) tuples.
+
         Returns:
-            (session_id, response_markdown_text, raw_api_response_dict)
+            Tuple of (session_id, response_markdown_text, raw_api_response_dict).
         """
         endpoint = f"/agentspace/sessions/{session_id}"
-        # See create_session()'s comment — repeated "files" field name, not indexed keys.
         form_files: list[tuple[str, Any]] = [("message", (None, message))]
 
         if files:
@@ -400,12 +419,17 @@ class GTIAgenticClient:
         files: list[tuple[str, bytes, str]] | None = None,
     ) -> tuple[str, str, dict[str, Any]]:
         """
-        Send a message to GTI, continuing `session_id` if given, otherwise
-        creating a new session. Falls back to creating a new session when the
-        given session_id is no longer valid (expired / not found on GTI's side).
+        Send a message to GTI, continuing an existing session or creating a new one.
+
+        Falls back to creating a new session if the specified session_id is expired or not found.
+
+        Args:
+            message: Prompt message text to send.
+            session_id: Optional existing session ID to continue.
+            files: Optional list of (filename, file_bytes, content_type) tuples.
 
         Returns:
-            (session_id, response_markdown_text, raw_api_response_dict)
+            Tuple of (session_id, response_markdown_text, raw_api_response_dict).
         """
         if session_id:
             try:
@@ -417,12 +441,19 @@ class GTIAgenticClient:
     def get_session(self, session_id: str) -> dict[str, Any]:
         """
         Retrieve details and event history for an existing session.
+
+        Args:
+            session_id: Identifier of the session to fetch.
+
+        Returns:
+            Parsed JSON response dictionary from the GTI API.
         """
         endpoint = f"/agentspace/sessions/{session_id}"
         return self._send_request_with_retries(
             method="GET",
             endpoint=endpoint,
         )
+
 
 # Shared client instance
 gti_client = GTIAgenticClient()

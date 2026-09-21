@@ -1,28 +1,9 @@
 """
-Everything related to Microsoft Teams channel thread context lives here:
-Graph API message fetching, HTML/Adaptive Card text extraction, thread-root
-id parsing, the bot's-own-placeholder exclusion filter, and the top-level
-orchestrator (get_thread_context) called from the job processor.
+Microsoft Teams channel thread context retrieval and formatting.
 
-Requires the bot's Entra app registration (or Managed Identity) to be
-granted the Graph application permission `ChannelMessage.Read.All` with
-tenant-admin consent — separate from the Bot Framework permissions the app
-already uses to send/receive messages.
-
-Channel-only: Teams has no thread/reply-chain concept for personal (1:1) or
-group chats. Reading those would need the broader `Chat.Read.All` permission
-instead, which this module does not use.
-
-── Why this module needs a placeholder-exclusion filter at all ─────────────
-In the synchronous (non-queue) version of this bot, thread context was always
-fetched BEFORE posting the "looking into that…" placeholder, so the
-placeholder never had a chance to show up in Graph's message history. In this
-queue architecture, the Ingest Function posts that placeholder immediately
-and returns — by the time this Worker Function calls Graph (potentially
-minutes later), the placeholder is already sitting in the channel as a real
-message. Left unfiltered, every follow-up query in the same thread would feed
-the model its own "⏳ Looking into that…" text back as if it were part of the
-conversation. is_placeholder_message() below identifies and drops it.
+Fetches previous messages in a Teams channel thread via Microsoft Graph API,
+extracts text from HTML bodies and Adaptive Cards, filters out placeholder messages,
+and formats the conversation history into a transcript for the GTI prompt.
 """
 import html as html_lib
 import json
@@ -49,7 +30,15 @@ _THREAD_ROOT_ID_RE = re.compile(r";messageid=(\d+)")
 # ── Text extraction ──────────────────────────────────────────────────────────
 
 def html_to_text(raw_html: str) -> str:
-    """Best-effort plain-text extraction from a Teams message's HTML body."""
+    """
+    Extract plain text from a Teams message's HTML body.
+
+    Args:
+        raw_html: Raw HTML string from the message body.
+
+    Returns:
+        Cleaned plain-text string.
+    """
     if not raw_html:
         return ""
     text = re.sub(r"(?i)</p>|<br\s*/?>", "\n", raw_html)
@@ -62,17 +51,27 @@ def html_to_text(raw_html: str) -> str:
 
 def collapse_blank_lines(text: str) -> str:
     """
-    Collapse runs of blank lines down to a single newline, for compact thread
-    history entries. extract_text_from_card() joins Adaptive Card fields with
-    "\n\n" for readability when delivering a message to Teams — appropriate
-    there, but it spreads a single alert card across dozens of lines once
-    that text is reused as thread history.
+    Collapse multiple consecutive blank lines into single newlines.
+
+    Args:
+        text: Input string with potential runs of blank lines.
+
+    Returns:
+        Cleaned text string.
     """
     return _BLANK_LINES_RE.sub("\n", text).strip()
 
 
 def get_author(msg: dict[str, Any]) -> str:
-    """Return the display name of a Graph channel message's sender (user or bot/app)."""
+    """
+    Extract the display name of a message author (user or application).
+
+    Args:
+        msg: Graph message dictionary.
+
+    Returns:
+        Display name string, or 'Unknown' if not found.
+    """
     frm = msg.get("from") or {}
     user_name = (frm.get("user") or {}).get("displayName")
     if user_name:
@@ -85,9 +84,13 @@ def get_author(msg: dict[str, Any]) -> str:
 
 def extract_attachment_text(attachments: list[dict[str, Any]] | None) -> str:
     """
-    Best-effort plain-text extraction from a message's attachments. Card-only
-    messages (e.g. an Adaptive Card alert) have an empty `body.content` — the
-    real content lives in `attachments[].content`, a JSON-encoded card.
+    Extract plain-text content from message Adaptive Card attachments.
+
+    Args:
+        attachments: List of attachment dictionaries from Microsoft Graph.
+
+    Returns:
+        Concatenated text extracted from all Adaptive Cards.
     """
     parts: list[str] = []
     for att in attachments or []:
@@ -109,29 +112,14 @@ def extract_attachment_text(attachments: list[dict[str, Any]] | None) -> str:
 
 def is_placeholder_message(msg: dict[str, Any], bot_app_id: str) -> bool:
     """
-    True if this Graph channel message is this bot's own "looking into
-    that…" placeholder (or final response) and should be excluded from
-    thread context fed back into the GTI prompt.
+    Determine whether a message is the bot's own pending placeholder message.
 
-    Two checks, in order of confidence — and, importantly, BOTH require the
-    message to plausibly be from the bot, not just any message that happens
-    to contain the placeholder text:
+    Args:
+        msg: Graph message dictionary.
+        bot_app_id: Configured Microsoft application/client ID for the bot.
 
-      1. `from.application.id` matches our own CLIENT_ID exactly — the
-         strongest signal Graph gives us. When present, this alone decides
-         it; the content check just confirms it's specifically the
-         placeholder (not, say, a real final answer this bot posted earlier
-         in the thread, which SHOULD stay in context).
-      2. Graph sometimes omits `from.application.id` for a bot's own posts
-         (observed to vary by tenant/Graph API version). As a fallback, a
-         bot-posted message never has `from.user` set — a human sender
-         always does — so "no user" is used as the identity signal instead,
-         still combined with the content match.
-
-    Deliberately does NOT match on placeholder text alone with no identity
-    signal at all: a human could paste or quote that exact text, and
-    excluding a real user's message from context because of that would be a
-    false positive with no upside.
+    Returns:
+        True if the message matches the bot's identity and placeholder text.
     """
     frm = msg.get("from") or {}
     application = frm.get("application") or {}
@@ -154,6 +142,15 @@ def is_placeholder_message(msg: dict[str, Any], bot_app_id: str) -> bool:
 # ── Graph fetch ──────────────────────────────────────────────────────────────
 
 def _parse_graph_datetime(value: str) -> Optional[datetime]:
+    """
+    Parse an ISO 8601 timestamp string from Microsoft Graph.
+
+    Args:
+        value: Timestamp string.
+
+    Returns:
+        datetime object if parsing succeeds, or None.
+    """
     try:
         return datetime.fromisoformat(value.replace("Z", "+00:00"))
     except (ValueError, AttributeError):
@@ -165,15 +162,13 @@ _CLOCK_SKEW_MARGIN = timedelta(seconds=60)
 
 def _detect_page_order(page: list[dict[str, Any]]) -> Optional[str]:
     """
-    "asc" or "desc" read off a fetched page's own createdDateTime values, or
-    None when a single-message page makes that undeterminable.
+    Detect whether messages in a Graph page are ordered ascending or descending.
 
-    Needed because $orderby can't be relied on here: confirmed live that
-    Graph rejects $orderby=createdDateTime desc on this /replies endpoint
-    outright with a 400 ("Query option 'OrderBy' is not allowed") — this
-    function used to request it, which meant thread context failed outright
-    for any channel thread with replies at all. Rather than assume the real
-    default order instead, it's read off each response directly.
+    Args:
+        page: List of message dictionaries in the current page.
+
+    Returns:
+        'asc', 'desc', or None if order cannot be determined.
     """
     if len(page) < 2:
         return None
@@ -186,11 +181,15 @@ def _detect_page_order(page: list[dict[str, Any]]) -> Optional[str]:
 
 def _page_reaches_target(page: list[dict[str, Any]], order: Optional[str], target: Optional[datetime]) -> bool:
     """
-    True once a fetched page has reached target (+/- a clock-skew margin) in
-    whichever direction this listing actually runs — every message from here
-    on, in that direction, is even further from target, so whatever we're
-    looking for (if Graph has it at all) has already been fully covered by
-    the pages fetched so far, regardless of how many that took.
+    Check if a fetched message page has reached or passed the target timestamp.
+
+    Args:
+        page: List of message dictionaries in the page.
+        order: Page ordering ('asc' or 'desc').
+        target: Target timestamp to check against.
+
+    Returns:
+        True if the page spans beyond the target timestamp.
     """
     if target is None or not page or order is None:
         return False
@@ -211,24 +210,19 @@ def fetch_thread_messages(
     target_timestamp: Optional[datetime] = None,
 ) -> list[dict[str, Any]]:
     """
-    Return up to `limit` most recent PRIOR messages (root + replies) in a
-    channel thread, oldest first, as
-    [{"author": str, "text": str, "id": str}, ...].
+    Fetch recent prior messages in a channel thread via Microsoft Graph.
 
-    `exclude_message_id` (the message that triggered this query) is dropped
-    before the last-`limit` slice is taken — it's the current query, not
-    thread history, and must not count against or appear in the N latest
-    messages. This bot's own placeholder/status messages are also dropped via
-    is_placeholder_message() — see this module's docstring for why that
-    matters specifically in the queue architecture.
+    Args:
+        team_id: Teams team identifier.
+        channel_id: Teams channel identifier.
+        thread_id: Root post ID of the thread.
+        limit: Maximum number of prior messages to return.
+        exclude_message_id: Activity ID of the triggering message to omit.
+        bot_app_id: Client ID of the bot for placeholder filtering.
+        target_timestamp: Optional timestamp of the triggering activity.
 
-    `target_timestamp` (typically the triggering activity's own timestamp)
-    lets pagination stop once a fetched page has reached it (see
-    _page_reaches_target()) instead of relying on a fixed page count alone —
-    without it, a thread with more replies than THREAD_CONTEXT_MAX_PAGES x 50
-    could have its truly most recent messages fall outside the fetched
-    window depending on which direction Graph actually returns results in
-    (not requested via $orderby — see _detect_page_order()).
+    Returns:
+        List of message dictionaries with 'author', 'text', and 'id' fields.
     """
     messages: list[dict[str, Any]] = []
 
@@ -288,7 +282,15 @@ def fetch_thread_messages(
 
 
 def format_thread_context(messages: list[dict[str, Any]]) -> str:
-    """Render fetched thread messages as a plain-text transcript block."""
+    """
+    Render fetched thread messages as a plain-text transcript block.
+
+    Args:
+        messages: List of message dictionaries with 'author' and 'text'.
+
+    Returns:
+        Multi-line plain-text transcript string.
+    """
     return "\n".join(f"{msg['author']}: {msg['text']}" for msg in messages)
 
 
@@ -296,10 +298,13 @@ def format_thread_context(messages: list[dict[str, Any]]) -> str:
 
 def get_thread_root_id(conversation_id: str) -> str:
     """
-    Extract the channel thread's root message id from a Teams conversation id
-    (e.g. "19:xxx@thread.tacv2;messageid=1234567890" -> "1234567890").
-    Empty when the activity isn't a channel message (no thread concept exists
-    for personal/group chats).
+    Extract the channel thread's root message ID from a Teams conversation ID string.
+
+    Args:
+        conversation_id: Teams conversation ID (e.g. '19:...;messageid=123').
+
+    Returns:
+        Extracted root message ID string, or empty string if not present.
     """
     match = _THREAD_ROOT_ID_RE.search(conversation_id or "")
     return match.group(1) if match else ""
@@ -307,17 +312,13 @@ def get_thread_root_id(conversation_id: str) -> str:
 
 def get_team_post_id(activity) -> str:
     """
-    Return the channel thread's root Post ID — used as the session table's
-    RowKey. Channel-only; callers must not use this for personal/group
-    chats, which have no thread concept and never persist a session.
+    Determine the channel thread's root Post ID for session storage and message retrieval.
 
-    A reply's own conversation.id carries the root id directly
-    (";messageid=<rootId>", extracted by get_thread_root_id()). The root
-    post itself has no such suffix on ITS OWN conversation.id — but its own
-    activity.id IS that root id, so it's used as the fallback. Without this
-    fallback, the opening post of a new thread and its first reply would
-    resolve to two different ids (the opening post's own conversation.id vs.
-    the reply's parsed root id) and never find each other's stored session.
+    Args:
+        activity: Inbound activity object.
+
+    Returns:
+        Root post ID string.
     """
     thread_id = get_thread_root_id(activity.conversation.id)
     if thread_id:
@@ -326,7 +327,15 @@ def get_team_post_id(activity) -> str:
 
 
 def get_team_id(activity) -> str:
-    """Return the Graph-compatible team id (AAD group id) for this activity, or "" outside channels."""
+    """
+    Extract the Microsoft Graph team identifier (AAD group ID) for this activity.
+
+    Args:
+        activity: Inbound activity object.
+
+    Returns:
+        Team ID string, or empty string if outside channels.
+    """
     team = getattr(activity, "team", None)
     if not team:
         return ""
@@ -335,10 +344,15 @@ def get_team_id(activity) -> str:
 
 def get_channel_id(activity) -> str:
     """
-    Return the Teams channel id for this activity, or "" outside channels.
+    Extract the Teams channel ID for this activity.
 
-    Falls back to parsing it from conversation.id when channelData.channel
-    is missing (Teams doesn't always populate it, e.g. on some mobile clients).
+    Falls back to parsing from conversation.id if channel data is missing.
+
+    Args:
+        activity: Inbound activity object.
+
+    Returns:
+        Channel ID string, or empty string if outside channels.
     """
     channel = getattr(activity, "channel", None)
     channel_id = (getattr(channel, "id", None) if channel else None) or ""
@@ -354,10 +368,14 @@ def get_channel_id(activity) -> str:
 
 def get_thread_context(activity, scope: str) -> str:
     """
-    Best-effort fetch of the last N messages in this channel's thread via
-    Microsoft Graph, formatted as a plain-text transcript. Returns "" when
-    thread context isn't applicable (not a channel) or on any failure —
-    losing context is far less harmful than failing the whole request over it.
+    Fetch and format the last N messages in a channel thread via Microsoft Graph.
+
+    Args:
+        activity: Inbound activity object.
+        scope: Conversation scope ('channel', 'personal', etc.).
+
+    Returns:
+        Formatted transcript string, or empty string if not applicable or failed.
     """
     if scope != "channel" or not settings.thread_context_enabled:
         return ""

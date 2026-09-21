@@ -1,14 +1,8 @@
 """
-Output-format instructions persistence (Azure Blob Storage).
+Output format instructions persistence in Azure Blob Storage.
 
-main.bicep's outputFormatInstructions parameter seeds an initial value via
-the OUTPUT_FORMAT_INSTRUCTIONS app setting. This module then makes a JSON
-blob in the Function App's own storage account (AzureWebJobsStorage) the
-durable source of truth — mirroring azure/rs-alerts/app/state_store.py's
-cursor blob — so the format is persisted the same way across the two apps.
-
-The value changes rarely, so it's cached in memory for OUTPUT_FORMAT_CACHE_TTL_SECONDS
-instead of being read from Blob Storage on every message.
+Reads and persists customizable response formatting instructions to a JSON blob
+in Azure Blob Storage, maintaining an in-memory cache to minimize storage transactions.
 """
 import json
 import logging
@@ -29,16 +23,20 @@ _BLOB_NAME = "output-format.json"
 _cache_value: str | None = None
 _cache_fetched_at: float | None = None
 
-# Both the container client and its create_container() call only need to
-# happen once per worker instance lifetime — without this cache, every
-# single job (get_output_format() runs on every message) constructed a fresh
-# BlobServiceClient/container client and re-issued create_container() as an
-# extra HTTP round-trip.
 _container_client_instance = None
 _container_client_lock = threading.Lock()
 
 
 def _blob_client(settings: Settings):
+    """
+    Retrieve or initialize the BlobClient for the output format configuration blob.
+
+    Args:
+        settings: Application Settings instance.
+
+    Returns:
+        Configured BlobClient instance, or None if storage connection string is missing.
+    """
     global _container_client_instance
     if not settings.azure_web_jobs_storage:
         return None
@@ -56,6 +54,13 @@ def _blob_client(settings: Settings):
 
 
 def _write_output_format(settings: Settings, format_text: str) -> None:
+    """
+    Persist output format text to Azure Blob Storage and update local memory cache.
+
+    Args:
+        settings: Application Settings instance.
+        format_text: Formatting instructions string to persist.
+    """
     global _cache_value, _cache_fetched_at
     blob_client = _blob_client(settings)
     if blob_client is None:
@@ -67,15 +72,16 @@ def _write_output_format(settings: Settings, format_text: str) -> None:
 
 def get_output_format(settings: Settings) -> str:
     """
-    Return the current output-format instructions.
+    Retrieve current output formatting instructions.
 
-    Reads the JSON config blob if present; otherwise seeds it from the
-    deploy-time OUTPUT_FORMAT_INSTRUCTIONS default so later reads (and any
-    future config tooling) have a durable JSON source of truth instead of
-    relying on the app setting forever.
+    Returns cached instructions if fresh; otherwise attempts to download from
+    Azure Blob Storage or seeds initial instructions from application settings.
 
-    Cached in memory for OUTPUT_FORMAT_CACHE_TTL_SECONDS, since this rarely changes and
-    doesn't need a Blob Storage read on every message.
+    Args:
+        settings: Application Settings instance.
+
+    Returns:
+        Formatting instructions string.
     """
     global _cache_value, _cache_fetched_at
 

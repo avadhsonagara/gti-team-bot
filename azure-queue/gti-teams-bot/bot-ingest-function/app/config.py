@@ -1,11 +1,8 @@
 """
-Single source of truth for runtime configuration — Ingest Function.
+Runtime configuration settings for the GTI Teams Bot Ingest Function.
 
-Reads values from environment variables (and .env at startup). Azure
-Function App Application Settings are exposed as environment variables at
-runtime, so no Azure-specific config loading is needed.
-Field names map to env vars via automatic uppercasing:
-  e.g. `client_id` reads from `CLIENT_ID`.
+Loads application settings from environment variables and local .env files,
+providing validated configuration for Microsoft Teams, Bot Framework, and Azure Storage Queue.
 """
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict

@@ -1,20 +1,9 @@
 """
-Guards finding #10 (code duplication): bot-ingest-function and
-bot-worker-function each deploy independently (separate requirements.txt,
-separate code.zip, no shared installable package between them — see
-main.bicep's ingestCodeZipUrl/workerCodeZipUrl), so restructuring these into
-a real shared package would mean either symlinks (which `git archive` does
-not follow when building each app's code.zip) or a new multi-file zip-build
-step neither app's deployment currently has.
+Shared module byte-parity validation between ingest and worker function applications.
 
-Given that, the safer fix for the actual risk described in finding #10 — "an
-engineer alters ... in one app without updating the other" — is to make that
-drift impossible to miss silently: this test fails the moment any of these
-byte-identical files diverge, so a change lands as an intentional, reviewed
-edit to both copies rather than as an unnoticed contract break.
-
-If a file listed here is EVER intentionally allowed to diverge, remove it
-from this list rather than deleting the test.
+Ensures that duplicated shared infrastructure files (logging_config, observability,
+teams/activity, teams/context, and teams/bot_client) remain exactly byte-identical
+across both independent Function App code trees.
 """
 import pathlib
 

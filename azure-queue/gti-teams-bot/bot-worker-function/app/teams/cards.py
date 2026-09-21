@@ -1,13 +1,21 @@
 """
-Adaptive Card builders for GTI Teams Bot (Agentic).
+Adaptive Card payload generators for Microsoft Teams.
+
+Constructs schema-compliant Adaptive Cards (version 1.5) for GTI responses,
+status notifications, and layout adjustments such as right-aligning action buttons.
 """
 from datetime import datetime, timezone
 
 
 def align_card_actions_to_right(card: dict) -> dict:
     """
-    Format ActionSet buttons to align on the right side of item containers (Slack-style accessory button),
-    using a 2-column ColumnSet layout (stretch content on left, auto button on right).
+    Format ActionSet buttons to align on the right side of container elements using ColumnSets.
+
+    Args:
+        card: Adaptive Card payload dictionary.
+
+    Returns:
+        Transformed card dictionary with right-aligned action buttons.
     """
     if not isinstance(card, dict) or "body" not in card or not isinstance(card["body"], list):
         return card
@@ -59,15 +67,19 @@ def align_card_actions_to_right(card: dict) -> dict:
 
 def inject_quote_into_card(card: dict, quoted_query: str) -> dict:
     """
-    Ensure the user's quoted query is displayed at the top of an existing Adaptive Card.
+    Inject a quoted user query at the top of an Adaptive Card body.
+
+    Args:
+        card: Original Adaptive Card payload dictionary.
+        quoted_query: Formatted markdown quote string to prepend.
+
+    Returns:
+        Updated Adaptive Card payload dictionary.
     """
     if not isinstance(card, dict) or "body" not in card:
         return card
 
     card_copy = dict(card)
-    # setdefault() on a shallow copy would still mutate the caller's own
-    # "msteams" dict if `card` already had one (dict(card) only copies the
-    # top level) — copy it too before writing into it.
     card_copy["msteams"] = dict(card_copy.get("msteams") or {})
     card_copy["msteams"]["width"] = "full"
     card_copy = align_card_actions_to_right(card_copy)
@@ -79,17 +91,20 @@ def inject_quote_into_card(card: dict, quoted_query: str) -> dict:
             "isSubtle": True,
             "size": "Small",
         }
-        # Must prepend onto card_copy's (already right-aligned) body, not
-        # the original untransformed `card` — using `card` here silently
-        # discarded align_card_actions_to_right's ColumnSet transformation
-        # every time a quote was shown (i.e. every personal/group chat reply).
         card_copy["body"] = [quote_element] + list(card_copy.get("body", []))
     return card_copy
 
 
 def build_gti_response_card(markdown_text: str, quoted_query: str = "") -> dict:
     """
-    Construct an Adaptive Card 1.5 payload displaying the GTI threat intelligence response.
+    Construct an Adaptive Card payload displaying a GTI threat intelligence response.
+
+    Args:
+        markdown_text: Formatted response markdown content.
+        quoted_query: Optional quoted user query string to display at the top.
+
+    Returns:
+        Adaptive Card dictionary ready for delivery to Microsoft Teams.
     """
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
@@ -135,13 +150,14 @@ def build_gti_response_card(markdown_text: str, quoted_query: str = "") -> dict:
 
 def build_status_card(text: str, quoted_query: str = "") -> dict:
     """
-    Wrap a plain warning or informational message (usage hints, and every
-    error-path notice in job_processor.py) in a standard Adaptive Card.
+    Construct an Adaptive Card payload displaying a status, warning, or error notice.
 
-    quoted_query mirrors build_gti_response_card's own handling: personal/
-    group chats have no inline preview of the original message the way
-    channel replies do, so without this an error card gives the user no clue
-    which question it's even about.
+    Args:
+        text: Status or error notification message text.
+        quoted_query: Optional quoted user query string to display at the top.
+
+    Returns:
+        Adaptive Card dictionary ready for delivery to Microsoft Teams.
     """
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     body_elements: list[dict] = []

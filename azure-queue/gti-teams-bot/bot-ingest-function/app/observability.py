@@ -1,10 +1,8 @@
 """
-Per-request observability context.
+Per-request observability context management.
 
-A single Teams query produces multiple log lines across handlers, GTI API,
-and delivery. This module ties them together: a `request_id` is stored in a
-ContextVar at the start of the handler and auto-injected into every log
-record by `RequestContextFilter`.
+Stores request-scoped context variables (e.g. request ID, user, query, conversation)
+and injects them into standard logging records via RequestContextFilter.
 """
 import contextvars
 import logging
@@ -28,7 +26,10 @@ _CONTEXT_FIELDS = (
 
 def bind_request(**fields) -> None:
     """
-    Merge fields into the current request context (creating it if needed).
+    Bind context key-value pairs to the current asynchronous request context.
+
+    Args:
+        **fields: Keyword arguments representing context properties to associate with the request.
     """
     ctx = dict(_request_ctx.get())
 
@@ -40,14 +41,15 @@ def bind_request(**fields) -> None:
 
 
 def clear_request() -> None:
-    """Reset the context. Call in a finally block."""
+    """Clear the current request context variables."""
     _request_ctx.set({})
 
 
 class RequestContextFilter(logging.Filter):
-    """Copies the current request context onto each log record."""
+    """Logging filter that copies current request context attributes onto each LogRecord."""
 
     def filter(self, record: logging.LogRecord) -> bool:
+        """Attach context fields to the log record for formatting and telemetry export."""
         ctx = _request_ctx.get()
         record.request_id = ctx.get("request_id") or "-"
         for field in _CONTEXT_FIELDS:

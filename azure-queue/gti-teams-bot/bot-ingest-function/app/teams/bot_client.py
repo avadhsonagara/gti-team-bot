@@ -1,13 +1,8 @@
 """
-Outbound Bot Framework Connector API access — the bot's own token, and
-sending/updating/deleting a Teams message. Plain synchronous `requests`.
+Client for outbound Bot Framework Connector API requests.
 
-Token acquisition is Managed-Identity-only: this is a production bot, and
-the User-Assigned Managed Identity (MANAGED_IDENTITY_CLIENT_ID) is always
-available since it's provisioned together with the Function App by
-azure/infra/main.bicep — no client secret ever enters this codebase.
-Extended here with update/delete since this bot (unlike rs-alerts) edits
-and removes its own "looking into that…" placeholder.
+Handles token acquisition via Azure Managed Identity, and provides functions
+to send, update, and delete messages in Microsoft Teams conversations.
 """
 import logging
 import threading
@@ -32,12 +27,6 @@ logger = logging.getLogger("gti-teams-bot")
 _BOTFRAMEWORK_SCOPE = "https://api.botframework.com/.default"
 
 _session = requests.Session()
-# Retry.DEFAULT_ALLOWED_METHODS (the default here, left unset deliberately)
-# excludes POST — send_activity() below is the only POST caller, and it
-# creates a brand-new message, so retrying it on an ambiguous failure (e.g.
-# a 503 where the request may have already been processed) risks double-
-# posting to the user. update_activity()/delete_activity() (PUT/DELETE) are
-# idempotent and safe to retry, and are covered by the default method set.
 _retry_strategy = Retry(
     total=BOT_CONNECTOR_RETRY_TOTAL,
     backoff_factor=BOT_CONNECTOR_RETRY_BACKOFF_FACTOR,
@@ -58,7 +47,12 @@ _token_lock = threading.Lock()
 
 
 def _fetch_token_via_managed_identity() -> tuple[str, float]:
-    """Returns (token, seconds_until_expiry)."""
+    """
+    Acquire an app-only Bot Framework Connector token using Azure Managed Identity.
+
+    Returns:
+        Tuple of (access_token, seconds_until_expiry).
+    """
     credential = ManagedIdentityCredential(client_id=settings.managed_identity_client_id)
     result = credential.get_token(_BOTFRAMEWORK_SCOPE)
     seconds_remaining = max(0.0, result.expires_on - time.time())
@@ -66,14 +60,16 @@ def _fetch_token_via_managed_identity() -> tuple[str, float]:
 
 
 def get_bot_token() -> str:
-    """Return a cached app-only Bot Framework Connector token, refreshing it if near expiry."""
+    """
+    Return a cached Bot Framework Connector token, refreshing if near expiry.
+
+    Returns:
+        Bearer access token string.
+    """
     global _bot_token, _bot_token_expires_at
     if _bot_token and time.monotonic() < _bot_token_expires_at - TOKEN_EXPIRY_SAFETY_SECONDS:
         return _bot_token
 
-    # Azure Functions can run a request pool with more than one worker thread
-    # per instance — without this lock, two overlapping requests can both see
-    # an expired token above and both refresh it concurrently.
     with _token_lock:
         if _bot_token and time.monotonic() < _bot_token_expires_at - TOKEN_EXPIRY_SAFETY_SECONDS:
             return _bot_token
@@ -88,19 +84,21 @@ def get_bot_token() -> str:
 
 
 def _headers() -> dict:
+    """Return default HTTP headers including authorization and JSON content-type."""
     return {"Authorization": f"Bearer {get_bot_token()}", "Content-Type": "application/json"}
 
 
 def send_activity(service_url: str, conversation_id: str, activity: dict) -> dict:
     """
-    POST a new activity to a conversation. Returns the Connector API response
-    (includes 'id').
+    Post a new activity to a Teams conversation.
 
-    POST is deliberately excluded from the mounted adapter's own retry
-    strategy (see _retry_strategy above) to avoid double-posting on an
-    ambiguous 5xx failure. A 429 carries no such risk — it means the request
-    was throttled before being processed at all — so it's retried here
-    instead, respecting Retry-After when the Connector API sends one.
+    Args:
+        service_url: Base URL for the Bot Framework Connector service.
+        conversation_id: Target conversation ID.
+        activity: Activity payload dictionary.
+
+    Returns:
+        Response dictionary from the Bot Framework Connector containing activity ID.
     """
     url = f"{service_url.rstrip('/')}/v3/conversations/{conversation_id}/activities"
     for attempt in range(BOT_CONNECTOR_RETRY_TOTAL + 1):
@@ -121,7 +119,18 @@ def send_activity(service_url: str, conversation_id: str, activity: dict) -> dic
 
 
 def update_activity(service_url: str, conversation_id: str, activity_id: str, activity: dict) -> dict:
-    """PUT (edit in place) an existing activity."""
+    """
+    Update an existing activity in a Teams conversation.
+
+    Args:
+        service_url: Base URL for the Bot Framework Connector service.
+        conversation_id: Target conversation ID.
+        activity_id: ID of the activity to update.
+        activity: Updated activity payload dictionary.
+
+    Returns:
+        Response dictionary from the Bot Framework Connector.
+    """
     url = f"{service_url.rstrip('/')}/v3/conversations/{conversation_id}/activities/{activity_id}"
     resp = _session.put(url, headers=_headers(), json=activity, timeout=BOT_CONNECTOR_TIMEOUT)
     resp.raise_for_status()
@@ -129,7 +138,14 @@ def update_activity(service_url: str, conversation_id: str, activity_id: str, ac
 
 
 def delete_activity(service_url: str, conversation_id: str, activity_id: str) -> None:
-    """DELETE an existing activity."""
+    """
+    Delete an existing activity from a Teams conversation.
+
+    Args:
+        service_url: Base URL for the Bot Framework Connector service.
+        conversation_id: Target conversation ID.
+        activity_id: ID of the activity to delete.
+    """
     url = f"{service_url.rstrip('/')}/v3/conversations/{conversation_id}/activities/{activity_id}"
     resp = _session.delete(url, headers=_headers(), timeout=BOT_CONNECTOR_TIMEOUT)
     resp.raise_for_status()

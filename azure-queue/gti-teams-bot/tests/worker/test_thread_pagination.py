@@ -1,16 +1,8 @@
 """
-Regression test for finding #6 (and its own follow-up regression):
-fetch_thread_messages() must return the actual NEWEST replies in a very
-active channel thread, not an arbitrary window truncated by
-THREAD_CONTEXT_MAX_PAGES. The original fix requested
-$orderby=createdDateTime desc on /replies to make a capped pagination walk
-backward from the newest reply — but that's now confirmed live to make
-Graph reject the whole request with a 400 ("Query option 'OrderBy' is not
-allowed"), which silently broke thread context for every channel thread
-with any replies at all. The real fix detects whichever order Graph
-actually returns per page (_detect_page_order) and stops once a page
-reaches a target timestamp in that direction (_page_reaches_target),
-without ever requesting $orderby.
+Tests for thread message pagination and ordering in Microsoft Graph API.
+
+Verifies that fetch_thread_messages() correctly traverses pages to retrieve the newest replies
+in high-activity channel threads without relying on unsupported $orderby query parameters.
 """
 from datetime import datetime, timedelta
 from types import SimpleNamespace
@@ -46,11 +38,7 @@ class _FakeResponse:
 
 def _make_fake_get(requested_urls: list):
     """
-    Simulates Microsoft Graph's real, confirmed-live /replies behavior:
-    newest-first pages, and a 400 if $orderby is ever requested (this is
-    what actually happens against real Graph — not a hypothetical). Root
-    n=0 is the oldest message of all. Replies are n=1 (oldest) .. n=3000
-    (newest).
+    Simulate Microsoft Graph /replies endpoint behavior with pagination.
     """
     state = {"page": 0}
 
@@ -76,6 +64,7 @@ def _make_fake_get(requested_urls: list):
 
 
 def test_returns_true_newest_replies_without_requesting_orderby(monkeypatch):
+    """Test that pagination retrieves the latest replies without requiring an orderby query param."""
     requested_urls: list = []
     monkeypatch.setattr(thread_module, "graph_client", type("_G", (), {"get": staticmethod(_make_fake_get(requested_urls))})())
 
@@ -110,14 +99,7 @@ def test_returns_true_newest_replies_without_requesting_orderby(monkeypatch):
 
 def test_thread_context_works_for_a_brand_new_root_post(monkeypatch):
     """
-    Regression test: a channel thread's own OPENING post has no
-    ";messageid=" suffix on its own conversation.id at all (only a reply's
-    conversation.id carries one) — get_thread_root_id() alone returns "" for
-    it. get_thread_context() must use get_team_post_id() (which has the
-    root-post fallback: its own activity.id IS the thread root id), not the
-    raw get_thread_root_id(activity.conversation.id) — otherwise thread
-    context silently comes back empty for the very first message of every
-    new channel thread, confirmed live against a real deployment.
+    Verify thread context resolution when the activity is the root post of a thread.
     """
     requested_urls: list = []
 

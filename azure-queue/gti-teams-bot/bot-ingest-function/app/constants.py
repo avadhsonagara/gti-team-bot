@@ -1,4 +1,8 @@
+"""
+Application constants for the GTI Teams Bot Ingest Function.
+"""
 APP_NAME = "gti-teams-bot-ingest"
+
 
 # Kept byte-for-byte identical to bot-worker-function/app/constants.py — the
 # two Function Apps are deployed and versioned independently (no shared

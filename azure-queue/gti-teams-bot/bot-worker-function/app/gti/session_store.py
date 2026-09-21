@@ -1,29 +1,8 @@
 """
-Persists the mapping from a Teams channel thread to its GTI Agentic
-session_id, so a second message in the same thread continues the same GTI
-session instead of starting a fresh one each time.
+Azure Table Storage persistence for GTI channel thread sessions.
 
-Only channel messages ever get a row here. Personal (1:1) and group chats
-never persist a session — every message there always starts a fresh GTI
-session, so job_processor.py never calls into this module for those scopes.
-
-Azure Table Storage-backed, one table ("GtiSessions"), one row per channel
-thread:
-  PartitionKey = "<team_id>:<channel_id>"   # scopes every row to one channel
-  RowKey       = "<team_post_id>"           # the thread's root Post ID
-  gti_session_id = "<str>"
-
-`upsert_entity` is atomic per partition/row key, so two threads writing
-different session keys concurrently can never clobber each other's entry —
-unlike a single shared JSON blob, where a full read-modify-write-whole-file
-cycle let a second thread's write silently erase a first thread's just-added
-key.
-
-When the bot is removed from a team, delete_team_sessions() deletes every
-row whose PartitionKey starts with "<team_id>:" — i.e. every channel of that
-team — via a PartitionKey range query, since Bot Framework's removal event
-fires once per team (not once per channel), so a specific channel_id usually
-isn't available at cleanup time.
+Maintains mappings between Teams channel thread post IDs and active GTI session IDs,
+allowing subsequent replies within the same thread to continue previous conversational context.
 """
 import logging
 import threading
@@ -37,31 +16,62 @@ logger = logging.getLogger("gti-teams-bot")
 
 _TABLE_NAME = "GtiSessions"
 
-# Both the TableClient instance and its create_table() call only need to
-# happen once per worker instance lifetime — without this cache, every
-# single get/set call constructed a fresh client and (until the flag was
-# added) re-issued create_table() as an extra HTTP round-trip.
 _table_client_instance: TableClient | None = None
 _table_client_lock = threading.Lock()
 
 
 def _sanitize(value: str) -> str:
-    """Replace characters Table Storage forbids in a PartitionKey/RowKey ('/', '\\', '#', '?')."""
+    """
+    Sanitize a string for use in Azure Table Storage PartitionKey and RowKey fields.
+
+    Args:
+        value: Raw key string.
+
+    Returns:
+        Sanitized string with forbidden characters replaced by underscores.
+    """
     for ch in ("/", "\\", "#", "?"):
         value = value.replace(ch, "_")
     return value
 
 
 def _escape_odata_string(value: str) -> str:
-    """Escape a value for safe interpolation into an OData filter string literal."""
+    """
+    Escape single quotes for inclusion in an OData query filter string literal.
+
+    Args:
+        value: Input string to escape.
+
+    Returns:
+        OData-safe escaped string.
+    """
     return value.replace("'", "''")
 
 
 def _partition_key(team_id: str, channel_id: str) -> str:
+    """
+    Construct a partition key from team and channel identifiers.
+
+    Args:
+        team_id: Teams team identifier.
+        channel_id: Teams channel identifier.
+
+    Returns:
+        Combined sanitized partition key string.
+    """
     return f"{_sanitize(team_id)}:{_sanitize(channel_id)}"
 
 
-def _table_client(cfg: Settings):
+def _table_client(cfg: Settings) -> TableClient | None:
+    """
+    Retrieve or lazily initialize the shared TableClient instance for session storage.
+
+    Args:
+        cfg: Application Settings instance.
+
+    Returns:
+        Configured TableClient instance, or None if connection string is missing.
+    """
     global _table_client_instance
     if not cfg.azure_web_jobs_storage:
         return None
@@ -78,7 +88,17 @@ def _table_client(cfg: Settings):
 
 
 def get_session_id(team_id: str, channel_id: str, team_post_id: str) -> str | None:
-    """Return the stored GTI session_id for this channel thread, or None."""
+    """
+    Retrieve the stored GTI session ID for a channel thread.
+
+    Args:
+        team_id: Teams team identifier.
+        channel_id: Teams channel identifier.
+        team_post_id: Root post ID of the thread.
+
+    Returns:
+        Active GTI session ID string if found, or None.
+    """
     if not (team_id and channel_id and team_post_id):
         return None
     client = _table_client(settings)
@@ -107,7 +127,15 @@ def get_session_id(team_id: str, channel_id: str, team_post_id: str) -> str | No
 
 
 def set_session_id(team_id: str, channel_id: str, team_post_id: str, gti_session_id: str) -> None:
-    """Persist the GTI session_id for this channel thread."""
+    """
+    Persist or update the GTI session ID associated with a channel thread.
+
+    Args:
+        team_id: Teams team identifier.
+        channel_id: Teams channel identifier.
+        team_post_id: Root post ID of the thread.
+        gti_session_id: GTI session ID to store.
+    """
     if not (team_id and channel_id and team_post_id and gti_session_id):
         return
     client = _table_client(settings)
@@ -132,16 +160,10 @@ def set_session_id(team_id: str, channel_id: str, team_post_id: str, gti_session
 
 def delete_team_sessions(team_id: str) -> None:
     """
-    Delete every stored session for every channel of a team — called when
-    the bot is removed from that team, so Table Storage doesn't accumulate
-    rows for a team that no longer has the bot installed.
+    Delete all stored sessions for every channel belonging to a specified team.
 
-    A PartitionKey range query ("team_id:" <= PartitionKey < "team_id;" —
-    ':' sorts immediately before ';' in ASCII, so this matches exactly the
-    partition keys that start with "team_id:", whatever channel_id follows)
-    rather than an exact-partition delete, since Bot Framework's removal
-    event fires once per team, not once per channel — a specific channel_id
-    usually isn't available here.
+    Args:
+        team_id: Teams team identifier whose session records should be removed.
     """
     if not team_id:
         return

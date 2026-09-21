@@ -1,17 +1,9 @@
 """
-Regression test for finding #5: bot_client.py's shared requests.Session must
-retry transient Bot Framework Connector failures (429/5xx) — but must NOT
-retry POST (send_activity's method), since retrying a POST that may have
-already been processed server-side risks double-posting a message to the
-user. PUT/DELETE (update_activity/delete_activity) are idempotent and should
-be retried.
+Tests for Bot Framework Connector HTTP retry and connection pool configuration.
 
-Also regression-tests a real gap that follows directly from the above:
-urllib3's allowed_methods restriction (excluding POST) blocks retrying
-*every* status in status_forcelist for POST, including 429 — even though a
-429 means the request was throttled before being processed at all, so
-retrying it carries none of the double-post risk a 5xx does. send_activity()
-handles 429 with its own dedicated retry loop instead, honoring Retry-After.
+Verifies that HTTPAdapter retries idempotent operations (PUT/DELETE) on 429/5xx,
+avoids automatic retries on non-idempotent POSTs, handles 429 rate limiting with Retry-After,
+and sizes the HTTP connection pool appropriately.
 """
 import time as time_module
 

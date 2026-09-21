@@ -1,11 +1,8 @@
 """
-Regression test for finding #1: process_job() must not silently swallow a
-delivery failure. Previously, when deliver_message() exhausted every
-fallback and returned False, process_job() only logged an error and
-returned normally — no exception reached the queue trigger, so the Azure
-Functions runtime treated the invocation as successful and deleted the
-message. Fixed by raising DeliveryFailedError so the job goes through the
-queue's own retry/poison-queue mechanism instead.
+Tests for message delivery handling in job processor.
+
+Verifies that delivery failures raise DeliveryFailedError to allow queue retry,
+while terminal GTI errors deliver status notifications to the user without raising.
 """
 from datetime import datetime, timedelta, timezone
 

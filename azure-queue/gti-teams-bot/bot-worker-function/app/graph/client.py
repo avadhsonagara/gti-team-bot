@@ -1,16 +1,8 @@
 """
-Microsoft Graph API client — generic app-only HTTP access to Microsoft Graph.
+Microsoft Graph API client for app-only HTTP access.
 
-Reuses the same User-Assigned Managed Identity as the bot's Bot Framework
-auth (app/teams/bot_client.py, MANAGED_IDENTITY_CLIENT_ID) — no client
-secret, ever, matching this production bot's Managed-Identity-only model.
-
-That identity must be granted the Graph APPLICATION permission
-`ChannelMessage.Read.All` with tenant-admin consent — separate from the Bot
-Framework permissions already in use.
-
-Plain synchronous `requests`/`azure-identity` calls throughout — no
-microsoft-teams-apps SDK, no async.
+Acquires bearer tokens via User-Assigned Managed Identity and provides authenticated
+HTTP requests to Microsoft Graph endpoints for channel messages and attachments.
 """
 import logging
 import threading
@@ -33,13 +25,20 @@ class GraphError(Exception):
 
 
 class GraphClient:
-    """Client for app-only Microsoft Graph calls."""
+    """Client for app-only Microsoft Graph calls using Managed Identity authentication."""
 
     def __init__(
         self,
         managed_identity_client_id: str | None = None,
         timeout: float = GRAPH_API_TIMEOUT_SECONDS,
     ) -> None:
+        """
+        Initialize the Microsoft Graph client.
+
+        Args:
+            managed_identity_client_id: Optional client ID of the User-Assigned Managed Identity.
+            timeout: Default HTTP request timeout in seconds.
+        """
         self.managed_identity_client_id = managed_identity_client_id or settings.managed_identity_client_id
         self.timeout = timeout
         self._session: requests.Session | None = None
@@ -48,12 +47,16 @@ class GraphClient:
         self._lock = threading.Lock()
 
     def _get_session(self) -> requests.Session:
+        """
+        Retrieve or lazily initialize the thread-safe HTTP session.
+
+        Returns:
+            Configured requests.Session instance.
+        """
         if self._session is None:
             with self._lock:
                 if self._session is None:
                     session = requests.Session()
-                    # Sized to settings.concurrent_requests (see
-                    # app/config.py) rather than urllib3's default of 10.
                     adapter = HTTPAdapter(
                         pool_connections=settings.concurrent_requests,
                         pool_maxsize=settings.concurrent_requests,
@@ -63,6 +66,7 @@ class GraphClient:
         return self._session
 
     def close(self) -> None:
+        """Close the underlying HTTP session and release connection resources."""
         if self._session is not None:
             self._session.close()
             self._session = None
@@ -70,21 +74,30 @@ class GraphClient:
     # ── Auth ─────────────────────────────────────────────────────────────────
 
     def _fetch_token_via_managed_identity(self) -> tuple[str, float]:
-        """Returns (token, seconds_until_expiry)."""
+        """
+        Acquire a Microsoft Graph access token using Managed Identity.
+
+        Returns:
+            Tuple of (token_string, seconds_until_expiry).
+        """
         credential = ManagedIdentityCredential(client_id=self.managed_identity_client_id)
         result = credential.get_token(_GRAPH_SCOPE)
         seconds_remaining = max(0.0, result.expires_on - time.time())
         return result.token, seconds_remaining
 
     def _get_token(self) -> str:
-        """Return a cached app-only Graph token, refreshing it if near expiry."""
+        """
+        Retrieve a valid cached Graph token, refreshing it if nearing expiration.
+
+        Returns:
+            Bearer token string.
+
+        Raises:
+            GraphError: If MANAGED_IDENTITY_CLIENT_ID is not configured.
+        """
         if self._token and time.monotonic() < self._token_expires_at - TOKEN_EXPIRY_SAFETY_SECONDS:
             return self._token
 
-        # graph_client is a module-level singleton shared across whatever
-        # concurrent requests an Azure Functions instance's thread pool is
-        # running — without this lock, two overlapping requests can both see
-        # an expired token above and both refresh it concurrently.
         with self._lock:
             if self._token and time.monotonic() < self._token_expires_at - TOKEN_EXPIRY_SAFETY_SECONDS:
                 return self._token
@@ -101,14 +114,14 @@ class GraphClient:
 
     def get(self, url: str, **kwargs) -> requests.Response:
         """
-        Authenticated GET against Microsoft Graph, with this client's own
-        timeout applied unless the caller overrides it. Centralizes
-        token/session/timeout handling here so callers (app/teams/thread.py,
-        app/teams/attachments.py) never need to reach into this client's
-        internals (_get_token()/_get_session()) themselves — previously they
-        did, which also meant every one of those calls had no timeout at all
-        (requests defaults to blocking forever), letting a Graph network
-        stall hang the whole invocation until functionTimeout killed it.
+        Execute an authenticated GET request against Microsoft Graph.
+
+        Args:
+            url: Full Microsoft Graph endpoint URL.
+            **kwargs: Additional arguments passed to requests.Session.get.
+
+        Returns:
+            Response object from the Graph API.
         """
         kwargs.setdefault("timeout", self.timeout)
         headers = dict(kwargs.pop("headers", None) or {})
