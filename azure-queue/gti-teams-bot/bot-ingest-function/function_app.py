@@ -196,23 +196,40 @@ def _ingest_message(body: dict, t_start: float) -> None:
     conversation_id = activity.conversation.id
     sender = getattr(activity, "from_", None)
     user_id = getattr(sender, "id", "unknown") if sender else "unknown"
-    bind_request(request_id=activity.id or "", user=user_id, conversation=conversation_id, activity_id=activity.id or "")
-
+    user_name = (getattr(sender, "name", None) or user_id) if sender else "unknown"
     scope = getattr(activity.conversation, "conversation_type", "") or ""
     user_text = _strip_mentions(activity.text or "").strip()
 
-    logger.info(
-        "[INGEST 1/3] Activity received | id=%s scope=%s user=%s query_chars=%d attachments=%d",
-        activity.id or "-", scope, user_id, len(user_text), len(activity.attachments or []),
+    bind_request(
+        request_id=activity.id or "",
+        user=user_id,
+        user_name=user_name,
+        query=user_text,
+        scope=scope,
+        conversation=conversation_id,
+        activity_id=activity.id or "",
     )
 
     if not user_text or not re.search(r"\w", user_text, re.UNICODE):
-        logger.info("[INGEST] Empty query text — sent usage hint in %.0fms", (time.perf_counter() - t_start) * 1000)
+        logger.info(
+            "[INGEST] Empty query received | user='%s' (%s) scope=%s | sent usage hint in %.0fms",
+            user_name, user_id, scope, (time.perf_counter() - t_start) * 1000,
+        )
         try:
             ctx.send(_EMPTY_QUERY_NOTICE)
         except Exception:
-            logger.warning("[INGEST] Failed to send empty-query usage hint.")
+            logger.warning("[INGEST] Failed to send empty-query usage hint to user='%s'", user_name)
         return
+
+    attachments = activity.attachments or []
+    attachment_count = len(attachments)
+    att_names = [getattr(a, "name", "") for a in attachments if getattr(a, "name", None)]
+    att_info = f" | attachments={attachment_count} ({', '.join(att_names)})" if att_names else (f" | attachments={attachment_count}" if attachment_count else "")
+
+    logger.info(
+        "[INGEST 1/3] Inbound User Query | user='%s' (%s) scope=%s | query='%s'%s",
+        user_name, user_id, scope, user_text, att_info,
+    )
 
     # Channel messages already show the original post inline (and, for
     # thread replies, Teams renders the reply-to preview itself) — the
@@ -238,9 +255,21 @@ def _ingest_message(body: dict, t_start: float) -> None:
             (time.perf_counter() - t_ph) * 1000, loading_activity_id, conversation_id,
         )
     except Exception as exc:
-        logger.warning("[INGEST 2/3] Placeholder post failed (%.0fms): %s", (time.perf_counter() - t_ph) * 1000, exc)
+        logger.warning(
+            "[INGEST 2/3] Placeholder post failed (%.0fms): %s | user='%s' query='%s'",
+            (time.perf_counter() - t_ph) * 1000, exc, user_name, user_text,
+        )
 
-    _enqueue_job(body, loading_activity_id, ctx, scope, t_start, quoted_query)
+    _enqueue_job(
+        body,
+        loading_activity_id,
+        ctx,
+        scope,
+        t_start,
+        quoted_query,
+        user_name=user_name,
+        user_text=user_text,
+    )
 
 
 def _deliver_error_notice(ctx: Ctx, loading_activity_id, scope: str, text: str, quoted_query: str = "") -> None:
@@ -283,15 +312,24 @@ def _get_queue_client() -> QueueClient:
     return _queue_client_instance
 
 
-def _enqueue_job(activity_body: dict, loading_activity_id, ctx: Ctx, scope: str, t_start: float, quoted_query: str = "") -> None:
+def _enqueue_job(
+    activity_body: dict,
+    loading_activity_id,
+    ctx: Ctx,
+    scope: str,
+    t_start: float,
+    quoted_query: str = "",
+    user_name: str = "unknown",
+    user_text: str = "",
+) -> None:
     payload = build_job_payload(activity_body, loading_activity_id)
     encoded = json.dumps(payload)
     encoded_bytes = encoded.encode("utf-8")
 
     if len(encoded_bytes) > settings.max_job_payload_bytes:
         logger.error(
-            "[INGEST] Job payload too large (%d bytes, limit %d) — notifying user instead of enqueueing.",
-            len(encoded_bytes), settings.max_job_payload_bytes,
+            "[INGEST] Job payload too large (%d bytes, limit %d) | user='%s' query='%s' — notifying user instead of enqueueing.",
+            len(encoded_bytes), settings.max_job_payload_bytes, user_name, user_text,
         )
         _deliver_error_notice(ctx, loading_activity_id, scope, _JOB_TOO_LARGE_NOTICE, quoted_query)
         return
@@ -309,17 +347,23 @@ def _enqueue_job(activity_body: dict, loading_activity_id, ctx: Ctx, scope: str,
             settings.job_queue_name, (time.perf_counter() - t_q) * 1000, len(encoded_bytes),
         )
         logger.info(
-            "[INGEST DONE] Handoff completed in %.0fms | ready for worker pickup",
-            (time.perf_counter() - t_start) * 1000,
+            "[INGEST DONE] Handoff completed in %.0fms | user='%s' query='%s' ready for worker pickup",
+            (time.perf_counter() - t_start) * 1000, user_name, user_text,
         )
     except Exception:
-        logger.exception("[INGEST] Failed to enqueue job after %.0fms — notifying user.", (time.perf_counter() - t_start) * 1000)
+        logger.exception(
+            "[INGEST] Failed to enqueue job after %.0fms | user='%s' query='%s' — notifying user.",
+            (time.perf_counter() - t_start) * 1000, user_name, user_text,
+        )
         _deliver_error_notice(ctx, loading_activity_id, scope, _QUEUE_FAILURE_NOTICE, quoted_query)
 
 
 def _enqueue_installation_removed(activity_body: dict) -> None:
     """Enqueue a small cleanup job so the worker can delete this team's stored GTI sessions."""
+    activity = parse_activity(activity_body)
+    conversation_id = getattr(activity.conversation, "id", "")
+    bind_request(request_id=activity.id or "", conversation=conversation_id, activity_id=activity.id or "")
     payload = build_job_payload(activity_body, None, kind="installationUpdateRemove")
     queue_client = _get_queue_client()
     queue_client.send_message(json.dumps(payload))
-    logger.info("[INGEST] Enqueued installationUpdate removal for cleanup.")
+    logger.info("[INGEST EVENT] Enqueued installationUpdate removal for team session cleanup | conversation=%s", conversation_id)

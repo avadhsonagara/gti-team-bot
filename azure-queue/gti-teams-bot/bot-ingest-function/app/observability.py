@@ -14,7 +14,16 @@ _request_ctx: contextvars.ContextVar[dict] = contextvars.ContextVar(
     "request_ctx", default={}
 )
 
-_CONTEXT_FIELDS = ("activity_id", "user", "conversation", "tenant", "session_id")
+_CONTEXT_FIELDS = (
+    "activity_id",
+    "user",
+    "user_name",
+    "query",
+    "scope",
+    "conversation",
+    "tenant",
+    "session_id",
+)
 
 
 def bind_request(**fields) -> None:

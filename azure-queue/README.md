@@ -237,6 +237,48 @@ the GTI prompt is built — verified with a test asserting the literal
   deployment (this task covered application code, not infrastructure/IaC
   for this new layout).
 
+## Application Insights & Observability
+
+Both Function Apps write structured logs to Azure Application Insights with correlation across the entire request lifecycle:
+
+- **Prominent User Query Logging**:
+  - `bot-ingest-function` immediately logs:
+    `[INGEST 1/3] Inbound User Query | user='<name>' (<id>) scope=<scope> | query='<query>' | attachments=<count>`
+  - `bot-worker-function` immediately logs:
+    `[WORKER START] Processing User Query | user='<name>' (<id>) scope=<scope> | query='<query>' | dequeue_count=<count> queue_wait=<seconds>s`
+- **Application Insights `customDimensions`**:
+  `RequestContextFilter` (`app/observability.py`) automatically propagates the following context fields to every log record into `customDimensions`:
+  - `query`: The exact user query string.
+  - `user_name`: The Teams display name of the user.
+  - `user`: The user's Teams / AAD ID.
+  - `scope`: Conversation scope (`personal`, `groupChat`, or `channel`).
+  - `request_id` / `activity_id`: Bot Framework activity ID correlating the Ingest and Worker invocations.
+  - `conversation`: Teams conversation ID.
+  - `tenant`: Azure AD tenant ID.
+  - `session_id`: GTI Agentic session ID.
+
+### Useful Kusto (KQL) Queries in Application Insights
+
+#### View recent user queries and responses across both apps:
+```kusto
+traces
+| extend user = tostring(customDimensions.user_name),
+         query = tostring(customDimensions.query),
+         scope = tostring(customDimensions.scope),
+         activity_id = tostring(customDimensions.activity_id)
+| where message startswith "[INGEST 1/3]" or message startswith "[WORKER START]" or message startswith "[WORKER DONE]"
+| project timestamp, cloud_RoleName, message, user, query, scope, activity_id
+| order by timestamp desc
+```
+
+#### Trace a single query end-to-end (Ingest handoff -> Worker completion):
+```kusto
+traces
+| where customDimensions.activity_id == "<activity-id>" or customDimensions.request_id == "<activity-id>"
+| project timestamp, cloud_RoleName, message, customDimensions
+| order by timestamp asc
+```
+
 ## Automated tests
 
 [`gti-teams-bot/tests/`](gti-teams-bot/tests) and [`rs-alerts-function/tests/`](rs-alerts-function/tests) —
@@ -266,4 +308,5 @@ the Bot Framework Connector retry policy (and that `POST`/`send_activity` is
 deliberately excluded from it), channel-thread pagination once a thread
 exceeds 250 replies, and a parity check that fails if the files meant to
 stay byte-identical between the two apps ever diverge.
+
 

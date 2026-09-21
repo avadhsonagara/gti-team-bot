@@ -49,17 +49,26 @@ def process_poison_job(raw_payload: dict) -> None:
         scope = getattr(activity.conversation, "conversation_type", "") or ""
         sender = getattr(activity, "from_", None)
         user_id = getattr(sender, "id", "unknown") if sender else "unknown"
-        bind_request(request_id=activity.id or "", user=user_id, conversation=activity.conversation.id, activity_id=activity.id or "")
+        user_name = (getattr(sender, "name", None) or user_id) if sender else "unknown"
+        user_text = strip_mentions(activity.text or "").strip()
+        quoted_query = _quoted_query(user_text, scope)
+        bind_request(
+            request_id=activity.id or "",
+            user=user_id,
+            user_name=user_name,
+            query=user_text,
+            scope=scope,
+            conversation=activity.conversation.id,
+            activity_id=activity.id or "",
+        )
     except Exception:
         logger.exception("[POISON] Could not reconstruct the activity from the poisoned message — cannot notify the user.")
         return
 
     logger.error(
-        "[POISON] Job permanently failed after exhausting retries | conversation=%s scope=%s loading_activity_id=%s",
-        activity.conversation.id, scope, loading_activity_id,
+        "[POISON] Job permanently failed after exhausting retries | user='%s' (%s) scope=%s | query='%s' | loading_activity_id=%s",
+        user_name, user_id, scope, user_text, loading_activity_id,
     )
-    user_text = strip_mentions(activity.text or "").strip()
-    quoted_query = _quoted_query(user_text, scope)
     try:
         delivered = deliver_message(
             ctx, loading_activity_id,
@@ -68,8 +77,8 @@ def process_poison_job(raw_payload: dict) -> None:
             edit_in_place=(scope == "channel"),
         )
         if delivered:
-            logger.info("[POISON] Permanent-failure notice delivered to the user.")
+            logger.info("[POISON] Permanent-failure notice delivered to user='%s' | query='%s'", user_name, user_text)
         else:
-            logger.error("[POISON] All delivery attempts for the permanent-failure notice failed.")
+            logger.error("[POISON] All delivery attempts for the permanent-failure notice failed | user='%s' query='%s'", user_name, user_text)
     except Exception:
-        logger.exception("[POISON] Failed to deliver the permanent-failure notice to the user.")
+        logger.exception("[POISON] Failed to deliver the permanent-failure notice to user='%s' | query='%s'", user_name, user_text)

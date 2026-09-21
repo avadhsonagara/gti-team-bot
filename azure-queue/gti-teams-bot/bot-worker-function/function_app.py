@@ -54,19 +54,22 @@ def process_query_job(msg: func.QueueMessage) -> None:
     """Main job queue trigger — processes one GTI query end-to-end."""
     try:
         raw = json.loads(msg.get_body().decode("utf-8"))
-        if get_job_kind(raw) == "installationUpdateRemove":
+        kind = get_job_kind(raw)
+        if kind == "installationUpdateRemove":
+            logger.info("[QUEUE TRIGGER] Dequeued installation cleanup job | msg_id=%s dequeue_count=%d", msg.id, msg.dequeue_count)
             process_installation_removed(raw)
         else:
+            logger.info("[QUEUE TRIGGER] Dequeued job from %s | msg_id=%s dequeue_count=%d", settings.job_queue_name, msg.id, msg.dequeue_count)
             process_job(raw, dequeue_count=msg.dequeue_count)
     except InvalidJobPayload:
         # A message that was never a valid job of ours (shouldn't happen —
         # only bot-ingest-function ever writes to this queue — but this is
         # cheap insurance). Re-raising lets it exhaust maxDequeueCount and
         # land in the poison queue rather than being silently dropped here.
-        logger.exception("[JOB] Malformed job payload.")
+        logger.exception("[JOB] Malformed job payload | msg_id=%s dequeue_count=%d", getattr(msg, "id", "-"), getattr(msg, "dequeue_count", 0))
         raise
     except Exception:
-        logger.exception("[JOB] Unhandled exception processing job — will retry per host.json maxDequeueCount.")
+        logger.exception("[JOB] Unhandled exception processing job | msg_id=%s dequeue_count=%d — will retry per host.json maxDequeueCount.", getattr(msg, "id", "-"), getattr(msg, "dequeue_count", 0))
         raise
     finally:
         clear_request()
@@ -86,9 +89,13 @@ def process_poisoned_job(msg: func.QueueMessage) -> None:
     raised exception here would just retry the poison handler itself.
     """
     try:
+        logger.warning(
+            "[POISON TRIGGER] Dequeued message from %s-poison | msg_id=%s dequeue_count=%d",
+            settings.job_queue_name, msg.id, msg.dequeue_count,
+        )
         raw = json.loads(msg.get_body().decode("utf-8"))
         process_poison_job(raw)
     except Exception:
-        logger.exception("[POISON] Failed to notify user of a permanently failed job.")
+        logger.exception("[POISON] Failed to notify user of a permanently failed job | msg_id=%s", getattr(msg, "id", "-"))
     finally:
         clear_request()
