@@ -165,23 +165,34 @@ def download_attachments(ctx) -> list[tuple[str, bytes, str]]:
     activity = ctx.activity
     scope = getattr(activity.conversation, "conversation_type", "") or ""
     raw_attachments = getattr(activity, "attachments", None) or []
-    logger.info("[ATTACHMENT] %d raw attachment(s) on this activity (scope=%s)", len(raw_attachments), scope)
-    for a in raw_attachments:
+
+    # Separate real user-provided file/image attachments from Teams structural attachments (e.g. text/html message body, adaptive cards)
+    user_file_attachments = [a for a in raw_attachments if _is_user_file(a.content_type or "")]
+
+    if user_file_attachments:
         logger.info(
-            "[ATTACHMENT] raw: content_type=%r name=%r has_content_url=%s has_content=%s",
-            a.content_type, a.name, bool(a.content_url), bool(a.content),
+            "[ATTACHMENT] %d file attachment(s) detected on this activity (raw=%d, scope=%s)",
+            len(user_file_attachments), len(raw_attachments), scope,
+        )
+        for a in raw_attachments:
+            ct = a.content_type or ""
+            if _is_user_file(ct):
+                logger.info(
+                    "[ATTACHMENT] raw file: content_type=%r name=%r has_content_url=%s has_content=%s",
+                    ct, a.name, bool(a.content_url), bool(a.content),
+                )
+            else:
+                logger.debug("[ATTACHMENT] Skipping non-file attachment (content_type=%r)", ct)
+    elif raw_attachments:
+        logger.debug(
+            "[ATTACHMENT] %d raw non-file attachment(s) on this activity (scope=%s)",
+            len(raw_attachments), scope,
         )
 
     results: list[tuple[str, bytes, str]] = []
 
-    for attachment in raw_attachments:
+    for attachment in user_file_attachments:
         content_type = attachment.content_type or ""
-        if not _is_user_file(content_type):
-            # Never logs `attachment.content` here — for content_type
-            # "text/html" that content IS the message's own text (Teams'
-            # own HTML rendering of it), not a real attachment.
-            logger.info("[ATTACHMENT] Skipping non-file attachment (content_type=%r)", content_type)
-            continue
         name = attachment.name or "file"
 
         try:
@@ -222,19 +233,17 @@ def download_attachments(ctx) -> list[tuple[str, bytes, str]]:
         except Exception:
             logger.exception("[ATTACHMENT] Unexpected error downloading %r (content_type=%s)", name, content_type)
 
+    graph_file_count = 0
     if not results and raw_attachments:
         graph_attachments = _fetch_graph_message_attachments(activity, scope)
-        for g_att in graph_attachments:
+        valid_graph_attachments = [g for g in graph_attachments if g.get("contentUrl")]
+        graph_file_count = len(valid_graph_attachments)
+        if valid_graph_attachments:
+            logger.info("[ATTACHMENT] Found %d file attachment(s) via Microsoft Graph", graph_file_count)
+
+        for g_att in valid_graph_attachments:
             c_url = g_att.get("contentUrl")
             name = g_att.get("name") or "file"
-            # Any attachment with a contentUrl is worth trying — not just
-            # contentType == "reference" (Graph's marker for a user sharing
-            # an EXISTING SharePoint/OneDrive file). A freshly-uploaded
-            # channel file/image resolves through Graph the same way (Teams
-            # stores every channel file in SharePoint either way), and may
-            # not carry that exact contentType.
-            if not c_url:
-                continue
 
             try:
                 data = _download_graph_share(c_url)
@@ -250,6 +259,12 @@ def download_attachments(ctx) -> list[tuple[str, bytes, str]]:
             except Exception:
                 logger.exception("[ATTACHMENT] Unexpected error downloading Graph attachment %r", name)
 
-    if raw_attachments:
-        logger.info("[ATTACHMENT] Downloaded %d of %d attachment(s)", len(results), len(raw_attachments))
+    # max(), not `or`-chaining: the Graph fallback can find and successfully
+    # download MORE attachments than Bot Framework originally listed (e.g. an
+    # inline image Graph resolves that wasn't in raw_attachments at all) — an
+    # `or` chain would keep the smaller user_file_attachments count in that
+    # case, producing a nonsensical "Downloaded 3 of 2" log line.
+    expected_count = max(len(user_file_attachments), graph_file_count, len(results))
+    if expected_count > 0:
+        logger.info("[ATTACHMENT] Downloaded %d of %d attachment(s)", len(results), expected_count)
     return results

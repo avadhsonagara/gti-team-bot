@@ -271,3 +271,35 @@ def test_attachment_resolution_works_for_a_brand_new_root_post(monkeypatch):
     assert requested_urls, "bailed out before any Graph call — root-post thread id fallback isn't working"
     assert len(result) == 1
     assert result[0]["name"] == "manifest.zip"
+
+
+def test_download_attachments_counts_only_file_attachments(monkeypatch, caplog):
+    """
+    When an activity has 1 file attachment and 1 non-file structural attachment (e.g. text/html),
+    the logger must count only real file attachments (1 of 1), not raw attachments (1 of 2).
+    """
+    import logging
+
+    activity = SimpleNamespace(
+        id="act-1",
+        conversation=SimpleNamespace(id="conv-1", conversation_type="personal"),
+        attachments=[
+            SimpleNamespace(content_type="text/html", name=None, content_url=None, content="<div>query</div>"),
+            SimpleNamespace(
+                content_type="application/vnd.microsoft.teams.file.download.info",
+                name="sample.pdf",
+                content={"downloadUrl": "https://download.example.com/sample.pdf"},
+                content_url=None,
+            ),
+        ],
+    )
+    monkeypatch.setattr(attachments_module, "_download", lambda url, headers=None: b"fake-pdf-bytes")
+
+    with caplog.at_level(logging.INFO, logger="gti-teams-bot"):
+        results = attachments_module.download_attachments(SimpleNamespace(activity=activity))
+
+    assert len(results) == 1
+    assert results[0][0] == "sample.pdf"
+    assert "[ATTACHMENT] Downloaded 1 of 1 attachment(s)" in caplog.text
+    assert "[ATTACHMENT] Downloaded 1 of 2 attachment(s)" not in caplog.text
+

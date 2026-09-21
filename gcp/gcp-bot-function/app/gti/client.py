@@ -170,10 +170,13 @@ class GTIAgenticClient:
         last_exc: Exception | None = None
         for attempt in range(self.max_retries + 1):
             try:
-                logger.info(
-                    "[GTI] %s %s (attempt %d/%d)",
-                    method, endpoint, attempt + 1, self.max_retries + 1,
-                )
+                if attempt == 0:
+                    logger.info("[GTI] %s %s", method, endpoint)
+                else:
+                    logger.info(
+                        "[GTI] %s %s (attempt %d/%d)",
+                        method, endpoint, attempt, self.max_retries,
+                    )
                 response = session.request(
                     method,
                     url,

@@ -190,7 +190,12 @@ def process_job(raw_payload: dict, dequeue_count: int = 1) -> None:
     attachments = download_attachments(ctx)
     att_summary = f"count={len(attachments)}"
     if attachments:
-        att_names = [a.get("name") for a in attachments if isinstance(a, dict) and a.get("name")]
+        att_names = []
+        for a in attachments:
+            if isinstance(a, (list, tuple)) and len(a) > 0 and a[0]:
+                att_names.append(str(a[0]))
+            elif isinstance(a, dict) and a.get("name"):
+                att_names.append(str(a.get("name")))
         if att_names:
             att_summary += f" ({', '.join(att_names)})"
     logger.info(

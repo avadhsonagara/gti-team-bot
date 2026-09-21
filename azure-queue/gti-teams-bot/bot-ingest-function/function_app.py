@@ -254,9 +254,13 @@ def _ingest_message(body: dict, t_start: float) -> None:
             logger.warning("[INGEST] Failed to send empty-query usage hint to user='%s'", user_name)
         return
 
-    attachments = activity.attachments or []
-    attachment_count = len(attachments)
-    att_names = [getattr(a, "name", "") for a in attachments if getattr(a, "name", None)]
+    raw_attachments = activity.attachments or []
+    file_attachments = [
+        a for a in raw_attachments
+        if getattr(a, "content_type", "") and not getattr(a, "content_type", "").startswith(("text/html", "application/vnd.microsoft.card."))
+    ]
+    attachment_count = len(file_attachments)
+    att_names = [getattr(a, "name", "") for a in file_attachments if getattr(a, "name", None)]
     att_info = f" | attachments={attachment_count} ({', '.join(att_names)})" if att_names else (f" | attachments={attachment_count}" if attachment_count else "")
 
     logger.info(
