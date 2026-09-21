@@ -1,0 +1,119 @@
+# =============================================================================
+# GTI Teams Bot (Agentic) — GCP Terraform Variables Example
+# =============================================================================
+# Copy this file to terraform.tfvars and fill in your values:
+#   cp terraform.tfvars.example terraform.tfvars
+# =============================================================================
+
+# ── Required Settings ────────────────────────────────────────────────────────
+
+# Google Cloud Project ID where all resources will be created.
+project_id = "provide_your_project_id"
+
+# Google Cloud region for all resources (Cloud Run, GCS, Firestore, Secrets).
+region = "us-central1"
+
+# Base resource name for the bot application.
+bot_name = "gti-team-bot"
+
+# Google Threat Intelligence / VirusTotal API key. Stored securely in Secret Manager.
+gti_api_key = "YOUR_GTI_VIRUSTOTAL_API_KEY"
+
+# Name of an EXISTING Azure resource group to deploy the Bot Service into
+# (REQUIRED). Leave empty to create a new one named '<bot_name>-rg'
+# (requires subscription-level permission).
+azure_resource_group_name = "YOUR_AZURE_RESOURCE_GROUP_NAME"
+
+# Azure region for a newly-created resource group (ignored when
+# azure_resource_group_name points at an existing one).
+# azure_region = "eastus"
+
+# ── Optional: Naming overrides ────────────────────────────────────────────────
+
+# Globally-unique name for the Azure Bot Service resource (Bot Service names
+# are unique across all of Azure, not just this subscription). Empty =
+# derive from bot_name plus a random suffix.
+# azure_bot_name = "your-custom-azure-bot-name"
+
+# Globally-unique GCS bucket name for source code and manifests. Empty =
+# derive from project_id/bot_name plus a random suffix.
+# storage_bucket_name = "your-globally-unique-bucket-name"
+
+# ── gti-bot Cloud Run Sizing & Concurrency Tuning (optional) ─────────────────
+# gti-bot deploys as a Cloud Run function (2nd Gen) built directly from
+# source (gcp/gcp-bot-function, uploaded to GCS and built by Cloud Build via
+# the Python buildpack — see main.tf) — no Docker image to build/push by hand.
+# `concurrency` also sets the THREADS env var passed to the function, so the
+# app's own request handling matches how many concurrent requests one
+# instance will be given.
+
+concurrency     = 40
+cpu             = "1"
+memory          = "2Gi"
+timeout_seconds = 1800
+max_instances   = 5
+min_instances   = 0
+
+# Cloud Functions runtime for the gti-bot function.
+# runtime = "python312"
+
+# ── Firestore (optional) ───────────────────────────────────────────────────────
+# Default is "gti-team-bot-db" (a dedicated database, not the project's
+# "(default)" one) so this stack won't collide with another app's database in
+# the same GCP project. Set to "(default)" explicitly if you want to use the
+# project's default database instead.
+# firestore_database              = "gti-team-bot-db"
+# create_firestore_database       = true   # false = reuse an existing database instead of creating one
+# firestore_deletion_policy       = "DELETE" # or "ABANDON" to keep the database on `terraform destroy`
+# firestore_bot_config_collection = "gti-bot-config"
+# firestore_output_format_doc     = "gti-custom-output-format"
+
+# ── Output formatting (optional) ──────────────────────────────────────────────
+
+# Optional custom formatting instructions applied to every bot response
+# (seeds the Firestore document on first read).
+output_format_instructions = ""
+
+# ── Microsoft Graph — channel thread context (optional) ──────────────────────
+# Requires the bot's Entra app registration to be granted the Graph
+# APPLICATION permission ChannelMessage.Read.All with tenant-admin consent —
+# a manual one-time step, separate from the Bot Framework permissions it
+# already has. Channel-only — Teams has no thread concept for personal/group
+# chats.
+# thread_context_enabled = true
+thread_context_message_count = 5
+
+# ── Optional: RS Alerts (Background GTI Alerts -> Teams) ─────────────────────
+
+# Set to true to provision the RS Alerts background function and Cloud
+# Scheduler trigger.
+enable_rs_alerts = false
+
+# Teams channel link or bare ID (19:...@thread.tacv2) that RS Alerts posts
+# GTI alerts into — either form works. The bot's Teams app must already be
+# added to the target team manually beforehand. Required when
+# enable_rs_alerts is true.
+rs_alerts_teams_channel_id_or_link = "https://teams.microsoft.com/l/channel/19%3aexampleChannelId%40thread.tacv2/my-channel?groupId=00000000-0000-0000-0000-000000000000&tenantId=00000000-0000-0000-0000-000000000000"
+
+# Google Threat Intelligence project ID that RS Alerts queries for alerts.
+# This is a GTI-side project, not necessarily the same as project_id above
+# and has no fallback to it. Required when enable_rs_alerts is true.
+rsa_gti_project = "YOUR_GTI_PROJECT_ID"
+
+# Optional RSA tuning (defaults shown)
+# rsa_function_name            = "gti-alerts-fetch"    # Name of the RS Alerts Cloud Run function.
+# rsa_runtime                  = "python312"            # Cloud Functions runtime for the RS Alerts function.
+# rsa_schedule                 = "0 * * * *"             # Cron expression for the Cloud Scheduler job (hourly, at minute 0).
+# rsa_schedule_timezone        = "Etc/UTC"              # Timezone for the Cloud Scheduler job.
+# rsa_page_size                = 1000                   # Page size for GTI Alerts API pagination.
+# rsa_backfill_days            = 7                      # Backfill window (days, 1-7) used on the very first run when no cursor exists yet.
+# rsa_function_memory          = "256Mi"                # Memory allocated to the RS Alerts Cloud Run function.
+# rsa_function_timeout_seconds = 540                    # Execution timeout in seconds for the RS Alerts Cloud Run function.
+
+# Optional RSA alert filters (defaults shown; comma-separated, OR'd within a
+# field, AND'd across fields). Widen e.g. to "LOW,MEDIUM,HIGH" to disable
+# filtering on that field — never leave it empty, that fails every run instead.
+# rsa_filter_severity_level       = "MEDIUM,HIGH"            # valid: LOW, MEDIUM, HIGH
+# rsa_filter_priority_level       = "MEDIUM,HIGH,CRITICAL"   # valid: LOW, MEDIUM, HIGH, CRITICAL
+# rsa_filter_relevance_level      = "MEDIUM,HIGH"            # valid: LOW, MEDIUM, HIGH
+# rsa_filter_relevance_confidence = "MEDIUM,HIGH"            # valid: LOW, MEDIUM, HIGH

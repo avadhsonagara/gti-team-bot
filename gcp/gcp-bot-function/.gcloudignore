@@ -1,0 +1,22 @@
+.gcloudignore
+.git
+.gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+
+# Environment variables & secrets — never upload to Cloud Build.
+.env
+.env.local
+cert.key
+cert.cer
+fullchain.cer
+*.json
+!teams-app-manifest/*.json
+
+# Docs — not needed by the build.
+README.md
