@@ -1,1 +1,0 @@
-"""Microsoft Teams bot package."""

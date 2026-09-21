@@ -1,1 +1,0 @@
-"""Teams Bot integration module."""
