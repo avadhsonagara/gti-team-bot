@@ -242,7 +242,7 @@ class GTIAgenticClient:
                             backoff = base_delay + random.uniform(*GTI_JITTER_RANGE)
 
                         logger.warning(
-                            "[GTI] 429 Rate Limit backoff: waiting %.1fs before retry (attempt %d/%d)...",
+                            "[GTI RETRY] 429 Rate Limit backoff: waiting %.1fs before retry (attempt %d/%d)...",
                             backoff, attempt + 1, self.max_retries,
                         )
                         time.sleep(backoff)
@@ -253,7 +253,10 @@ class GTIAgenticClient:
                     logger.warning("[GTI] Transient server error (%d): %s", response.status_code, response.text)
                     if attempt < self.max_retries:
                         delay = (self.retry_delay * (2 ** attempt)) + random.uniform(*GTI_JITTER_RANGE)
-                        logger.info("[GTI] Retrying in %.1fs...", delay)
+                        logger.warning(
+                            "[GTI RETRY] Transient server error (%d): retrying in %.1fs (attempt %d/%d)...",
+                            response.status_code, delay, attempt + 1, self.max_retries,
+                        )
                         time.sleep(delay)
                         continue
                     raise GTIServiceError(f"GTI service error ({response.status_code}): {response.text}")
@@ -273,7 +276,10 @@ class GTIAgenticClient:
                 logger.warning("[GTI] Connection error: %s", exc)
                 if attempt < self.max_retries:
                     delay = (self.retry_delay * (2 ** attempt)) + random.uniform(*GTI_JITTER_RANGE)
-                    logger.info("[GTI] Retrying connection error in %.1fs...", delay)
+                    logger.warning(
+                        "[GTI RETRY] Connection error: retrying in %.1fs (attempt %d/%d): %s",
+                        delay, attempt + 1, self.max_retries, exc,
+                    )
                     time.sleep(delay)
                     continue
                 raise GTITimeoutError(f"GTI request failed after retries (connection error): {exc}") from exc
@@ -308,6 +314,10 @@ class GTIAgenticClient:
                 logger.warning("[GTI] Unexpected error: %s", exc)
                 if attempt < self.max_retries:
                     delay = (self.retry_delay * (2 ** attempt)) + random.uniform(*GTI_JITTER_RANGE)
+                    logger.warning(
+                        "[GTI RETRY] Unexpected error: retrying in %.1fs (attempt %d/%d): %s",
+                        delay, attempt + 1, self.max_retries, exc,
+                    )
                     time.sleep(delay)
                     continue
                 raise GTIServiceError(f"GTI request failed: {exc}") from exc

@@ -59,7 +59,13 @@ def process_query_job(msg: func.QueueMessage) -> None:
             logger.info("[QUEUE TRIGGER] Dequeued installation cleanup job | msg_id=%s dequeue_count=%d", msg.id, msg.dequeue_count)
             process_installation_removed(raw)
         else:
-            logger.info("[QUEUE TRIGGER] Dequeued job from %s | msg_id=%s dequeue_count=%d", settings.job_queue_name, msg.id, msg.dequeue_count)
+            if msg.dequeue_count > 1:
+                logger.warning(
+                    "[QUEUE TRIGGER RETRY] Dequeued retry attempt %d for job from %s | msg_id=%s",
+                    msg.dequeue_count, settings.job_queue_name, msg.id,
+                )
+            else:
+                logger.info("[QUEUE TRIGGER] Dequeued job from %s | msg_id=%s dequeue_count=%d", settings.job_queue_name, msg.id, msg.dequeue_count)
             process_job(raw, dequeue_count=msg.dequeue_count)
     except InvalidJobPayload:
         # A message that was never a valid job of ours (shouldn't happen —
@@ -69,7 +75,10 @@ def process_query_job(msg: func.QueueMessage) -> None:
         logger.exception("[JOB] Malformed job payload | msg_id=%s dequeue_count=%d", getattr(msg, "id", "-"), getattr(msg, "dequeue_count", 0))
         raise
     except Exception:
-        logger.exception("[JOB] Unhandled exception processing job | msg_id=%s dequeue_count=%d — will retry per host.json maxDequeueCount.", getattr(msg, "id", "-"), getattr(msg, "dequeue_count", 0))
+        logger.exception(
+            "[JOB RETRY] Job attempt %d failed | msg_id=%s — will retry per host.json maxDequeueCount.",
+            getattr(msg, "dequeue_count", 1), getattr(msg, "id", "-"),
+        )
         raise
     finally:
         clear_request()

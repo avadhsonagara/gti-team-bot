@@ -98,3 +98,31 @@ def test_process_job_falls_back_to_user_id_when_name_missing(caplog):
     assert "[WORKER START] Processing User Query" in log_text
     assert "user='user-123' (user-123)" in log_text
     assert "query='lookup domain.com'" in log_text
+
+
+def test_process_job_logs_worker_retry_on_subsequent_dequeue(caplog):
+    """Verify that process_job logs [WORKER RETRY] when dequeue_count > 1."""
+    with caplog.at_level(logging.WARNING, logger="gti-teams-bot"):
+        process_job(_raw_payload(text="retry query", sender_name="Bob"), dequeue_count=2)
+
+    log_text = caplog.text
+    assert "[WORKER RETRY] Retrying job execution (attempt 2/2)" in log_text
+    assert "user='Bob' (user-123)" in log_text
+    assert "query='retry query'" in log_text
+
+
+def test_process_job_logs_retry_scheduled_on_delivery_failure(monkeypatch, caplog):
+    """Verify that process_job logs [WORKER RETRY SCHEDULED] when delivery fails."""
+    from app.job_processor import DeliveryFailedError
+
+    monkeypatch.setattr("app.job_processor.deliver_message", lambda *a, **kw: False)
+
+    with caplog.at_level(logging.WARNING, logger="gti-teams-bot"):
+        with pytest.raises(DeliveryFailedError):
+            process_job(_raw_payload(text="failing query", sender_name="Carol"), dequeue_count=1)
+
+    log_text = caplog.text
+    assert "[WORKER RETRY SCHEDULED] Delivery failed (attempt 1/2)" in log_text
+    assert "user='Carol'" in log_text
+    assert "query='failing query'" in log_text
+

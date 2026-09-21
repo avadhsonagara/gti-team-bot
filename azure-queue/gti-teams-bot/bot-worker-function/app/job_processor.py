@@ -122,10 +122,16 @@ def process_job(raw_payload: dict, dequeue_count: int = 1) -> None:
     if tenant_id:
         bind_request(tenant=tenant_id)
 
-    logger.info(
-        "[WORKER START] Processing User Query | user='%s' (%s) scope=%s | query='%s' | dequeue_count=%d queue_wait=%.1fs",
-        user_name, user_id, scope, user_text, dequeue_count, age_seconds,
-    )
+    if dequeue_count > 1:
+        logger.warning(
+            "[WORKER RETRY] Retrying job execution (attempt %d/2) | user='%s' (%s) scope=%s | query='%s' | queue_wait=%.1fs",
+            dequeue_count, user_name, user_id, scope, user_text, age_seconds,
+        )
+    else:
+        logger.info(
+            "[WORKER START] Processing User Query | user='%s' (%s) scope=%s | query='%s' | dequeue_count=%d queue_wait=%.1fs",
+            user_name, user_id, scope, user_text, dequeue_count, age_seconds,
+        )
 
     if age_seconds > settings.max_job_age_seconds:
         logger.warning(
@@ -351,15 +357,19 @@ def process_job(raw_payload: dict, dequeue_count: int = 1) -> None:
             edit_in_place=(scope == "channel"),
         )
 
-    except DeliveryFailedError:
+    except DeliveryFailedError as exc:
         # Already logged above at the raise site. Deliberately does NOT
         # attempt another delivery here — every fallback deliver_message()
         # has already failed once this invocation, so retrying in-process
         # would just fail the same way. Re-raising lets the queue's own
         # retry (and eventual poison-queue routing) take over instead.
+        logger.warning(
+            "[WORKER RETRY SCHEDULED] Delivery failed (attempt %d/2) — raising for Storage Queue retry | user='%s' query='%s': %s",
+            dequeue_count, user_name, user_text, exc,
+        )
         raise
 
-    except Exception:
+    except Exception as exc:
         # Deliberately does NOT deliver an error card here (unlike every
         # named GTI* handler above, which are terminal — they never retry).
         # This branch WILL be retried once more, and for a personal/group
@@ -371,7 +381,7 @@ def process_job(raw_payload: dict, dequeue_count: int = 1) -> None:
         # ever tells the user about a truly-failed (all retries exhausted)
         # unexpected error — exactly one message, not up to three.
         logger.exception(
-            "[WORKER FATAL] Unexpected error in GTI job processor after %.2fs | user='%s' query='%s' — re-raising for queue retry.",
-            time.perf_counter() - t_worker_start, user_name, user_text,
+            "[WORKER RETRY SCHEDULED] Unexpected error in GTI job processor (attempt %d/2) after %.2fs | user='%s' query='%s' — re-raising for queue retry: %s",
+            dequeue_count, time.perf_counter() - t_worker_start, user_name, user_text, exc,
         )
         raise

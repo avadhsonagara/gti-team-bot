@@ -112,7 +112,7 @@ def send_activity(service_url: str, conversation_id: str, activity: dict) -> dic
             BOT_CONNECTOR_RETRY_BACKOFF_FACTOR * (2 ** attempt)
         )
         logger.warning(
-            "[BOT] Rate limited (429) sending activity — retrying in %.1fs (attempt %d/%d)...",
+            "[BOT RETRY] Rate limited (429) sending activity — retrying in %.1fs (attempt %d/%d)...",
             delay, attempt + 1, BOT_CONNECTOR_RETRY_TOTAL,
         )
         time.sleep(delay)
