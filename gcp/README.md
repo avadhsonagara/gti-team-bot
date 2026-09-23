@@ -9,11 +9,11 @@ Infrastructure is fully automated with **Terraform**, running on **Cloud Run fun
 ## Architecture
 
 ```
-                                          ┌─────────────────────────────────────────┐
-                                          │          Google Cloud Storage           │
-                                          │  - gti-bot.zip & rs-alerts.zip (src)    │
-                                          │  - teams-app-manifest.zip (sideloadable)│
-                                          └─────────────────────────────────────────┘
+                                          ┌─────────────────────────────────────────────┐
+                                          │          Google Cloud Storage               │
+                                          │  - gti-bot.zip & rs-alerts.zip (src)        │
+                                          │  - gti-teams-bot-manifest.zip (sideloadable)│
+                                          └─────────────────────────────────────────────┘
                                                                ▲
                                                                │ Deploy source
 ┌─────────────────────────┐   POST /api/messages   ┌───────────┴─────────────┐   x-apikey   ┌────────────────────────┐
@@ -28,11 +28,11 @@ Infrastructure is fully automated with **Terraform**, running on **Cloud Run fun
 └─────────────────────────┘                        └───────────┬─────────────┘              └────────────────────────┘
                                                                │ Save Cursor
                                                                ▼
-                                          ┌─────────────────────────────────────────┐
-                                          │      Google Cloud Firestore Native      │
-                                          │  - bot-config/output-format             │
-                                          │  - rs-alerts-state/cursor               │
-                                          └─────────────────────────────────────────┘
+                                          ┌─────────────────────────────────────────────┐
+                                          │      Google Cloud Firestore Native          │
+                                          │  - bot-config/output-format                 │
+                                          │  - rs-alerts-state/cursor                   │
+                                          └─────────────────────────────────────────────┘
 ```
 
 ---
@@ -82,7 +82,7 @@ gcp/
 ## Key Features & Highlights
 
 1. **Storage Separation**:
-   - **Google Cloud Storage (GCS)**: Stores function deployment packages (`gti-bot.zip`, `rs-alerts.zip`) and the generated sideloadable Teams app manifest ZIP (`teams-app-manifest.zip`).
+   - **Google Cloud Storage (GCS)**: Stores function deployment packages (`gti-bot.zip`, `rs-alerts.zip`) and the generated sideloadable Teams app manifest ZIP (`gti-teams-bot-manifest.zip`).
    - **Google Cloud Firestore**: Stores durable bot formatting instructions (`bot-config/output-format`) and incremental alert cursor checkpoints (`rs-alerts-state/cursor`).
 
 2. **Secret Management**:

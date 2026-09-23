@@ -65,7 +65,7 @@ output "post_deployment_instructions" {
   =============================================================================
 
   1. SIDELOAD THE TEAMS APP MANIFEST:
-     gsutil cp gs://${google_storage_bucket.source_bucket.name}/${google_storage_bucket_object.teams_manifest_zip.name} ./teams-app-manifest.zip
+     gsutil cp gs://${google_storage_bucket.source_bucket.name}/${google_storage_bucket_object.teams_manifest_zip.name} ./gti-teams-bot-manifest.zip
      Then in Microsoft Teams: Apps -> Upload a custom app
      (or Teams Admin Center -> Manage apps -> Upload new app, for org-wide rollout).
 

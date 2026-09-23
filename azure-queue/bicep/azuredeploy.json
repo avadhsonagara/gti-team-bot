@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.47.16.16243",
-      "templateHash": "6550728501564978178"
+      "templateHash": "7189966020484057200"
     }
   },
   "parameters": {
@@ -334,14 +334,14 @@
     },
     "manifestContainerName": {
       "type": "string",
-      "defaultValue": "teams-manifest",
+      "defaultValue": "gti-teams-bot",
       "metadata": {
         "description": "Blob container that receives the Teams app manifest package."
       }
     },
     "manifestBlobName": {
       "type": "string",
-      "defaultValue": "teams-app-manifest.zip",
+      "defaultValue": "gti-teams-bot-manifest.zip",
       "metadata": {
         "description": "Blob name for the uploaded Teams app manifest zip."
       }

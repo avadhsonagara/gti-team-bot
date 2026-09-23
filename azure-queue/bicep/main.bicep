@@ -246,10 +246,10 @@ param rsAlertsAppInsightsName string = '${rsAlertsFunctionAppName}-insights'
 // always matches the bot this deployment just created.
 
 @description('Blob container that receives the Teams app manifest package.')
-param manifestContainerName string = 'teams-manifest'
+param manifestContainerName string = 'gti-teams-bot'
 
 @description('Blob name for the uploaded Teams app manifest zip.')
-param manifestBlobName string = 'teams-app-manifest.zip'
+param manifestBlobName string = 'gti-teams-bot-manifest.zip'
 
 @description('Base URL the Teams app manifest source files (manifest.json, color.png, outline.png) are fetched from at deploy time. Defaults to this repo\'s own gti-teams-bot/teams-app-manifest folder. Leave empty to skip the manifest upload entirely and assemble/sideload it yourself.')
 param manifestSourceBaseUrl string = 'https://raw.githubusercontent.com/avadhsonagara/gti-team-bot/main/azure-queue/gti-teams-bot/teams-app-manifest'

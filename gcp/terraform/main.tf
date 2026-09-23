@@ -236,7 +236,7 @@ resource "local_file" "manifest_outline_png" {
 data "archive_file" "teams_manifest_zip" {
   type        = "zip"
   source_dir  = "${path.module}/.build/manifest_pkg"
-  output_path = "${path.module}/.build/teams-app-manifest.zip"
+  output_path = "${path.module}/.build/gti-teams-bot-manifest.zip"
 
   depends_on = [
     local_file.manifest_json,
@@ -246,7 +246,7 @@ data "archive_file" "teams_manifest_zip" {
 }
 
 resource "google_storage_bucket_object" "teams_manifest_zip" {
-  name   = "teams-manifest/teams-app-manifest.zip"
+  name   = "gti-teams-bot/gti-teams-bot-manifest.zip"
   bucket = google_storage_bucket.source_bucket.name
   source = data.archive_file.teams_manifest_zip.output_path
 }
