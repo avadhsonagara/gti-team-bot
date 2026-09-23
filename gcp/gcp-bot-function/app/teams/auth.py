@@ -37,7 +37,31 @@ def _expected_audiences(app_id: str) -> list[str]:
     return [app_id, f"api://{app_id}", f"api://botid-{app_id}"]
 
 
-def validate_bot_framework_token(authorization_header: str, app_id: str, claimed_service_url: str | None) -> dict:
+def _expected_issuers(tenant_id: str) -> list[str]:
+    """
+    Construct the list of valid issuer claims for an inbound activity token.
+
+    The classic multi-tenant Bot Connector issuer (_TOKEN_ISSUER) is what
+    real traffic actually carries here — confirmed live via an unverified
+    decode of a rejected token on Azure's deployment of this same bot code.
+    This function additionally accepts a tenant-scoped Entra issuer, matching
+    a gap Microsoft's own current SDK acknowledges for some
+    UserAssignedMSI/SingleTenant-hosted bots (microsoft/Agents-for-js#1152);
+    harmless to allow defensively even though it isn't this bot's actual
+    failure mode. Pinned to THIS bot's own tenant_id specifically, not a
+    wildcard tenant pattern, to avoid accepting a token forged by a different
+    tenant.
+    """
+    issuers = [_TOKEN_ISSUER]
+    if tenant_id:
+        issuers.append(f"https://sts.windows.net/{tenant_id}/")
+        issuers.append(f"https://login.microsoftonline.com/{tenant_id}/v2.0")
+    return issuers
+
+
+def validate_bot_framework_token(
+    authorization_header: str, app_id: str, claimed_service_url: str | None, tenant_id: str = "",
+) -> dict:
     """
     Validate the Authorization header of an inbound /api/messages request.
 
@@ -60,11 +84,17 @@ def validate_bot_framework_token(authorization_header: str, app_id: str, claimed
             signing_key.key,
             algorithms=["RS256"],
             audience=_expected_audiences(app_id),
-            issuer=[_TOKEN_ISSUER],
+            # Issuer is checked manually below, not via this option — PyJWT
+            # versions vary in whether `issuer` accepts a list (2.8.0 doesn't,
+            # silently treating it as never-matching even against its own
+            # first element — reproduced and confirmed as the reason every
+            # real Teams message was rejected in Azure's deployment, which
+            # pins that version; GCP isn't currently affected since it pins
+            # a newer PyJWT, but this avoids depending on that at all).
             options={
                 "verify_signature": True,
                 "verify_aud": True,
-                "verify_iss": True,
+                "verify_iss": False,
                 "verify_exp": True,
                 "verify_iat": True,
             },
@@ -75,6 +105,9 @@ def validate_bot_framework_token(authorization_header: str, app_id: str, claimed
         # subclasses) and JWKS lookup failures (PyJWKClientError) — neither
         # is a subclass of the other, and both mean "reject this request".
         raise BotFrameworkAuthError(f"Token validation failed: {exc}") from exc
+
+    if payload.get("iss") not in _expected_issuers(tenant_id):
+        raise BotFrameworkAuthError(f"Token validation failed: Invalid issuer {payload.get('iss')!r}")
 
     if not claimed_service_url:
         raise BotFrameworkAuthError("Missing serviceUrl in request body.")

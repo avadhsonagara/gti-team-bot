@@ -30,6 +30,13 @@ class Settings(BaseSettings):
     # Function App uses — both apps authenticate as one bot.
     client_id: str = ""
     managed_identity_client_id: str = ""
+    # Bot Service's msaAppTenantId — optional, defense-in-depth. Widens the
+    # accepted issuer claim on inbound activity tokens to also include a
+    # tenant-scoped Entra issuer, matching a gap Microsoft's own SDK
+    # acknowledges for some UserAssignedMSI/SingleTenant-hosted bots (see
+    # app/teams/auth.py::_expected_issuers) — this bot's own real tokens carry
+    # the classic issuer either way, so this is not required for auth to work.
+    tenant_id: str = ""
 
     # ── Queue hand-off to the Worker Function App ────────────────────────────
     # Both Function Apps must point at the SAME underlying storage account

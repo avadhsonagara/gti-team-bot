@@ -62,6 +62,7 @@ def _handle_messaging_endpoint(request: Request):
             request.headers.get("Authorization", ""),
             settings.client_id,
             body.get("serviceUrl"),
+            settings.tenant_id,
         )
     except BotFrameworkAuthError as exc:
         logger.warning("[AUTH] Rejected /api/messages request: %s", exc)

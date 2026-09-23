@@ -175,6 +175,7 @@ def messages(req: func.HttpRequest) -> func.HttpResponse:
             req.headers.get("Authorization", ""),
             settings.client_id,
             body.get("serviceUrl"),
+            settings.tenant_id,
         )
     except BotFrameworkAuthError as exc:
         logger.warning("[AUTH] Rejected /api/messages request: %s", exc)

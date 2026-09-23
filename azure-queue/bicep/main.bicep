@@ -356,6 +356,14 @@ var sharedCoreAppSettings = [
     value: botIdentity.properties.clientId
   }
   {
+    // Bot Service's msaAppTenantId — optional, defense-in-depth widening of
+    // the accepted issuer claim on inbound activity tokens (see
+    // app/teams/auth.py::_expected_issuers, ingest-only, but harmless/unused
+    // on worker).
+    name: 'TENANT_ID'
+    value: tenantId
+  }
+  {
     name: 'JOB_QUEUE_NAME'
     value: jobQueueName
   }

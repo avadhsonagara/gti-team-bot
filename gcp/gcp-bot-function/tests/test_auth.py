@@ -5,7 +5,6 @@ Verifies token signature, issuer, audience, expiration, and serviceUrl claim mat
 against inbound activity request data.
 """
 import time
-from types import SimpleNamespace
 
 import jwt
 import pytest
@@ -28,9 +27,6 @@ def _sign_token(private_key, service_url: str | None = "https://smba.trafficmana
     payload = {
         "aud": audience,
         "iss": issuer,
-        # auth.py allows a 300s leeway (Bot Framework's documented clock
-        # skew) — go well past that so an intentionally-expired token in
-        # these tests is unambiguously expired, not just within tolerance.
         "iat": now - 1000,
         "exp": now - 1000 if expired else now + 300,
     }
@@ -79,9 +75,6 @@ def test_service_url_mismatch_rejected(patched_jwks, rsa_key_pair):
 
 
 def test_missing_service_url_in_activity_body_rejected(patched_jwks, rsa_key_pair):
-    """
-    Verify that an activity omitting serviceUrl is rejected.
-    """
     private_key, _ = rsa_key_pair
     token = _sign_token(private_key, service_url="https://smba.trafficmanager.net/amer/")
     with pytest.raises(auth.BotFrameworkAuthError, match="Missing serviceUrl"):
@@ -114,7 +107,7 @@ _OTHER_TENANT_ID = "99999999-9999-9999-9999-999999999999"
 
 
 def test_tenant_scoped_v1_issuer_accepted_for_msi_bots(patched_jwks, rsa_key_pair):
-    """Defense-in-depth: some UserAssignedMSI/SingleTenant bots' tokens carry this issuer per Microsoft's own SDK gap, even though this bot's real tokens carry the classic one (confirmed live)."""
+    """Defense-in-depth: some UserAssignedMSI/SingleTenant bots' tokens carry this issuer per Microsoft's own SDK gap, even though Azure's real tokens for this same bot code carry the classic one (confirmed live)."""
     private_key, _ = rsa_key_pair
     token = _sign_token(private_key, issuer=f"https://sts.windows.net/{_TENANT_ID}/")
     payload = auth.validate_bot_framework_token(
