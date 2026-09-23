@@ -1,0 +1,40 @@
+# =============================================================================
+# GTI MS Teams Bot (Agentic) — GCP Worker Cloud Run function Dependencies
+# =============================================================================
+
+# Google Cloud Functions Framework — HTTP trigger support for Cloud Run
+# functions (Flask/WSGI). See main.py's gti_bot_worker_http entrypoint. This
+# function is Pub/Sub-*push*-triggered (a plain HTTP POST from Pub/Sub, not
+# a native CloudEvent trigger — see terraform/main.tf's job_subscription and
+# the README's "why push, not the native Eventarc trigger" section), so no
+# separate Pub/Sub client library is needed here.
+functions-framework==3.10.2
+
+# Flask — request/response handling for Functions Framework.
+flask==3.1.3
+
+# HTTP client for everything that talks to an external API: the GTI Agentic
+# API, Microsoft Graph, and the Bot Framework Connector API itself (sending/
+# editing/deleting Teams messages, and the bot's own OAuth token) — see
+# app/gti/client.py, app/graph/client.py, app/teams/bot_client.py,
+# app/teams/attachments.py. Plain synchronous calls throughout.
+requests==2.34.2
+
+# Google Cloud Firestore — durable persistence for bot output format
+# instructions, per-thread GTI session ids, and the redelivery dedup claims
+# (app/output_format_store.py, app/gti/session_store.py, app/dedup_store.py).
+# Pulls in google-api-core, whose google.api_core.exceptions.AlreadyExists
+# app/dedup_store.py relies on.
+google-cloud-firestore==2.30.0
+
+# Type-safe, validated configuration from environment variables.
+pydantic-settings==2.15.0
+
+# Local development only — load .env file into environment
+python-dotenv==1.2.3
+
+# JWT decoding and key verification — pulled in transitively by
+# app/teams/auth.py's dependency chain is not needed here (the worker never
+# authenticates an inbound Bot Framework activity — Cloud Run IAM does that
+# instead, see terraform/main.tf's worker_invoker binding), so this is
+# intentionally omitted unlike the ingest function's requirements.txt.

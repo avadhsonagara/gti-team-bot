@@ -1,0 +1,108 @@
+# =============================================================================
+# GTI Teams Bot (Agentic, Queue-Decoupled) — GCP Terraform Variables Example
+# =============================================================================
+# Copy this file to terraform.tfvars and fill in your values:
+#   cp terraform.tfvars.example terraform.tfvars
+# =============================================================================
+
+# ── Required Settings ────────────────────────────────────────────────────────
+
+# Google Cloud Project ID where all resources will be created.
+project_id = "provide_your_project_id"
+
+# Google Cloud region for all resources (Cloud Run, GCS, Firestore, Pub/Sub, Secrets).
+region = "us-central1"
+
+# Base resource name for the bot application. Keep this DISTINCT from
+# gcp/terraform's bot_name if you deploy both stacks into the same GCP
+# project — service account IDs and Secret Manager secret IDs are
+# project-unique, and this stack's default is already "gti-team-bot-queue"
+# specifically to avoid colliding with gcp/terraform's "gti-team-bot" default.
+bot_name = "gti-team-bot-queue"
+
+# Google Threat Intelligence / VirusTotal API key. Stored securely in Secret Manager.
+gti_api_key = "YOUR_GTI_VIRUSTOTAL_API_KEY"
+
+# Name of an EXISTING Azure resource group to deploy the Bot Service into
+# (REQUIRED). Leave empty to create a new one named '<bot_name>-rg'
+# (requires subscription-level permission). This provisions a SECOND,
+# independent Azure Bot Service registration — separate bot id, separate
+# Teams app manifest — from whatever gcp/terraform already created; Azure
+# allows multiple Bot Service resources per tenant.
+azure_resource_group_name = "YOUR_AZURE_RESOURCE_GROUP_NAME"
+
+# Azure region for a newly-created resource group (ignored when
+# azure_resource_group_name points at an existing one).
+# azure_region = "eastus"
+
+# ── Optional: Naming overrides ────────────────────────────────────────────────
+
+# Globally-unique name for the Azure Bot Service resource (Bot Service names
+# are unique across all of Azure, not just this subscription). Empty =
+# derive from bot_name plus a random suffix.
+# azure_bot_name = "your-custom-azure-bot-name"
+
+# Globally-unique GCS bucket name for source code and manifests. Empty =
+# derive from project_id/bot_name plus a random suffix.
+# storage_bucket_name = "your-globally-unique-bucket-name"
+
+# ── Ingest Cloud Run Sizing & Concurrency Tuning (optional) ──────────────────
+# bot-ingest-function is small and fast — it never calls GTI or Graph, just
+# verifies a JWT, posts the placeholder, and publishes a Pub/Sub message.
+# `ingest_concurrency` also sets the THREADS env var passed to the function.
+
+# ingest_cpu             = "1"
+# ingest_memory          = "512Mi"
+# ingest_timeout_seconds = 60
+# ingest_max_instances   = 10
+# ingest_min_instances   = 0
+# ingest_concurrency     = 20
+# ingest_runtime         = "python312"
+
+# ── Worker Cloud Run Sizing & Concurrency Tuning (optional) ──────────────────
+# bot-worker-function runs long, expensive GTI Agentic queries. Its
+# timeout_seconds is capped at 600 for a real platform reason, not just a
+# tuning choice — see this variable's own description in variables.tf and
+# the README's timeout-budget section: a Pub/Sub push subscription's
+# ack_deadline_seconds has a hard 600-second ceiling with no lease-renewal
+# available to a push endpoint, and job_subscription below is hardcoded to
+# that exact ceiling. `worker_concurrency` also sets the THREADS env var.
+
+# worker_cpu             = "1"
+# worker_memory          = "2Gi"
+# worker_timeout_seconds = 600
+# worker_max_instances   = 10
+# worker_min_instances   = 1     # kept >0 — cold start eats into the fixed 600s ack budget
+# worker_concurrency     = 15
+# worker_runtime         = "python312"
+
+# ── Pub/Sub job hand-off (optional) ───────────────────────────────────────────
+# How many times Pub/Sub redelivers a job to the worker before routing it to
+# the dead-letter topic (app/poison_handler.py). 5 is Pub/Sub's own platform
+# floor — there is no way to go lower.
+# max_delivery_attempts = 5
+
+# ── Firestore (optional) ───────────────────────────────────────────────────────
+# Default is "gti-team-bot-queue-db" (distinct from gcp/terraform's
+# "gti-team-bot-db") so this stack won't collide with gcp/'s database if both
+# are deployed into the same GCP project.
+# firestore_database              = "gti-team-bot-queue-db"
+# create_firestore_database       = true   # false = reuse an existing database instead of creating one
+# firestore_deletion_policy       = "DELETE" # or "ABANDON" to keep the database on `terraform destroy`
+# firestore_bot_config_collection = "gti-bot-config"
+# firestore_output_format_doc     = "gti-custom-output-format"
+
+# ── Output formatting (optional) ──────────────────────────────────────────────
+
+# Optional custom formatting instructions applied to every bot response
+# (seeds the Firestore document on first read).
+output_format_instructions = ""
+
+# ── Microsoft Graph — channel thread context (optional) ──────────────────────
+# Requires the bot's Entra app registration to be granted the Graph
+# APPLICATION permission ChannelMessage.Read.All with tenant-admin consent —
+# a manual one-time step, separate from the Bot Framework permissions it
+# already has. Channel-only — Teams has no thread concept for personal/group
+# chats.
+# thread_context_enabled = true
+thread_context_message_count = 5

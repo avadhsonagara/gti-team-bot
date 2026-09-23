@@ -1,0 +1,29 @@
+# =============================================================================
+# GTI MS Teams Bot (Agentic) — GCP Ingest Cloud Run function Dependencies
+# =============================================================================
+
+# Google Cloud Functions Framework — HTTP trigger support for Cloud Run
+# functions (Flask/WSGI). See main.py's gti_bot_ingest_http entrypoint.
+functions-framework==3.10.2
+
+# Flask — request/response handling for Functions Framework.
+flask==3.1.3
+
+# HTTP client for outbound calls to the Bot Framework Connector API (posting
+# the placeholder and error notices — app/teams/bot_client.py) and the
+# bot's own OAuth token. Plain synchronous calls, no SDK.
+requests==2.34.2
+
+# Publishes job payloads to the worker's Pub/Sub topic (app/queue_job.py) —
+# the GCP analog of azure-storage-queue on the Azure side.
+google-cloud-pubsub==2.41.0
+
+# Type-safe, validated configuration from environment variables.
+pydantic-settings==2.15.0
+
+# Local development only — load .env file into environment
+python-dotenv==1.2.3
+
+# JWT decoding and key verification for Bot Framework security validation
+# (app/teams/auth.py) — [crypto] pulls in `cryptography`, required for RS256.
+pyjwt[crypto]==2.14.0
