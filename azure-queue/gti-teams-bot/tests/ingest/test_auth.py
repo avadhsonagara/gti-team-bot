@@ -109,7 +109,7 @@ def test_no_app_id_configured_rejects_everything(patched_jwks):
         auth.validate_bot_framework_token("Bearer anything", "", "https://smba.trafficmanager.net/amer/")
 
 
-_TENANT_ID = "3adb963c-8e61-48e8-a06d-6dbb0dacea39"
+_TENANT_ID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 _OTHER_TENANT_ID = "99999999-9999-9999-9999-999999999999"
 
 
