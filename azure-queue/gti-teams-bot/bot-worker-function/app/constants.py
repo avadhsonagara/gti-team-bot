@@ -3,9 +3,6 @@ Application constants for the GTI Teams Bot Worker Function.
 """
 from pathlib import Path
 
-APP_NAME = "gti-teams-bot-worker"
-
-
 # Kept byte-for-byte identical to bot-ingest-function/app/constants.py — see
 # the comment there. The ingest function posts this text as the placeholder
 # message body; is_placeholder_message() below (via app/teams/thread.py)

@@ -27,9 +27,9 @@ class Settings(BaseSettings):
 
     # ── Google Threat Intelligence (GTI) Agentic API ────────────────────────────
     gti_api_key: str = ""
-    gti_api_base_url: str = "https://www.virustotal.com/api/v3"
+    gti_api_base_url: str = ""
     # Read timeout (seconds) for a single GTI Agentic API call.
-    gti_timeout_seconds: float = 300.0
+    gti_timeout_seconds: float = 480.0
 
     # ── Google Cloud Platform / Firestore Persistence ─────────────────────────
     gcp_project_id: str = Field(
@@ -54,7 +54,6 @@ class Settings(BaseSettings):
     # Requires the CLIENT_ID app registration to be granted the application
     # permission ChannelMessage.Read.All with tenant-admin consent. Channel-only —
     # Teams has no equivalent thread concept for personal/group chats.
-    thread_context_enabled: bool = True
     thread_context_message_count: int = 5
 
     # ── HTTP connection pool sizing ───────────────────────────────────────────
@@ -79,7 +78,7 @@ class Settings(BaseSettings):
     @classmethod
     def strip_and_normalize_url(cls, v: str) -> str:
         """Trim whitespace and trailing slashes from the API base URL."""
-        val = (v or "https://www.virustotal.com/api/v3").strip()
+        val = (v or "").strip()
         return val.rstrip("/")
 
     @field_validator("gti_api_key", "client_secret", mode="before")

@@ -438,7 +438,6 @@ resource "google_cloudfunctions2_function" "gti_bot" {
       FIRESTORE_BOT_CONFIG_COLLECTION = var.firestore_bot_config_collection
       FIRESTORE_OUTPUT_FORMAT_DOC     = var.firestore_output_format_doc
       OUTPUT_FORMAT_INSTRUCTIONS      = var.output_format_instructions
-      THREAD_CONTEXT_ENABLED          = tostring(var.thread_context_enabled)
       THREAD_CONTEXT_MESSAGE_COUNT    = tostring(var.thread_context_message_count)
       # Changes whenever either secret is rotated → forces a new Cloud Run
       # revision so already-running instances pick up the new secret value

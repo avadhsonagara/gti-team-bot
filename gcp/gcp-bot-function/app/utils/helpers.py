@@ -13,11 +13,6 @@ def strip_mentions(text: str) -> str:
     return _MENTION_RE.sub("", text or "")
 
 
-def has_mention(text: str) -> bool:
-    """True if the raw activity text contains at least one <at>...</at> mention token."""
-    return bool(_MENTION_RE.search(text or ""))
-
-
 # ── Adaptive Card Parser ──────────────────────────────────────────────────────
 
 def extract_text_from_card(card: dict | None) -> str:

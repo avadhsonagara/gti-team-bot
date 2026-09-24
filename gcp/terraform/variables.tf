@@ -164,12 +164,6 @@ variable "output_format_instructions" {
 # APPLICATION permission ChannelMessage.Read.All with tenant-admin consent —
 # separate from the Bot Framework permissions it already has.
 
-variable "thread_context_enabled" {
-  description = "Whether to fetch and inject channel-thread message history as context for each query."
-  type        = bool
-  default     = true
-}
-
 variable "thread_context_message_count" {
   description = "Number of most-recent channel-thread messages to fetch as context for each query."
   type        = number

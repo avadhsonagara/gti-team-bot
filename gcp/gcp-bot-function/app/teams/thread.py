@@ -294,7 +294,7 @@ def get_thread_context(activity, scope: str) -> str:
     thread context isn't applicable (not a channel) or on any failure —
     losing context is far less harmful than failing the whole request over it.
     """
-    if scope != "channel" or not settings.thread_context_enabled:
+    if scope != "channel":
         return ""
 
     # Graph's message-listing endpoint needs team_id in the URL; if this

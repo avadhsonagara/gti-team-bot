@@ -80,7 +80,6 @@ output_format_instructions = ""
 # a manual one-time step, separate from the Bot Framework permissions it
 # already has. Channel-only — Teams has no thread concept for personal/group
 # chats.
-# thread_context_enabled = true
 thread_context_message_count = 5
 
 # ── Optional: RS Alerts (Background GTI Alerts -> Teams) ─────────────────────

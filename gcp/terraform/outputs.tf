@@ -69,16 +69,11 @@ output "post_deployment_instructions" {
      Then in Microsoft Teams: Apps -> Upload a custom app
      (or Teams Admin Center -> Manage apps -> Upload new app, for org-wide rollout).
 
-  %{if var.thread_context_enabled~}
   2. GRANT MICROSOFT GRAPH PERMISSION FOR CHANNEL THREAD CONTEXT:
-     (thread_context_enabled = true, so this is required)
      Azure Portal -> Microsoft Entra ID -> App registrations -> your bot app
        -> API permissions -> Add a permission -> Microsoft Graph -> Application permissions
        -> ChannelMessage.Read.All -> Add permissions
        -> "Grant admin consent for <tenant>" (requires a tenant admin).
-  %{else~}
-  2. (skipped: thread_context_enabled = false — no Graph permission needed)
-  %{endif~}
 
   %{if var.enable_rs_alerts~}
   3. ADD THE BOT TO THE RS ALERTS TARGET TEAM:
